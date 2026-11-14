@@ -14,15 +14,16 @@ import (
 )
 
 type RepairReport struct {
-	Records         int  `json:"records"`
-	AlreadyLocated  int  `json:"alreadyLocated"`
-	Matched         int  `json:"matched"`
-	Unmatched       int  `json:"unmatched"`
-	Updated         int  `json:"updated"`
-	FilesChanged    int  `json:"filesChanged"`
-	Applied         bool `json:"applied"`
-	PositionCount   int  `json:"positionCount,omitempty"`
-	SourceTruncated bool `json:"sourceTruncated"`
+	Records           int  `json:"records"`
+	AlreadyLocated    int  `json:"alreadyLocated"`
+	Matched           int  `json:"matched"`
+	Unmatched         int  `json:"unmatched"`
+	Updated           int  `json:"updated"`
+	FilesChanged      int  `json:"filesChanged"`
+	Applied           bool `json:"applied"`
+	PositionCount     int  `json:"positionCount,omitempty"`
+	SourceTruncated   bool `json:"sourceTruncated"`
+	ImportedPositions int  `json:"importedPositions,omitempty"`
 }
 
 // RepairPositions joins delayed fixes without changing radio values/times.

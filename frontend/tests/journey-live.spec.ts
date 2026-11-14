@@ -23,6 +23,7 @@ async function setup(page:Page){
   if(path.endsWith('/auth/session'))data={csrf:'fixture'}
   else if(path.endsWith('/settings'))data={revision:1,theme:'dark',locale:'ja',favorites:[]}
   else if(path.endsWith('/capabilities'))data=[]
+  else if(path.endsWith('/recordings/track'))data=observation({date:url.searchParams.get('date'),points:[],segments:[]})
   else if(path.endsWith('/system/summary'))data={tripStats:observation({periods:{7:{distanceKm:777,drivingSeconds:777,hasData:true,validObservedDays:7,sampleCount:7,days:[]}}})}
   else if(path.endsWith('/trips')){
    queries.push(url.searchParams)

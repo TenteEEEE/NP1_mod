@@ -14,11 +14,12 @@ type History={tripWeighted?:boolean;tripCountKnown?:boolean;unit:string;points:P
 type Legend={unit:string;note:string;thresholds:{minimum:number|null;label:string;color:string}[]}
 const props=defineProps<{date:string}>()
 const day=computed(()=>props.date||jstDate())
-const container=ref<HTMLElement>(),overlay=ref(false),online=ref(true),metric=ref('rsrp'),mode=ref('grid'),carrier=ref(''),band=ref(''),size=ref('50'),unknown=ref(false)
+const container=ref<HTMLElement>(),overlay=ref(false),online=ref(true),metric=ref('rsrp'),mode=ref('grid'),carrier=ref(''),band=ref(''),size=ref('50'),unknown=ref(true)
 const track=ref<PlaybackTrack>(),result=ref<History>(),legend=ref<Legend>(),loading=ref(false),radioLoading=ref(false),error=ref(''),radioError=ref(''),tileFailed=ref(false),selected=ref<Point>()
 let map:L.Map|undefined,routeLayer:L.LayerGroup|undefined,radioLayer:L.LayerGroup|undefined,tiles:L.TileLayer|undefined,resize:ResizeObserver|undefined,timer:ReturnType<typeof setInterval>|undefined
 let request:AbortController|undefined,radioRequest:AbortController|undefined,sequence=0,radioSequence=0,fitted=false,active=true
-const empty=computed(()=>!track.value?.points.length&&(!overlay.value||(mode.value==='grid'?!result.value?.cells.length:!result.value?.points.length)))
+const overlayPoints=computed(()=>!overlay.value?[]:mode.value==='points'||!result.value?.cells.length?result.value?.points||[]:(result.value?.points||[]).filter(point=>point.accuracyUnknown))
+const empty=computed(()=>!track.value?.points.length&&!overlayPoints.value.length&&(!overlay.value||mode.value!=='grid'||!result.value?.cells.length))
 const fmt=(at:string)=>new Date(at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})
 function popup(lines:string[]){const node=document.createElement('div');for(const text of lines){const p=document.createElement('div');p.textContent=text;node.appendChild(p)}return node}
 async function loadTrack(){
@@ -46,7 +47,7 @@ async function loadRadio(){
 }
 function bounds(){
  const points:L.LatLngTuple[]=(track.value?.points||[]).map(p=>[p.lat,p.lon])
- if(overlay.value){if(mode.value==='grid')for(const cell of result.value?.cells||[])points.push(...cell.bounds);else for(const p of result.value?.points||[])points.push([p.gps.lat,p.gps.lon])}
+ if(overlay.value){if(mode.value==='grid')for(const cell of result.value?.cells||[])points.push(...cell.bounds);for(const p of overlayPoints.value)points.push([p.gps.lat,p.gps.lon])}
  return points
 }
 function fit(){const points=bounds();if(map&&points.length){map.fitBounds(L.latLngBounds(points),{padding:[28,28],maxZoom:17,animate:false});fitted=true}}
@@ -62,7 +63,7 @@ function render(){
  if(overlay.value&&result.value){
   const data=result.value
   if(mode.value==='grid')for(const cell of data.cells)L.rectangle(cell.bounds,{className:'radio-overlay',color:cell.color,fillOpacity:cell.low_confidence?.25:.5,weight:1,dashArray:cell.low_confidence?'3 3':undefined}).bindPopup(popup(['中央値 '+cell.median.toFixed(1)+' '+data.unit,cell.sample_count+' 観測 / '+(data.tripCountKnown?cell.distinct_trip_count+' 走行':'走行数不明')])).addTo(radioLayer)
-  else for(const point of data.points){
+  for(const point of overlayPoints.value){
    const dot=L.circleMarker([point.gps.lat,point.gps.lon],{className:'radio-overlay',radius:5,color:point.color,fillColor:point.color,fillOpacity:point.state==='missing'?.2:.9,weight:point.accuracyUnknown?1:2,dashArray:point.accuracyUnknown?'2 2':undefined})
    dot.bindPopup(popup([fmt(point.at),metric.value.toUpperCase()+' '+(point.value===null?'未取得':point.value+' '+data.unit),(point.carrier||'回線不明')+' / '+(point.band||'バンド不明'),point.accuracyUnknown?'位置精度: 不明':'位置精度: '+point.gps.accuracyM+' m']))
    dot.on('click',()=>selected.value=point);dot.addTo(radioLayer)
@@ -100,7 +101,8 @@ onUnmounted(()=>{active=false;sequence++;radioSequence++;request?.abort();radioR
    <details open class="radio-filters"><summary>電波の絞り込み・表示設定</summary><div class="radio-filter-content"><label>電波の指標<select v-model="metric"><option value="rsrp">受信強度 · RSRP</option><option value="sinr">信号品質 · SINR</option><option value="rsrq">受信品質 · RSRQ</option></select></label><label>表示<select v-model="mode"><option value="grid">エリア集計</option><option value="points">測定点</option></select></label><label v-if="mode==='grid'">区画サイズ<select v-model="size"><option value="20">20 m</option><option value="50">50 m</option><option value="100">100 m</option></select></label><label>回線<select v-model="carrier"><option value="">すべての回線</option><option v-for="name in result?.carriers" :key="name">{{name}}</option></select></label><label>バンド<select v-model="band"><option value="">すべてのバンド</option><option v-for="name in result?.bands" :key="name">{{name}}</option></select></label><label class="radio-check"><input v-model="unknown" type="checkbox">精度不明の測定点も表示</label></div><p>GPS経路は電波の絞り込みに関係なく表示します。電波の位置は時刻差5秒以内で照合し、精度50 m超・HDOP 5超は除外します。精度不明の点はエリア集計に含めません。</p></details>
    <div v-if="radioError" class="radio-error" role="status">{{radioError}}<button class="button secondary" @click="loadRadio">電波履歴を再試行</button></div>
    <div class="radio-observation-status"><span><strong>{{result?.total?.toLocaleString()??'—'}}</strong> 電波観測</span><span><strong>{{result?.points.length.toLocaleString()??'—'}}</strong> 位置付き</span><span v-if="result?.unplaced">対応する測位なし {{result.unplaced.toLocaleString()}}</span><span v-if="result?.accuracyExcluded">精度不明 {{result.accuracyExcluded.toLocaleString()}}</span><span v-if="result?.truncated">直近20,000件を表示</span></div>
-   <p v-if="!radioLoading&&!radioError&&!(mode==='grid'?result?.cells.length:result?.points.length)" class="radio-note" role="status">この日の表示条件に合う電波観測はありません。GPSの走行経路は独立して表示します。</p>
+   <p v-if="!radioLoading&&!radioError&&!overlayPoints.length&&!(mode==='grid'&&result?.cells.length)" class="radio-note" role="status">この日の表示条件に合う電波観測はありません。GPSの走行経路は独立して表示します。</p>
+   <p v-if="mode==='grid'&&overlayPoints.some(point=>point.accuracyUnknown)" class="radio-note" role="note">メートル単位の精度が記録されていない位置は、破線の測定点で表示します。エリア集計には含めません。</p>
    <div class="radio-legend"><strong>{{metric.toUpperCase()}} / {{legend?.unit}}</strong><span v-for="item in legend?.thresholds" :key="item.label"><i :style="{background:item.color}"></i>{{item.minimum===null?'下限未満':`≥ ${item.minimum}`}} {{item.label}}</span><span><i style="background:#3f4a5a"></i>圏外</span><span><i style="background:#a8afb8"></i>未取得</span></div>
    <p class="radio-note">{{mode==='grid'?(result?.tripWeighted?'走行ごとの中央値をエリア集計。':'全観測の中央値をエリア集計。')+'観測3件未満は薄く表示します。':''}} {{legend?.note}}</p>
    <div v-if="selected" class="radio-selected"><strong>{{fmt(selected.at)}}</strong><span>{{metric.toUpperCase()}} {{selected.value??'未取得'}} {{selected.value===null?'':result?.unit}}</span><span>{{selected.carrier||'回線不明'}} / {{selected.band||'バンド不明'}}</span></div>

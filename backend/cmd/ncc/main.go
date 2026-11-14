@@ -33,6 +33,9 @@ func main() {
 	apnRevision := flag.Int("apn-revision", 0, "private APN editor revision for fixed worker child")
 	trialSeconds := flag.Int("trial-seconds", 90, "sta-outage-trial: seconds without Wi-Fi")
 	radioRepairApply := flag.Bool("radio-repair-apply", false, "apply measured GPS associations; stop the NCC logger and back up history first")
+	radioRepairStateDir := flag.Bool("radio-repair-state-dir", false, "print the configured radio history directory without reading GPS or writing files")
+	radioRepairCheck := flag.Bool("radio-repair-check", false, "fail if any GPS associations remain to be applied")
+	radioRepairTrack := flag.String("radio-repair-track", "", "private measured recording-track export to supplement retained SD fixes")
 	flag.Parse()
 	switch *mode {
 	case "radio-history-repair":
@@ -40,17 +43,40 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		if *radioRepairStateDir {
+			fmt.Println(c.StateDir)
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		positions, truncated, err := adapters.RadioHistoryPositions(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
+		importedCount := 0
+		if *radioRepairTrack != "" {
+			file, openErr := os.Open(*radioRepairTrack)
+			if openErr != nil {
+				log.Fatal(openErr)
+			}
+			imported, partial, readErr := radio.ReadRecordedPositions(file, time.Now())
+			file.Close()
+			if readErr != nil {
+				log.Fatal(readErr)
+			}
+			positions = append(positions, imported...)
+			importedCount = len(imported)
+			truncated = truncated || partial
+		}
 		report, err := radio.NewHistory(c.StateDir).RepairPositions(positions, *radioRepairApply)
 		if err != nil {
 			log.Fatal(err)
 		}
 		report.PositionCount, report.SourceTruncated = len(positions), truncated
+		report.ImportedPositions = importedCount
+		if *radioRepairCheck && report.Matched != 0 {
+			log.Fatal("radio GPS associations still pending")
+		}
 		if err = json.NewEncoder(os.Stdout).Encode(report); err != nil {
 			log.Fatal(err)
 		}

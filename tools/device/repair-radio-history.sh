@@ -3,15 +3,26 @@
 # plan is read-only. apply/restore require a separate explicit device-write window.
 set -eu
 base=/overlay/owner-apps/np1-control
-binary=$base/bin/ncc
+# /overlay is mounted noexec on the device. The broker stages the same verified
+# binary in /run, where owner programs are executed.
+binary=/run/np1-control/ncc
 config=$base/config/config.json
-state=$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["stateDir"])' "$config")
+state=$("$binary" --mode radio-history-repair --config "$config" --radio-repair-state-dir)
 [ "$state" = "$base/state" ] || { echo 'Unexpected NCC history directory' >&2; exit 2; }
 action=${1:-plan}
+track=${2:-}
+repair(){
+  if [ -n "$track" ]; then
+    "$binary" --mode radio-history-repair --config "$config" --radio-repair-track "$track" "$@"
+  else
+    "$binary" --mode radio-history-repair --config "$config" "$@"
+  fi
+}
 
 case "$action" in
   plan)
-    exec "$binary" --mode radio-history-repair --config "$config"
+    repair
+    exit
     ;;
   apply|restore) ;;
   *) echo 'usage: repair-radio-history.sh plan|apply|restore BACKUP_DIRECTORY' >&2; exit 2 ;;
@@ -41,21 +52,21 @@ if [ "$action" = apply ]; then
     printf '%s %s\n' "$file" "$(stat -c '%u:%g' "$state/$file")" >> "$backup/owners"
   done
   echo "Backup: $backup"
-  "$binary" --mode radio-history-repair --config "$config" > "$backup/plan.json"
-  if ! "$binary" --mode radio-history-repair --config "$config" --radio-repair-apply > "$backup/result.json"; then
+  if [ -n "$track" ]; then
+    cp -p "$track" "$backup/imported-track.json"
+    sha256sum "$backup/imported-track.json" > "$backup/imported-track.sha256"
+    track=$backup/imported-track.json
+  fi
+  repair > "$backup/plan.json"
+  if ! repair --radio-repair-apply > "$backup/result.json"; then
     echo "Repair failed; restore from $backup before resuming normal use" >&2
     while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
     exit 1
   fi
   while read -r file owner; do chown "$owner" "$state/$file"; done < "$backup/owners"
-  if ! "$binary" --mode radio-history-repair --config "$config" > "$backup/readback.json"; then
+  if ! repair --radio-repair-check > "$backup/readback.json"; then
     while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
     echo 'Read-back failed; restored the original history' >&2
-    exit 1
-  fi
-  if ! python -c 'import json,sys; assert json.load(open(sys.argv[1]))["matched"] == 0' "$backup/readback.json"; then
-    while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
-    echo 'Read-back still has pending matches; restored the original history' >&2
     exit 1
   fi
   cat "$backup/result.json" "$backup/readback.json"

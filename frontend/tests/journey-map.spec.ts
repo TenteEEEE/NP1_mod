@@ -93,3 +93,14 @@ test.describe('touch panning',()=>{
   await page.getByRole('button',{name:'現在地に戻る',exact:true}).click();await expect(page.getByRole('button',{name:'現在地に戻る',exact:true})).toHaveCount(0)
  })
 })
+
+test('recorded GPS without metre accuracy still displays coloured radio points when enabled',async({page})=>{
+ await fixture(page)
+ await page.route('**/api/v1/radio/history?*',route=>route.fulfill({json:{unit:'dBm',points:[{at:'2026-11-11T01:00:00Z',gps:{at:'2026-11-11T01:00:00Z',lat:35,lon:139,hdop:1.2},value:-85,state:'measured',color:'#247976',source:'synthetic',accuracyUnknown:true}],cells:[],total:1,unplaced:0,accuracyExcluded:0,carriers:[],bands:[]}}))
+ await page.goto('/#trips');await expect(page.locator('.journey-route')).toHaveCount(2)
+ await page.getByLabel('電波強度のヒートマップを表示').check()
+ await expect(page.locator('.radio-overlay')).toHaveCount(1)
+ await expect(page.locator('.radio-overlay')).toHaveAttribute('stroke-dasharray','2 2')
+ await expect(page.getByRole('note').filter({hasText:'破線の測定点'})).toBeVisible()
+ await expect(page.locator('.journey-route')).toHaveCount(2)
+})
