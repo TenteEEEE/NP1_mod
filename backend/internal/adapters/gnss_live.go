@@ -89,13 +89,10 @@ func combineGNSS(now time.Time, meta *trips.MetaPosition, moving bool, fix *trip
 		data["satellites"], data["hdop"], data["accuracyM"] = fix.Satellites, fix.HDOP, fix.AccuracyM
 		data["qualityAt"], data["qualityAgeSeconds"] = fix.At, int(now.Sub(fix.At).Seconds())
 	}
-	if meta != nil && fix != nil && !moving {
+	if meta != nil && fix != nil && !moving && !metaTrusted(now, *meta, moving, fix) {
 		// A stationary record far from the newest fix (farther than 50 m/s since then) is
 		// not trusted as the current position.
-		limit := 500 + 50*now.Sub(fix.At).Seconds()
-		if distanceM(UplinkPosition{Lat: meta.Lat, Lon: meta.Lon}, UplinkPosition{Lat: fix.Lat, Lon: fix.Lon}) > limit {
-			meta = nil
-		}
+		meta = nil
 	}
 	if meta != nil && (fix != nil || moving) {
 		data := map[string]any{"fix": true, "live": true, "at": meta.At, "lat": meta.Lat, "lon": meta.Lon, "ageSeconds": int(now.Sub(meta.At).Seconds()), "positionSource": "stock-image-recognition"}

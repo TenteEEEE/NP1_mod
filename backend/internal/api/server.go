@@ -66,6 +66,7 @@ func New(c config.Config) *Server {
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
+	s.plates.positions = plateBrokerPositions(s.client)
 	if b, e := os.ReadFile(filepath.Join(c.StateDir, "settings.json")); e == nil {
 		_ = json.Unmarshal(b, &s.settings)
 	}

@@ -1,5 +1,8 @@
 export type PlateReading={region:string;class:string;kana:string;number:string;confidence:number}
-export type PlateLocation={at:string;lat:number;lon:number;accuracyM?:number}
+// estimated: inferred from the positions logged before and after (no fix logged at that second).
+export type PlateLocation={at:string;lat:number;lon:number;accuracyM?:number;estimated?:boolean}
+export function plateLocationLabel(r:PlateRecord){return !r.location?'位置なし':r.location.estimated?'位置推定':'位置あり'}
+export function plateLocationNote(r:PlateRecord){const l=r.location;if(!l?.estimated)return undefined;return `前後の走行記録から推定した位置です${l.accuracyM?`（誤差 約${l.accuracyM>=1000?(l.accuracyM/1000).toFixed(0)+'km':Math.round(l.accuracyM)+'m'}）`:''}`}
 export type PlateMatch={ruleId:string;ruleName:string;saveImage:boolean;speak:boolean}
 export type PlateRecord={id:string;firstSeen:string;lastSeen:string;sightings:number;reading:PlateReading;display:string;location?:PlateLocation;box:[number,number,number,number];matches:PlateMatch[];imageId?:string;imageNote?:string;speech?:string}
 export type PlateRecordsResponse={records:{record:PlateRecord;imageAvailable:boolean}[];truncated:boolean;reason:string}
@@ -51,6 +54,11 @@ export type PlateSensor={state:string;reason?:string;instance?:string;engine?:st
 export type PlateStatus={enabled:boolean;revision:number;sensor:PlateSensor;collector:{lastPollAt?:string|null;error:string};speech:{available:boolean;reason:string};usage:{recordBytes:number;recordDays:number;imageBytes:number;imageCount:number;openRecords:number};imageQuotaBytes:number}
 
 // Mirrors plate.Reading.Display on the server for records written by older builds.
+// Fields the reader left blank (not read with enough confidence); the list shows them greyed.
+export function plateMissing(r:PlateRecord){return !r.reading.region||!r.reading.class||!r.reading.kana}
+// Serial as printed on a Japanese plate: four positions, unused leading ones shown as "・",
+// and a hyphen between the pairs only when all four are digits ("15-89", "・8 10", "・・ 12").
+export function plateSerial(number:string){const d=(number||'').replace(/\D/g,'').slice(-4);if(!d)return '';const s=d.padStart(4,'・');return d.length===4?`${s.slice(0,2)}-${s.slice(2)}`:`${s.slice(0,2)} ${s.slice(2)}`}
 export function plateDisplay(r:PlateRecord){return r.display||[r.reading.region,r.reading.class,r.reading.kana,r.reading.number].filter(Boolean).join(' ')}
 
 const sensorLabels:Record<string,string>={running:'認識中',starting:'起動中',idle:'待機中（記録停止）','model-missing':'認識モデル未導入','engine-missing':'認識エンジン未導入',error:'認識エラー',unavailable:'認識プロセス未起動'}

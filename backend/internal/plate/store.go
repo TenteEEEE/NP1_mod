@@ -301,6 +301,34 @@ func (s *Store) SetSpeech(id, state string) error {
 	return errors.New("record is no longer open")
 }
 
+// SetLocation fills in the position of a record that has none, open or persisted (the
+// recorder's GNSS log for the detection time appears only after the clip closes). A record
+// that already has a position keeps it.
+func (s *Store) SetLocation(id string, firstSeen time.Time, loc Location) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r, ok := s.open[id]; ok {
+		if r.Location != nil {
+			return nil
+		}
+		r.Location = &loc
+		return s.appendRecord(*r)
+	}
+	byID := map[string]Record{}
+	if e := readDay(filepath.Join(s.recordsDir(), Day(firstSeen)+".jsonl"), byID); e != nil {
+		return e
+	}
+	r, ok := byID[id]
+	if !ok {
+		return errors.New("record not found")
+	}
+	if r.Location != nil {
+		return nil
+	}
+	r.Location = &loc
+	return s.appendRecord(r)
+}
+
 func (s *Store) saveImage(id, frame string, frameImage func(string) ([]byte, error)) (string, string) {
 	if frame == "" || frameImage == nil {
 		return "", "フレームを取得できませんでした"

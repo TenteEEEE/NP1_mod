@@ -25,12 +25,15 @@ type Reading struct {
 	Confidence float64 `json:"confidence"` // 0–1, engine supplied
 }
 
-// Location is the stock GNSS fix nearest to the detection time.
+// Location is the stock GNSS fix nearest to the detection time. Estimated marks a position
+// inferred from positions logged before and after (no fix was logged at that second); its
+// AccuracyM is then the expected error, and it is never shown as a measured position.
 type Location struct {
 	At        time.Time `json:"at"`
 	Lat       float64   `json:"lat"`
 	Lon       float64   `json:"lon"`
 	AccuracyM *float64  `json:"accuracyM,omitempty"`
+	Estimated bool      `json:"estimated,omitempty"`
 }
 
 // Detection is what the sensor process reports for one plate in one frame.

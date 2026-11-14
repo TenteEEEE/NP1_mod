@@ -31,7 +31,7 @@ func envNumber(name string, fallback, lo, hi float64) float64 {
 }
 
 // runPlateSensor runs the plate-recognition sensor (np1-control-plate.service).
-// It reads only the stock camera export and NMEA sidecars.
+// It reads only the stock camera export, the stock per-second position record and NMEA sidecars.
 func runPlateSensor(confPath string) error {
 	c, e := config.Load(confPath)
 	if e != nil {
@@ -48,9 +48,12 @@ func runPlateSensor(confPath string) error {
 		FPS:        envNumber("NCC_PLATE_FPS", 2, 0.5, 10), // device: detector ~196 ms + reader ~19 ms/plate on 2 A76 threads
 		Threads:    int(envNumber("NCC_PLATE_THREADS", 2, 1, 4)),
 	}
+	// The position of the detection's own second: the stock per-second record, or an NMEA fix
+	// when one is already on the SD card. Records left without one are filled in later by the
+	// server from the recorder's GNSS log.
 	locate := func(ctx context.Context, at time.Time) *plate.Location {
-		fix, e := adapters.LatestGNSS(ctx, at)
-		if e != nil || fix == nil {
+		fix := adapters.PlatePosition(ctx, at)
+		if fix == nil {
 			return nil
 		}
 		return &plate.Location{At: fix.At, Lat: fix.Lat, Lon: fix.Lon, AccuracyM: fix.AccuracyM}
@@ -66,6 +69,7 @@ func runPlateSensor(confPath string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go adapters.TrackLivePosition(ctx)
 	sensor := platesensor.New(cfg, &platesensor.ExportSource{Path: platesensor.FrontExport}, locate, start)
 	go sensor.Run(ctx)
 	return sensor.Serve(ctx)
