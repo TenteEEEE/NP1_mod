@@ -91,6 +91,10 @@ type plateService struct {
 	// last health line.
 	sensorLast uint64
 	ingested   int
+	// positions looks up logged positions for records detected without one (nil: disabled);
+	// backfill holds the retry schedule of records it could not fill yet.
+	positions func(context.Context, []time.Time) ([]*plate.Location, error)
+	backfill  map[string]plateBackfillState
 }
 
 func unixClient(path string) *http.Client {
@@ -313,7 +317,7 @@ func (p *plateService) collect(ctx context.Context) {
 	ticker := time.NewTicker(platePollInterval)
 	defer ticker.Stop()
 	defer p.store.Flush()
-	var statusAt, pruneAt, healthAt time.Time
+	var statusAt, pruneAt, healthAt, backfillAt time.Time
 	for {
 		now := p.clock()
 		if now.Sub(statusAt) >= plateStatusEvery {
@@ -327,6 +331,10 @@ func (p *plateService) collect(ctx context.Context) {
 		if now.Sub(pruneAt) >= platePruneInterval {
 			_, _ = p.store.Prune(p.currentSettings())
 			pruneAt = now
+		}
+		if now.Sub(backfillAt) >= plateBackfillEvery {
+			p.backfillLocations(ctx, now)
+			backfillAt = now
 		}
 		if p.currentSettings().Enabled {
 			p.poll(ctx)
