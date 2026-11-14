@@ -3,14 +3,14 @@ import {test,expect,type Page,type Route} from '@playwright/test'
 const reviewURL=process.env.NCC_UI_REVIEW_URL
 const now=Date.now()
 const at=(minutes:number)=>new Date(now-minutes*60000).toISOString()
-const record=(id:string,minutes:number,reading:{region:string;class:string;kana:string;number:string},opts:{lat?:number;lon?:number;rule?:string;image?:boolean;speech?:string}={})=>{
+const record=(id:string,minutes:number,reading:{region:string;class:string;kana:string;number:string},opts:{lat?:number;lon?:number;estimated?:boolean;rule?:string;image?:boolean;speech?:string}={})=>{
  const n=reading.number,display=[reading.region,reading.class,reading.kana,n.length===4?n.slice(0,2)+'-'+n.slice(2):'・'.repeat(4-n.length)+n].join(' ')
- return {record:{id,firstSeen:at(minutes),lastSeen:at(minutes),sightings:2,reading:{...reading,confidence:.91},display,location:opts.lat===undefined?undefined:{at:at(minutes),lat:opts.lat,lon:opts.lon},box:[800,600,240,120],matches:opts.rule?[{ruleId:'r1',ruleName:opts.rule,saveImage:true,speak:true}]:[],imageId:opts.image?id:undefined,speech:opts.speech},imageAvailable:!!opts.image}
+ return {record:{id,firstSeen:at(minutes),lastSeen:at(minutes),sightings:2,reading:{...reading,confidence:.91},display,location:opts.lat===undefined?undefined:{at:at(minutes),lat:opts.lat,lon:opts.lon,...(opts.estimated?{estimated:true,accuracyM:400}:{})},box:[800,600,240,120],matches:opts.rule?[{ruleId:'r1',ruleName:opts.rule,saveImage:true,speak:true}]:[],imageId:opts.image?id:undefined,speech:opts.speech},imageAvailable:!!opts.image}
 }
 const records=[
  record('pfix-0001',2,{region:'品川',class:'300',kana:'あ',number:'1234'},{lat:35.6200,lon:139.7400,rule:'家族の車',image:true,speech:'unsupported'}),
  record('pfix-0002',5,{region:'練馬',class:'500',kana:'さ',number:'8'},{lat:35.6300,lon:139.7100}),
- record('pfix-0003',9,{region:'多摩',class:'330',kana:'わ',number:'4567'},{lat:35.6400,lon:139.7250}),
+ record('pfix-0003',9,{region:'多摩',class:'330',kana:'わ',number:'4567'},{lat:35.6400,lon:139.7250,estimated:true}),
  record('pfix-0004',12,{region:'横浜',class:'301',kana:'ほ',number:'77'}),
 ]
 const settings={revision:3,enabled:true,rules:[{id:'r1',name:'家族の車',enabled:true,region:'品川',class:'',kana:'',number:'1234',saveImage:true,speak:true,message:'やりますねぇ！',messageAudio:''}],retentionDays:365,imageQuotaMB:256,mergeSeconds:30,minConfidence:.6,minSightings:2,voice:{style:1,volume:70,phrase:'番号を検知しました。'}}
@@ -67,6 +67,7 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect(page.locator('path.plate-marker-hit')).toHaveCount(1)
   await expect(page.locator('path.plate-marker')).toHaveCount(2)
   await expect(page.getByText('位置なし',{exact:true})).toHaveCount(1)
+  await expect(page.locator('[data-record="pfix-0003"] .plate-estimated')).toHaveText('位置推定')
   await expect(page.locator('.plate-speech.unsupported')).toHaveText('発話できず（未設定）')
   await expect(page.getByRole('note').getByRole('link',{name:'システム › LED / 音声 で設定する'})).toHaveAttribute('href','#system/led')
   await expect(page.getByText('認識モデルが未導入です',{exact:false})).toBeVisible()
@@ -80,6 +81,7 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await page.locator('[data-record="pfix-0003"] .plate-item-main').click()
   await expect(page.locator('[data-record="pfix-0003"]')).toHaveClass(/selected/)
   await expect(page.locator('.leaflet-popup-content')).toContainText('多摩 330 わ 45-67')
+  await expect(page.locator('.leaflet-popup-content')).toContainText('推定した位置です（誤差 約400m）')
   await page.locator('path.plate-marker-hit').click({force:true})
   await expect(page.locator('[data-record="pfix-0001"]')).toHaveClass(/selected/)
   await expect(page.locator('[data-record="pfix-0003"]')).not.toHaveClass(/selected/)

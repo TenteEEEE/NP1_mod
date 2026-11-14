@@ -1,5 +1,8 @@
 export type PlateReading={region:string;class:string;kana:string;number:string;confidence:number}
-export type PlateLocation={at:string;lat:number;lon:number;accuracyM?:number}
+// estimated: inferred from the positions logged before and after (no fix logged at that second).
+export type PlateLocation={at:string;lat:number;lon:number;accuracyM?:number;estimated?:boolean}
+export function plateLocationLabel(r:PlateRecord){return !r.location?'位置なし':r.location.estimated?'位置推定':'位置あり'}
+export function plateLocationNote(r:PlateRecord){const l=r.location;if(!l?.estimated)return undefined;return `前後の走行記録から推定した位置です${l.accuracyM?`（誤差 約${l.accuracyM>=1000?(l.accuracyM/1000).toFixed(0)+'km':Math.round(l.accuracyM)+'m'}）`:''}`}
 export type PlateMatch={ruleId:string;ruleName:string;saveImage:boolean;speak:boolean}
 export type PlateRecord={id:string;firstSeen:string;lastSeen:string;sightings:number;reading:PlateReading;display:string;location?:PlateLocation;box:[number,number,number,number];matches:PlateMatch[];imageId?:string;imageNote?:string;speech?:string}
 export type PlateRecordsResponse={records:{record:PlateRecord;imageAvailable:boolean}[];truncated:boolean;reason:string}
