@@ -84,15 +84,28 @@
 .plate-popup-hit { color: var(--plate-hit); font-weight: 650; margin-top: 4px; }
 
 .plate-list { display: grid; align-content: start; gap: 8px; max-height: 640px; overflow-y: auto; padding-right: 4px; min-width: 0; }
-.plate-item { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); min-width: 0; }
+/* Each record: the plate drawn like a Japanese number plate on the left, details and actions on the right. */
+.plate-item { --plate-w: 132px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); min-width: 0; }
 .plate-item.hit { background: var(--plate-hit-soft); border-color: var(--plate-hit-border); border-left: 5px solid var(--plate-hit); }
 .plate-item.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
-.plate-item-main { display: grid; gap: 8px; width: 100%; text-align: left; background: transparent; padding: 12px 14px; min-height: 44px; }
-.plate-badge { justify-self: start; display: inline-block; max-width: 100%; overflow-wrap: anywhere; font-size: 17px; font-weight: 700; letter-spacing: .5px; color: var(--plate-badge-text); background: var(--plate-badge-bg); border: 2px solid #3d5a46; border-radius: 6px; padding: 4px 12px; }
+.plate-item-main { display: block; padding: 0; background: transparent; border-radius: 7px; min-height: 44px; }
+/* A plate is 330 x 165 mm. Character heights follow the real layout: the serial is about half
+   the plate height, the region / class line and the kana about a fifth. */
+.plate-badge { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 34% 1fr; align-items: center; box-sizing: border-box; width: var(--plate-w); aspect-ratio: 2 / 1; padding: 0 calc(var(--plate-w) * .05) calc(var(--plate-w) * .02); color: var(--plate-badge-text); background: var(--plate-badge-bg); border: 2px solid #3d5a46; border-radius: calc(var(--plate-w) * .05); font-family: "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", sans-serif; font-weight: 700; line-height: 1; white-space: nowrap; overflow: hidden; }
+/* Mounting bolts at the top corners. */
+.plate-badge::before, .plate-badge::after { content: ""; position: absolute; top: 9%; width: calc(var(--plate-w) * .045); aspect-ratio: 1; border-radius: 50%; background: color-mix(in srgb, var(--plate-badge-text) 18%, var(--plate-badge-bg)); }
+.plate-badge::before { left: 13%; }
+.plate-badge::after { right: 13%; }
+.plate-top { grid-column: 1 / -1; justify-self: center; align-self: end; font-size: calc(var(--plate-w) * .1); letter-spacing: .06em; }
+.plate-kana { align-self: center; font-size: calc(var(--plate-w) * .11); padding-right: calc(var(--plate-w) * .02); }
+.plate-serial { justify-self: center; font-family: Bahnschrift, "DIN Alternate", "Arial Narrow", "Yu Gothic UI", sans-serif; font-size: calc(var(--plate-w) * .26); font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 .plate-badge.hit { border-color: var(--plate-hit-line); box-shadow: 0 0 0 3px var(--plate-hit); }
-.plate-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); }
+/* Unread region / class / kana: a pale placeholder, so a read field never looks missing and vice versa. */
+.plate-badge .missing { color: color-mix(in srgb, var(--plate-badge-text) 28%, var(--plate-badge-bg)); font-weight: 500; }
+.plate-item-info { display: grid; gap: 6px; min-width: 0; }
+.plate-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--muted); cursor: pointer; font-variant-numeric: tabular-nums; }
 .plate-nofix { color: #9a6a1f; }
-.plate-item-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 0 14px 12px; }
+.plate-item-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .plate-item-extra .text-button { min-height: 32px; font-size: 12px; }
 .plate-rule-tag { font-size: 11px; font-weight: 650; color: #fff; background: var(--plate-hit-line); border-radius: 4px; padding: 3px 8px; }
 [data-theme=dark] .plate-rule-tag { color: #2a160c; }
@@ -153,6 +166,7 @@
 }
 @media (max-width: 380px) {
   .plate-grid, .plate-rule-fields { grid-template-columns: minmax(0, 1fr); }
+  .plate-item { --plate-w: 112px; gap: 4px 10px; padding: 8px 10px; }
 }
 
 .plate-api-note { flex-wrap: wrap; }

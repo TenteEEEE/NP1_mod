@@ -5,7 +5,7 @@ import {mapTiles} from '../services/map-tiles'
 import 'leaflet/dist/leaflet.css'
 import {AlertTriangle,Camera,Image as ImageIcon,MapPin,Play,Plus,RefreshCw,ScanLine,Trash2,Upload,Volume2,X} from '@lucide/vue'
 import {api,apiUpload,bytes} from '../services/api'
-import {plateDisplay,sensorLabel,speechLabel,collectorLabel,newRuleId,jstDay,speechPreview,jobLabel,toClipWav,defaultPlateLED,type PlateRecord,type PlateRecordsResponse,type PlateRule,type PlateSettings,type PlateSpeech,type PlateStatus} from '../services/plate'
+import {plateDisplay,plateSerial,plateMissing,sensorLabel,speechLabel,collectorLabel,newRuleId,jstDay,speechPreview,jobLabel,toClipWav,defaultPlateLED,type PlateRecord,type PlateRecordsResponse,type PlateRule,type PlateSettings,type PlateSpeech,type PlateStatus} from '../services/plate'
 import PlateClipDialog from './PlateClipDialog.vue'
 import '../plate-recognition.css'
 import '../radio-map.css'
@@ -113,10 +113,12 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
     <div ref="listEl" class="plate-list">
      <p v-if="!loading&&!records.length" class="plate-empty">この期間の記録はありません。</p>
      <article v-for="{record,imageAvailable} in records" :key="record.id" :data-record="record.id" :class="['plate-item',{hit:record.matches.length,selected:record.id===selectedId}]">
-      <button class="plate-item-main" :aria-pressed="record.id===selectedId" @click="select(record.id,true)">
-       <span class="plate-badge" :class="{hit:record.matches.length}">{{plateDisplay(record)}}</span>
-       <span class="plate-meta"><time :datetime="record.firstSeen">{{time(record.firstSeen)}}</time><span v-if="record.sightings>1">{{record.sightings}}回検出</span><span>信頼度 {{Math.round(record.reading.confidence*100)}}%</span><span :class="{'plate-nofix':!record.location}">{{record.location?'位置あり':'位置なし'}}</span></span>
+      <!-- The plate is drawn like a Japanese number plate; details and actions sit to its right. -->
+      <button class="plate-item-main" :aria-pressed="record.id===selectedId" :aria-label="plateDisplay(record)" @click="select(record.id,true)">
+       <span class="plate-badge" :class="{hit:record.matches.length}" :title="plateMissing(record)?'グレーの部分は読み取れなかった項目です':undefined" aria-hidden="true"><span class="plate-top"><span :class="{missing:!record.reading.region}">{{record.reading.region||'？？'}}</span> <span :class="{missing:!record.reading.class}">{{record.reading.class||'？？？'}}</span></span><span class="plate-kana" :class="{missing:!record.reading.kana}">{{record.reading.kana||'？'}}</span><span class="plate-serial">{{plateSerial(record.reading.number)}}</span></span>
       </button>
+      <div class="plate-item-info">
+       <span class="plate-meta" @click="select(record.id,true)"><time :datetime="record.firstSeen">{{time(record.firstSeen)}}</time><span>{{record.sightings}}回検出</span><span>精度 {{Math.round(record.reading.confidence*100)}}%</span><span :class="{'plate-nofix':!record.location}">{{record.location?'位置あり':'位置なし'}}</span></span>
       <div class="plate-item-extra">
        <span v-for="m in record.matches" :key="m.ruleId" class="plate-rule-tag">{{m.ruleName}}</span>
        <button class="text-button" :aria-label="`${plateDisplay(record)} の録画を再生`" @click="clipFor=record"><Play :size="14"/>録画を再生</button>
@@ -124,6 +126,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
        <span v-else-if="record.imageId" class="muted plate-small">画像は保存期間・容量上限により削除済み</span>
        <span v-else-if="record.imageNote" class="muted plate-small">{{record.imageNote}}</span>
        <span v-if="record.speech" class="plate-speech" :class="record.speech"><Volume2 :size="13"/>{{speechLabel(record.speech)}}</span>
+      </div>
       </div>
      </article>
     </div>
