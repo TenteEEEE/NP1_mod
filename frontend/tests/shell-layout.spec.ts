@@ -51,7 +51,7 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   // Overview: the map is the background of the whole window and the panels sit along its edges.
   const stage=page.locator('.dash-home'),map=(await page.locator('.dh-map').boundingBox())!
   expect(map.x).toBe(0);expect(map.y).toBe(0);expect(map.width).toBe(1920);expect(map.height).toBeGreaterThanOrEqual(1000)
-  await expect(stage.getByRole('heading',{name:'走行の記録',exact:true})).toBeVisible()
+  await expect(stage.getByRole('heading',{name:/^走行の記録/})).toBeVisible()
   await expect(stage.locator('.dh-cams .dashboard-camera-pair figure')).toHaveCount(2)
   await expect(stage.locator('.dh-tile')).toHaveCount(4)
   const edge=async(selector:string)=>(await stage.locator(selector).boundingBox())!
@@ -187,7 +187,7 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   await expect(thumb.getByRole('button',{name:'前方のライブ映像を開く'})).toBeVisible()
   // Everything else is in a sheet pulled up from the bottom: half open at first, full on request, then a peek.
   const panels=page.locator('.dh-sheet'),grip=panels.getByRole('button',{name:/パネルを/}),top=async()=>Math.round((await panels.boundingBox())!.y)
-  await expect(panels.getByRole('heading',{name:'走行の記録',exact:true})).toBeVisible()
+  await expect(panels.getByRole('heading',{name:/^走行の記録/})).toBeVisible()
   const half=Math.round(menu.y)-Math.round(menu.y*.46);await expect.poll(top).toBe(half);expect(half).toBeGreaterThan(picture.y+picture.height)
   await grip.click();await expect(panels).toHaveClass(/full/);await expect.poll(top).toBeLessThan(title.y+title.height+30)
   await panels.locator('.device-status').scrollIntoViewIfNeeded();await expect(panels.locator('.device-status')).toBeInViewport()

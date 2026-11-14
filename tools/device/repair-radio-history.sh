@@ -35,6 +35,12 @@ resume() {
 }
 trap resume EXIT
 trap 'exit 1' HUP INT TERM
+restore_saved(){
+  while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
+  [ ! -L "$base/state/journey-tracks" ] || return 1
+  rm -rf "$base/state/journey-tracks"
+  if [ -d "$backup/journey-tracks" ]; then cp -ap "$backup/journey-tracks" "$base/state/journey-tracks"; fi
+}
 systemctl stop np1-control.service
 if systemctl is-active --quiet np1-control.service; then echo 'NCC logger is still active' >&2; exit 1; fi
 
@@ -44,6 +50,8 @@ if [ "$action" = apply ]; then
   mkdir -p "$backup"
   : > "$backup/manifest.sha256"
   : > "$backup/owners"
+  [ ! -L "$base/state/journey-tracks" ] || exit 1
+  if [ -d "$base/state/journey-tracks" ]; then cp -ap "$base/state/journey-tracks" "$backup/journey-tracks"; fi
   for file in radio-observations.jsonl radio-observations.jsonl.1; do
     [ -f "$state/$file" ] || continue
     [ ! -L "$state/$file" ] || { echo 'Symlink history refused' >&2; exit 1; }
@@ -60,12 +68,13 @@ if [ "$action" = apply ]; then
   repair > "$backup/plan.json"
   if ! repair --radio-repair-apply > "$backup/result.json"; then
     echo "Repair failed; restore from $backup before resuming normal use" >&2
-    while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
+    restore_saved
     exit 1
   fi
   while read -r file owner; do chown "$owner" "$state/$file"; done < "$backup/owners"
+  if [ -d "$base/state/journey-tracks" ]; then chown -R ncc:ncc "$base/state/journey-tracks"; fi
   if ! repair --radio-repair-check > "$backup/readback.json"; then
-    while read -r file owner; do cp -p "$backup/$file" "$state/$file"; done < "$backup/owners"
+    restore_saved
     echo 'Read-back failed; restored the original history' >&2
     exit 1
   fi

@@ -16,7 +16,8 @@ import (
 const Directory = "DRIVERECDATA/Video"
 const MaximumIndexedSamples = 100000
 
-var sidecarName = regexp.MustCompile(`(?i)^FILE([ME])_([0-9]{6})_([0-9]{6})_[0-9]+\.NMEA$`)
+var sidecarName = regexp.MustCompile(`(?i)^(?:FILE|EVEN|PARK)([ME])_([0-9]{6})_([0-9]{6})_[0-9]+\.NMEA$`)
+var sidecarDirectories = []string{Directory, "DRIVERECDATA/Event", "DRIVERECDATA/Parking"}
 
 type SourceFile struct {
 	Path     string
@@ -85,7 +86,13 @@ func (i *Index) Read(ctx context.Context) (Snapshot, error) {
 	if token != i.token {
 		i.cache = map[string]cacheEntry{}
 	}
-	sort.Slice(files, func(a, b int) bool { return files[a].Path > files[b].Path })
+	sort.Slice(files, func(a, b int) bool {
+		left, right := sidecarName.FindStringSubmatch(path.Base(files[a].Path)), sidecarName.FindStringSubmatch(path.Base(files[b].Path))
+		if len(left) > 3 && len(right) > 3 && left[2]+left[3] != right[2]+right[3] {
+			return left[2]+left[3] > right[2]+right[3]
+		}
+		return files[a].Path > files[b].Path
+	})
 	out := Snapshot{Samples: []Sample{}, IndexedAt: time.Now().UTC()}
 	if len(files) > 5000 {
 		files = files[:5000]
@@ -184,28 +191,37 @@ func (s SDSource) List(ctx context.Context) ([]SourceFile, string, error) {
 			return nil, "", errors.New("invalid GNSS directory")
 		}
 	}
-	dir, e := root.Open(Directory)
-	if e != nil {
-		return nil, "", e
-	}
-	defer dir.Close()
-	entries, e := dir.ReadDir(20001)
-	if e != nil && e != io.EOF {
-		return nil, "", e
-	}
 	out := []SourceFile{}
-	for _, entry := range entries {
-		if e = ctx.Err(); e != nil {
+	for _, directory := range sidecarDirectories {
+		st, err := root.Lstat(directory)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil || !st.IsDir() || st.Mode()&os.ModeSymlink != 0 {
+			return nil, "", errors.New("invalid GNSS directory")
+		}
+		dir, e := root.Open(directory)
+		if e != nil {
 			return nil, "", e
 		}
-		if entry.Type()&os.ModeSymlink != 0 || !sidecarName.MatchString(entry.Name()) {
-			continue
+		entries, e := dir.ReadDir(20001)
+		dir.Close()
+		if e != nil && e != io.EOF {
+			return nil, "", e
 		}
-		st, e := entry.Info()
-		if e != nil || !st.Mode().IsRegular() {
-			continue
+		for _, entry := range entries {
+			if e = ctx.Err(); e != nil {
+				return nil, "", e
+			}
+			if entry.Type()&os.ModeSymlink != 0 || !sidecarName.MatchString(entry.Name()) {
+				continue
+			}
+			st, e := entry.Info()
+			if e != nil || !st.Mode().IsRegular() {
+				continue
+			}
+			out = append(out, SourceFile{path.Join(directory, entry.Name()), st.Size(), st.ModTime()})
 		}
-		out = append(out, SourceFile{path.Join(Directory, entry.Name()), st.Size(), st.ModTime()})
 	}
 	return out, token, nil
 }
@@ -217,14 +233,20 @@ type rootedReader struct {
 
 func (r rootedReader) Close() error { e := r.File.Close(); r.root.Close(); return e }
 func (s SDSource) Open(relative string) (io.ReadCloser, error) {
-	if strings.Contains(relative, "\\") || path.Dir(relative) != Directory || !sidecarName.MatchString(path.Base(relative)) {
+	allowed := false
+	for _, directory := range sidecarDirectories {
+		if path.Dir(relative) == directory {
+			allowed = true
+		}
+	}
+	if strings.Contains(relative, "\\") || !allowed || !sidecarName.MatchString(path.Base(relative)) {
 		return nil, errors.New("invalid sidecar path")
 	}
 	root, e := os.OpenRoot(s.Root)
 	if e != nil {
 		return nil, e
 	}
-	for _, name := range []string{"DRIVERECDATA", Directory, relative} {
+	for _, name := range []string{"DRIVERECDATA", path.Dir(relative), relative} {
 		st, err := root.Lstat(name)
 		if err != nil || st.Mode()&os.ModeSymlink != 0 {
 			root.Close()

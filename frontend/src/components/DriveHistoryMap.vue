@@ -95,6 +95,7 @@ onUnmounted(()=>{active=false;sequence++;radioSequence++;request?.abort();radioR
   <div class="radio-map-frame"><div ref="container" class="radio-map-canvas" aria-label="GPSの走行履歴地図"></div><div v-if="empty&&!error" class="radio-empty"><strong>{{loading?'走行経路を読み込み中…':'この日の位置記録はありません'}}</strong><p>{{track?.reason||'録画に保存されたGPS測位から走行経路を表示します。'}}</p></div><button v-if="!empty" class="radio-fit button secondary" @click="fit">全体を表示</button></div>
   <div class="radio-observation-status journey-map-status" aria-live="polite"><span><strong>{{track?.points.length.toLocaleString()??'—'}}</strong> GPS測位点</span><span><strong>{{track?.segments.length.toLocaleString()??'—'}}</strong> 走行区間</span><span>{{day}}（日本時間）</span></div>
   <p v-if="track?.sourceTruncated" class="radio-note">一部の位置記録は読み取り範囲に含まれていません。</p>
+  <p v-if="track?.source==='ncc-retained-measured-positions'" class="radio-note">保存済みのGPS測位を表示しています。経路が一部しか残っていなくても、距離・時間の記録は日別の詳細で確認できます。</p>
   <p v-if="tileFailed" class="radio-note" role="note">背景地図を読み込めませんでした。走行経路は引き続き表示します。</p>
   <p class="radio-note">青い線はGPSの走行経路です。測位が途切れた区間はつなぎません。</p>
   <template v-if="overlay">

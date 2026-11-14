@@ -24,6 +24,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/store"
+	"github.com/np1-control-center/ncc/internal/trips"
 	"github.com/np1-control-center/ncc/internal/webui"
 )
 
@@ -54,6 +55,7 @@ type Server struct {
 	loggerMu   sync.Mutex
 	logger     LoggerState
 	journeys   *journeyArchiveCollector
+	tracks     *trips.TrackStore
 	plates     *plateService
 	tailnet    tailnetHosts
 }
@@ -64,6 +66,7 @@ func New(c config.Config) *Server {
 	s.radioStore = radio.NewHistory(c.StateDir)
 	s.loadLogger()
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
+	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
 	s.plates.positions = plateBrokerPositions(s.client)
@@ -340,7 +343,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/recordings", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/recordings?"+r.URL.Query().Encode()) })
 	s.mux.HandleFunc("GET /api/v1/recordings/days", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/recordings/days") })
 	s.mux.HandleFunc("GET /api/v1/recordings/track", func(w http.ResponseWriter, r *http.Request) {
-		s.proxy(w, r, "/recordings/track?"+r.URL.Query().Encode())
+		s.recordedTrack(w, r)
 	})
 	s.mux.HandleFunc("GET /api/v1/recordings/{id}/stream", func(w http.ResponseWriter, r *http.Request) {
 		s.proxy(w, r, "/recordings/"+url.PathEscape(r.PathValue("id"))+"/stream")

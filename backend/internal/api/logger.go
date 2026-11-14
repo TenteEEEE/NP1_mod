@@ -19,16 +19,18 @@ import (
 )
 
 type LoggerState struct {
-	Enabled        bool      `json:"enabled"`
-	Active         bool      `json:"active"`
-	Stored         uint64    `json:"stored"`
-	Located        uint64    `json:"located"`
-	LastObservedAt time.Time `json:"lastObservedAt"`
-	LastStoredAt   time.Time `json:"lastStoredAt"`
-	Error          string    `json:"error,omitempty"`
-	LastRepairAt   time.Time `json:"lastRepairAt,omitempty"`
-	Repaired       uint64    `json:"repaired"`
-	RepairError    string    `json:"repairError,omitempty"`
+	Enabled              bool      `json:"enabled"`
+	Active               bool      `json:"active"`
+	Stored               uint64    `json:"stored"`
+	Located              uint64    `json:"located"`
+	LastObservedAt       time.Time `json:"lastObservedAt"`
+	LastStoredAt         time.Time `json:"lastStoredAt"`
+	Error                string    `json:"error,omitempty"`
+	LastRepairAt         time.Time `json:"lastRepairAt,omitempty"`
+	Repaired             uint64    `json:"repaired"`
+	RepairError          string    `json:"repairError,omitempty"`
+	TrackRetentionError  string    `json:"trackRetentionError,omitempty"`
+	LastTrackRetentionAt time.Time `json:"lastTrackRetentionAt,omitempty"`
 }
 
 func (s *Server) loadLogger() {
@@ -157,6 +159,11 @@ func (s *Server) matchRadioPositions(ctx context.Context, query url.Values) (int
 	}
 	if len(positions) == 0 {
 		return 0, nil
+	}
+	if s.tracks != nil {
+		if _, err := s.tracks.Ingest(value.Data, time.Now().UTC()); err != nil {
+			return 0, err
+		}
 	}
 	report, err := s.radioStore.RepairPositions(positions, true)
 	return report.Updated, err

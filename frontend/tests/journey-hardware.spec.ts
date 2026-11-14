@@ -3,6 +3,21 @@ import {test,expect} from '@playwright/test'
 test.describe('journey map on the installed device',()=>{
  test.skip(process.env.NCC_JOURNEY_HARDWARE!=='1','Explicit installed-device check required')
 
+ test('November 13 and 14 show saved driving totals and measured GPS on their maps',async({page,request},info)=>{
+  const history=await request.get('/api/v1/trips?period=custom&from=2026-11-13&to=2026-11-14')
+  expect(history.ok()).toBe(true);const days=(await history.json()).data.days
+  await page.goto('/#trips')
+  for(const date of ['2026-11-13','2026-11-14']){
+   const day=days.find((entry:any)=>entry.date===date);expect(day?.observed).toBe(true);expect(day.distanceKm).toBeGreaterThan(0)
+   const track=await request.get('/api/v1/recordings/track?date='+date);expect(track.ok()).toBe(true);expect((await track.json()).data.points.length).toBeGreaterThan(0)
+   await page.getByLabel('地図に表示する日付').fill(date)
+   await expect(page.getByLabel('詳細を表示する日付')).toHaveValue(date)
+   await expect(page.locator('.journey-route').first()).toBeAttached()
+   await expect(page.locator('.dh-day-values')).toContainText(day.distanceKm.toLocaleString('ja-JP',{maximumFractionDigits:1}))
+   await page.locator('.dh-radio').screenshot({path:info.outputPath(date+'.private.png')})
+  }
+ })
+
  test('recorded GPS route survives radio toggles, panning and mobile layout',async({page,request},info)=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
   const recordings=await request.get('/api/v1/recordings');expect(recordings.ok()).toBe(true)
@@ -44,6 +59,10 @@ test.describe('journey map on the installed device',()=>{
   const tracks:URLSearchParams[]=[]
   page.on('request',request=>{const url=new URL(request.url());if(url.pathname.endsWith('/recordings/track'))tracks.push(url.searchParams)})
   await page.goto('/#dashboard')
+  await expect(page.getByRole('button',{name:'24時間',exact:true})).toHaveAttribute('aria-pressed','true')
+  const period=await page.request.get('/api/v1/trips?period=24h');expect(period.ok()).toBe(true)
+  const report=(await period.json()).data;expect(report.hours).toHaveLength(24)
+  expect(Date.parse(report.range.toAt)-Date.parse(report.range.fromAt)).toBe(86400000)
   await expect.poll(()=>tracks.length).toBeGreaterThan(0)
   const query=tracks[0]!
   expect(Date.parse(query.get('to')!)-Date.parse(query.get('from')!)).toBe(86400000)
@@ -54,11 +73,28 @@ test.describe('journey map on the installed device',()=>{
   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+100,y+40,{steps:12});await page.mouse.up()
   const resume=page.getByRole('button',{name:/現在地に戻る|最後の位置に戻る/})
   await expect(resume).toBeVisible();expect(await pane.getAttribute('style')).not.toBe(before)
+  expect(await resume.textContent()).toBe('')
+  const buttonRect=(await resume.boundingBox())!,credit=(await page.locator('.current-location-credit').boundingBox())!
+  expect(Math.abs(buttonRect.x+buttonRect.width-credit.x-credit.width)).toBeLessThan(2)
+  expect(credit.y-buttonRect.y-buttonRect.height).toBeGreaterThanOrEqual(3)
+  expect(credit.y-buttonRect.y-buttonRect.height).toBeLessThan(25)
   // Let Leaflet's drag inertia settle before checking that GPS does not recenter it.
   await page.waitForTimeout(600)
   const moved=await pane.getAttribute('style');await page.waitForTimeout(2500);expect(await pane.getAttribute('style')).toBe(moved)
-  await resume.click();await expect(resume).toHaveCount(0)
+  await resume.click();await expect(resume).toHaveAttribute('aria-pressed','true')
   await page.screenshot({path:info.outputPath('dashboard-24h.private.png')})
+ })
+
+ test('medium desktop widths keep the six real panels near the bottom',async({page},info)=>{
+  await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');localStorage.setItem('ncc.nav','float')})
+  for(const width of [1000,1200]){
+   await page.setViewportSize({width,height:1800});await page.goto('/#dashboard')
+   await expect(page.locator('.jc-window-label')).toHaveText('過去24時間')
+   await expect(page.locator('.jc-bucket')).toHaveCount(24)
+   await expect.poll(()=>page.locator('.dash-home').evaluate(root=>{const end=Math.max(...[...root.querySelectorAll('.dh-tiles>.panel')].map(node=>node.getBoundingClientRect().bottom));return Math.round(root.getBoundingClientRect().bottom-end)})).toBeLessThanOrEqual(18)
+   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+   await page.screenshot({path:info.outputPath('medium-'+width+'.private.png')})
+  }
  })
 
  test.describe('phone touch',()=>{
@@ -74,7 +110,7 @@ test.describe('journey map on the installed device',()=>{
    for(let i=1;i<=10;i++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+8*i,y:y+2*i,id:1}]})
    await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
    const resume=page.getByRole('button',{name:/現在地に戻る|最後の位置に戻る/})
-   await expect(resume).toBeVisible();await resume.click();await expect(resume).toHaveCount(0)
+   await expect(resume).toBeVisible();await resume.click();await expect(resume).toHaveAttribute('aria-pressed','true')
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
    await page.screenshot({path:info.outputPath('dashboard-touch.private.png')})
   })

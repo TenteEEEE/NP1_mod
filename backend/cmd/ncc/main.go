@@ -14,6 +14,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/otaguard"
 	"github.com/np1-control-center/ncc/internal/otapolicy"
 	"github.com/np1-control-center/ncc/internal/radio"
+	"github.com/np1-control-center/ncc/internal/trips"
 	"log"
 	"net"
 	"os"
@@ -54,6 +55,7 @@ func main() {
 			log.Fatal(err)
 		}
 		importedCount := 0
+		var importedTrack trips.TrackReport
 		if *radioRepairTrack != "" {
 			file, openErr := os.Open(*radioRepairTrack)
 			if openErr != nil {
@@ -64,6 +66,14 @@ func main() {
 			if readErr != nil {
 				log.Fatal(readErr)
 			}
+			raw, readErr := os.ReadFile(*radioRepairTrack)
+			var export struct {
+				Data trips.TrackReport `json:"data"`
+			}
+			if readErr != nil || json.Unmarshal(raw, &export) != nil {
+				log.Fatal("invalid measured track export")
+			}
+			importedTrack = export.Data
 			positions = append(positions, imported...)
 			importedCount = len(imported)
 			truncated = truncated || partial
@@ -71,6 +81,11 @@ func main() {
 		report, err := radio.NewHistory(c.StateDir).RepairPositions(positions, *radioRepairApply)
 		if err != nil {
 			log.Fatal(err)
+		}
+		if *radioRepairApply && importedCount > 0 {
+			if _, err = trips.NewTrackStore(c.StateDir).Ingest(importedTrack, time.Now()); err != nil {
+				log.Fatal(err)
+			}
 		}
 		report.PositionCount, report.SourceTruncated = len(positions), truncated
 		report.ImportedPositions = importedCount

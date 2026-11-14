@@ -29,6 +29,7 @@ class JourneyUpdateTests(unittest.TestCase):
         (root/'active').write_text('active')
         mocks = {
             'id': '#!/bin/sh\necho 0\n',
+            'chown': '#!/bin/sh\nexit 0\n',
             'python3': '#!/bin/sh\nexec "$NCC_PYTHON" "$@"\n',
             'systemctl': '''#!/bin/sh
 echo "$*" >> "$NCC_FIXTURE/commands"
@@ -133,6 +134,8 @@ value=json.loads(p.read_text())
 matched=int('gps' not in value)
 if '--radio-repair-apply' in sys.argv:
  value['gps']={'lat':35,'lon':139};p.write_text(json.dumps(value)+'\\n')
+ (root/'base/state/journey-tracks').mkdir(exist_ok=True)
+ (root/'base/state/journey-tracks/2026-11-13.json.gz').write_bytes(b'new-retained-track')
 if '--radio-repair-check' in sys.argv and (matched or os.environ.get('NCC_REPAIR_FAIL')=='1'):
  sys.exit(4)
 print(json.dumps({'matched':matched,'updated':matched if '--radio-repair-apply' in sys.argv else 0}))
@@ -166,6 +169,7 @@ print(json.dumps({'matched':matched,'updated':matched if '--radio-repair-apply' 
         root,result,original=self.repair_fixture(fail_readback=True)
         self.assertNotEqual(result.returncode,0)
         self.assertEqual((root/'base/state/radio-observations.jsonl').read_bytes(),original)
+        self.assertFalse((root/'base/state/journey-tracks').exists())
 
 
 if __name__ == '__main__':

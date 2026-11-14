@@ -4,7 +4,7 @@ import {calendar,type JourneyHistory} from '../src/services/journey'
 const instant='2026-11-11T08:00:00Z'
 const observation=(data:unknown)=>({status:'available',data,source:'synthetic-retained-journey',observedAt:instant,refreshSeconds:30,verified:false})
 function history(query:URLSearchParams,multiplier:number):JourneyHistory{
- const kind=query.get('period')||'7',to=query.get('to')||'2026-11-11',count=['all','custom'].includes(kind)?7:Number(kind),from=query.get('from')||(kind==='all'?'2026-08-01':new Date(Date.parse(to)-(count-1)*86400000).toISOString().slice(0,10))
+ const kind=query.get('period')==='24h'?'7':query.get('period')||'7',to=query.get('to')||'2026-11-11',count=['all','custom'].includes(kind)?7:Number(kind),from=query.get('from')||(kind==='all'?'2026-08-01':new Date(Date.parse(to)-(count-1)*86400000).toISOString().slice(0,10))
  const days=calendar(from,to,[]).map(day=>({...day,observed:day.date!=='2026-10-01',distanceKm:day.date==='2026-10-01'?null:multiplier,drivingSeconds:day.date==='2026-10-01'?null:multiplier*60,observedSeconds:day.date==='2026-10-01'?0:multiplier*60,sampleCount:day.date==='2026-10-01'?0:2}))
  const observed=days.filter(day=>day.observed),distance=observed.reduce((sum,day)=>sum+day.distanceKm!,0),seconds=observed.reduce((sum,day)=>sum+day.drivingSeconds!,0)
  return {range:{period:kind,from,to,sourceFrom:from,sourceTo:to},days,period:{distanceKm:distance,drivingSeconds:seconds,hasData:true,validObservedDays:observed.length,sampleCount:observed.length*2,days},trips:observed.map(day=>({id:'synthetic-'+day.date,start:day.date+'T01:00:00Z',end:day.date+'T01:01:00Z',distanceKm:day.distanceKm!,drivingSeconds:day.drivingSeconds!,observedSeconds:day.drivingSeconds!,sampleCount:2})),totalTrips:observed.length,detailsTruncated:false,sourceTruncated:false,sourceFiles:0,unreadableFiles:0,noFixSentences:0,badChecksums:0,indexedAt:instant,source:'ncc-retained-measured-intervals',status:'available'}
@@ -40,7 +40,7 @@ async function setup(page:Page){
 async function visibility(page:Page,hidden:boolean){await page.evaluate(value=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>value});Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>value?'hidden':'visible'});document.dispatchEvent(new Event('visibilitychange'))},hidden)}
 
 test('dashboard reads retained API and updates in place without following every summary poll',async({page})=>{
- const state=await setup(page);await page.goto('/#dashboard')
+ const state=await setup(page);await page.goto('/#dashboard');await expect(page.getByTestId('trip-distance')).toHaveText('7km');state.queries.length=0;await page.getByRole('button',{name:'7日',exact:true}).click()
  await expect(page.getByTestId('trip-distance')).toHaveText('7km')
  expect(state.queries).toHaveLength(1)
  await page.locator('.jc-bucket').first().click();const selected=await page.locator('.jc-bucket.selected').getAttribute('aria-label')
