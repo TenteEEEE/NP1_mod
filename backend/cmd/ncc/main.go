@@ -13,6 +13,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/modem"
 	"github.com/np1-control-center/ncc/internal/otaguard"
 	"github.com/np1-control-center/ncc/internal/otapolicy"
+	"github.com/np1-control-center/ncc/internal/radio"
 	"log"
 	"net"
 	"os"
@@ -31,8 +32,29 @@ func main() {
 	otaAction := flag.String("ota-action", "status", "fixed OTA policy action")
 	apnRevision := flag.Int("apn-revision", 0, "private APN editor revision for fixed worker child")
 	trialSeconds := flag.Int("trial-seconds", 90, "sta-outage-trial: seconds without Wi-Fi")
+	radioRepairApply := flag.Bool("radio-repair-apply", false, "apply measured GPS associations; stop the NCC logger and back up history first")
 	flag.Parse()
 	switch *mode {
+	case "radio-history-repair":
+		c, err := config.Load(*conf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		positions, truncated, err := adapters.RadioHistoryPositions(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		report, err := radio.NewHistory(c.StateDir).RepairPositions(positions, *radioRepairApply)
+		if err != nil {
+			log.Fatal(err)
+		}
+		report.PositionCount, report.SourceTruncated = len(positions), truncated
+		if err = json.NewEncoder(os.Stdout).Encode(report); err != nil {
+			log.Fatal(err)
+		}
+		return
 	case "owned-cellular-session-probe":
 		if e := runOwnedCellularSessionProbe(); e != nil {
 			log.Fatal(e)

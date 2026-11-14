@@ -2,7 +2,7 @@
 import {computed,ref,watch} from 'vue'
 import {Clock3,MapPin,Route,Play} from '@lucide/vue'
 import JourneyChart from './JourneyChart.vue'
-import RadioMap from './RadioMap.vue'
+import DriveHistoryMap from './DriveHistoryMap.vue'
 import {duration,valueText,type JourneyHistory} from '../services/journey'
 import '../drive-history.css'
 const history=ref<JourneyHistory>(),loading=ref(false),selectedDate=ref(''),shown=ref(40)
@@ -17,6 +17,7 @@ watch(history,(value,previous)=>{if(!value)return;if(!previous)shown.value=40;if
 <template>
  <div class="drive-history">
   <JourneyChart details @loaded="history=$event" @loading="loading=$event"/>
+  <section class="panel radio-panel dh-radio" aria-labelledby="drive-map-heading"><div class="dh-heading"><div><h2 id="drive-map-heading"><MapPin :size="20"/>走行履歴マップ</h2><p>GPSの走行経路を表示します。電波強度は重ねて確認できます。</p></div><label>日付<input v-model="selectedDate" type="date" :min="history?.range.from" :max="history?.range.to" aria-label="地図に表示する日付"></label></div><DriveHistoryMap :date="selectedDate"/></section>
   <section class="panel dh-details" aria-labelledby="drive-day-heading">
    <div class="dh-heading"><div><h2 id="drive-day-heading"><Route :size="20"/>日別の詳細</h2><p>連続して測位できた区間ごとに確認できます。</p></div><label v-if="history">日付<input v-model="selectedDate" type="date" :min="history.range.from" :max="history.range.to" aria-label="詳細を表示する日付"></label></div>
    <div v-if="loading" class="dh-empty" role="status">走行区間を読み込み中…</div>
@@ -34,6 +35,5 @@ watch(history,(value,previous)=>{if(!value)return;if(!previous)shown.value=40;if
    </div>
    <details v-if="history" class="dh-source"><summary>取得元・測位の状態</summary><dl><div><dt>取得元</dt><dd>{{history.source==='ncc-retained-measured-intervals'?'保存した走行記録（純正NMEAから集計）':'純正録画のNMEA測位情報'}}</dd></div><div><dt>読取り済みファイル</dt><dd>{{history.sourceFiles.toLocaleString()}} 件</dd></div><div><dt>有効な連続測位のある日</dt><dd>{{history.period.validObservedDays}} 日</dd></div><div><dt>未測位の記録</dt><dd>{{history.noFixSentences.toLocaleString()}} 件</dd></div><div v-if="history.unreadableFiles||history.badChecksums"><dt>読取り不可 / チェックサム不正</dt><dd>{{history.unreadableFiles}} / {{history.badChecksums}}</dd></div><div v-if="history.range.sourceFrom"><dt>有効な測位の範囲</dt><dd>{{history.range.sourceFrom}}〜{{history.range.sourceTo}}</dd></div></dl><p>測位の欠落や5秒を超える間隔で区切ります。走行時間は測位中に移動した時間です。</p><p v-if="history.detailsTruncated">区間詳細は新しい {{history.trips.length.toLocaleString()}} 件を表示しています。グラフは読み取った全区間の集計です。</p><p v-if="history.sourceTruncated">一部区間は集計に含まれていません。取得・保存の状態を確認してください。</p></details>
   </section>
-  <section class="panel radio-panel dh-radio"><div class="dh-heading"><div><h2><MapPin :size="20"/>電波マップ</h2><p>走行地点ごとの4Gの受信状態</p></div></div><RadioMap/></section>
  </div>
 </template>

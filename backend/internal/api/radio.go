@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/radio"
+	"github.com/np1-control-center/ncc/internal/trips"
 )
 
 func (s *Server) radioHistory(w http.ResponseWriter, r *http.Request) {
@@ -33,11 +34,23 @@ func (s *Server) radioHistory(w http.ResponseWriter, r *http.Request) {
 		metric = "rsrp"
 	}
 	now := time.Now()
+	from, to := now.AddDate(0, 0, -days), now
+	if q.Has("date") {
+		day, err := trips.TrackDate(q.Get("date"))
+		if err != nil || len(q["date"]) != 1 || q.Has("days") {
+			fail(w, 400, "INVALID_PERIOD", "日付を確認してください")
+			return
+		}
+		from, to = day, day.AddDate(0, 0, 1).Add(-time.Nanosecond)
+		if now.Before(to) {
+			to = now
+		}
+	}
 	history := s.radioStore
 	if history == nil {
 		history = radio.NewHistory(s.cfg.StateDir)
 	}
-	result, err := history.Query(radio.Query{From: now.AddDate(0, 0, -days), To: now, Metric: metric, Carrier: q.Get("carrier"), Band: q.Get("band"), CellSize: size, TripWeighted: q.Get("tripWeighted") == "true", IncludeUnknownAccuracy: q.Get("includeUnknownAccuracy") == "true"})
+	result, err := history.Query(radio.Query{From: from, To: to, Metric: metric, Carrier: q.Get("carrier"), Band: q.Get("band"), CellSize: size, TripWeighted: q.Get("tripWeighted") == "true", IncludeUnknownAccuracy: q.Get("includeUnknownAccuracy") == "true"})
 	if err != nil {
 		fail(w, 400, "RADIO_QUERY_FAILED", "電波履歴を取得できません")
 		return

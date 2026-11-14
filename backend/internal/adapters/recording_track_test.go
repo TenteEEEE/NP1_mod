@@ -12,7 +12,7 @@ func TestRecordingTrackNoFixAndStrictDate(t *testing.T) {
 	previous := tripIndex
 	tripIndex = trips.NewIndex(historyFixtureSource{})
 	t.Cleanup(func() { tripIndex = previous })
-	for _, query := range []string{"", "?date=2026-02-30", "?date=2026-11-11&date=2026-11-12", "?date=2026-11-11&path=anything"} {
+	for _, query := range []string{"", "?date=2026-02-30", "?date=2026-11-11&date=2026-11-12", "?date=2026-11-11&path=anything", "?from=2026-11-11T00:00:00Z", "?from=bad&to=bad", "?from=2026-11-12T00:00:00Z&to=2026-11-11T00:00:00Z", "?from=2026-11-11T00:00:00Z&to=2026-11-13T00:00:00Z", "?date=2026-11-11&from=2026-11-11T00:00:00Z&to=2026-11-12T00:00:00Z"} {
 		w := httptest.NewRecorder()
 		HandleRecordingTrack(w, httptest.NewRequest("GET", "/recordings/track"+query, nil))
 		if w.Code != 400 {
@@ -33,5 +33,10 @@ func TestRecordingTrackNoFixAndStrictDate(t *testing.T) {
 	HandleRecordingTrack(w, httptest.NewRequest("POST", "/recordings/track?date=2026-11-11", nil))
 	if w.Code != 405 {
 		t.Fatal(w.Code)
+	}
+	w = httptest.NewRecorder()
+	HandleRecordingTrack(w, httptest.NewRequest("GET", "/recordings/track?from=2026-11-11T00:00:00Z&to=2026-11-12T00:00:00Z", nil))
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }

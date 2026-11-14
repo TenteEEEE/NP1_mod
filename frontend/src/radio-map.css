@@ -43,6 +43,11 @@
 :is(.radio-survey,.plate-page) .leaflet-control-zoom a.leaflet-disabled { color: var(--muted) !important; }
 :is(.radio-survey,.plate-page) .leaflet-bar { border: 1px solid var(--line) !important; box-shadow: 0 1px 6px #00000018 !important; }
 .radio-survey button:disabled { opacity: .45; cursor: not-allowed; }
+.journey-map-toolbar { margin-bottom: 16px; align-items: center; }
+.journey-map-toolbar label.radio-check { display: flex; min-width: 0; font-weight: 500; }
+.journey-map-status { padding: 16px 0 0; align-items: baseline; }
+.current-location-resume { position: absolute; top: calc(var(--hero-pad-top,0px) + 12px); right: calc(var(--hero-pad-right,0px) + 12px); z-index: 500; display: flex; align-items: center; gap: 7px; min-height: 44px; background: var(--paper); }
+.hero .current-location-resume { top: auto; bottom: calc(var(--hero-pad-bottom,0px) + 70px); }
 [data-theme=dark] :is(.radio-survey,.plate-page) { --radio-tile-filter: invert(.93) hue-rotate(180deg) brightness(.88) saturate(.7); }
 @media(prefers-color-scheme:dark) { :root:not([data-theme=light]):not([data-theme=dark]) :is(.radio-survey,.plate-page) { --radio-tile-filter: invert(.93) hue-rotate(180deg) brightness(.88) saturate(.7); } }
 @media(max-width:700px) {

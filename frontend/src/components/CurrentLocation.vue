@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
-import {MapPin} from '@lucide/vue'
+import {LocateFixed,MapPin} from '@lucide/vue'
 import L from 'leaflet'
 import {mapAttribution,mapTiles} from '../services/map-tiles'
 import 'leaflet/dist/leaflet.css'
 import '../radio-map.css'
 import {api,type Observation} from '../services/api'
+import {recentTrail} from '../services/trail'
 
 type Position={fix?:boolean;live?:boolean;at?:string;lat?:number;lon?:number;satellites?:number;accuracyM?:number;qualityAgeSeconds?:number;lastKnown?:{at?:string;lat?:number;lon?:number}}
 // `inset` is the part of a hero map hidden behind other panels, in pixels from each edge.
-// `trail` is the recent driving track as separate line segments of [lat, lon].
-const props=defineProps<{observation?:Observation<Position>;hero?:boolean;inset?:{top:number;right:number;bottom:number;left:number};trail?:[number,number][][]}>()
+const props=defineProps<{observation?:Observation<Position>;hero?:boolean;inset?:{top:number;right:number;bottom:number;left:number}}>()
+const trail=ref<[number,number][][]>([])
+let trailTimer:ReturnType<typeof setInterval>|undefined
+async function loadTrail(){try{const result=await recentTrail(24);if(mounted)trail.value=result}catch{/* retain the last successful track */}}
+function visibilityChanged(){if(!document.hidden)void loadTrail()}
 // The map follows the per-second position; the summary passed in (refreshed less often) is the fallback.
 const live=ref<Observation<Position>>()
 let liveTimer:ReturnType<typeof setInterval>|undefined
@@ -21,7 +25,7 @@ const observation=computed(()=>typeof live.value?.status==='string'?live.value:p
 // recorder's NMEA (written when a clip closes, about every 3 minutes) up to ~10 minutes old,
 // always with its age. Satellites and accuracy come from NMEA and show their own age.
 const MAX_AGE=11*60*1000
-const container=ref<HTMLElement>(),now=ref(Date.now()),tileFailed=ref(false)
+const container=ref<HTMLElement>(),now=ref(Date.now()),tileFailed=ref(false),following=ref(true)
 let zoom=15,markerLive=false,map:L.Map|undefined,marker:L.CircleMarker|undefined,accuracy:L.Circle|undefined,trailLayer:L.LayerGroup|undefined,resize:ResizeObserver|undefined,timer:ReturnType<typeof setInterval>|undefined,mounted=false
 const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)
 const current=computed(()=>{
@@ -32,7 +36,7 @@ const current=computed(()=>{
 const age=computed(()=>current.value?Math.max(0,Math.round((now.value-Date.parse(current.value.at!))/1000)):0)
 const ageText=computed(()=>!current.value||age.value<=20?'':age.value<60?`${age.value}秒前`:`${Math.floor(age.value/60)}分前`)
 const lastKnown=computed<[number,number]|undefined>(()=>{const k=observation.value?.data?.lastKnown;return k&&finite(k.lat)&&finite(k.lon)&&Math.abs(k.lat)<=90&&Math.abs(k.lon)<=180?[k.lat,k.lon]:undefined})
-const lastTrail=computed<[number,number]|undefined>(()=>{if(lastKnown.value)return lastKnown.value;const segments=props.trail||[];for(let i=segments.length-1;i>=0;i--){const seg=segments[i]!;if(seg.length)return seg[seg.length-1]}return undefined})
+const lastTrail=computed<[number,number]|undefined>(()=>{if(lastKnown.value)return lastKnown.value;const segments=trail.value;for(let i=segments.length-1;i>=0;i--){const seg=segments[i]!;if(seg.length)return seg[seg.length-1]}return undefined})
 const lastLabel=computed(()=>lastKnown.value?'最後に分かっている位置':'最後の記録位置')
 const quality=computed(()=>{const d=current.value;if(!d)return {sats:'—',acc:'—'};const a=d.qualityAgeSeconds,suffix=finite(a)&&a>20?(a<60?`（${a}秒前）`:`（${Math.floor(a/60)}分前）`):'';return {sats:finite(d.satellites)?`${d.satellites}${suffix}`:'—',acc:finite(d.accuracyM)&&d.accuracyM>0?`${Math.round(d.accuracyM)} m${suffix}`:'—'}})
 const shown=computed(()=>!!current.value||!!lastTrail.value)
@@ -46,22 +50,23 @@ const canvasStyle=computed(()=>{
  return {left:Math.min(0,x)+'px',right:Math.min(0,-x)+'px',top:Math.min(0,y)+'px',bottom:Math.min(0,-y)+'px'}
 })
 function centre(point:L.LatLngTuple){map?.setView(point,map.getZoom(),{animate:false})}
+function resume(){following.value=true;const point=anchor();if(point)centre(point)}
 function clear(){resize?.disconnect();resize=undefined;map?.remove();map=undefined;marker=undefined;accuracy=undefined;trailLayer=undefined}
 function anchor():L.LatLngTuple|undefined{const gps=current.value;return gps?[gps.lat!,gps.lon!]:lastTrail.value}
-function drawTrail(){if(!map)return;trailLayer?.remove();trailLayer=L.layerGroup();for(const seg of props.trail||[])if(seg.length>1)L.polyline(seg,{color:'#2f5bd8',weight:4,opacity:.75,interactive:false,className:'current-location-trail'}).addTo(trailLayer);trailLayer.addTo(map)}
+function drawTrail(){if(!map)return;trailLayer?.remove();trailLayer=L.layerGroup();for(const seg of trail.value){if(seg.length>1)L.polyline(seg,{color:'#2f5bd8',weight:4,opacity:.75,interactive:false,className:'current-location-trail'}).addTo(trailLayer);else if(seg.length)L.circleMarker(seg[0]!,{radius:3,color:'#2f5bd8',interactive:false,className:'current-location-trail'}).addTo(trailLayer)}trailLayer.addTo(map)}
 function update(){
  if(!mounted||!container.value)return
  const gps=current.value,point=anchor()
  if(!point){clear();return}
  if(!map){
   tileFailed.value=false
-  // The map follows the vehicle, so it is never dragged. A hero map can be zoomed about the position:
-  // with the wheel on a PC, by pinching (or double-tapping) on a touch screen.
-  map=props.hero?L.map(container.value,{zoomControl:false,attributionControl:false,scrollWheelZoom:'center',touchZoom:'center',doubleClickZoom:'center',dragging:false,keyboard:false,minZoom:4,maxZoom:19}).setView(point,zoom):L.map(container.value,{zoomControl:true,scrollWheelZoom:false,dragging:false,keyboard:false,doubleClickZoom:false}).setView(point,15)
+  // Dragging suspends following until the user explicitly returns to the vehicle.
+  map=props.hero?L.map(container.value,{zoomControl:false,attributionControl:false,scrollWheelZoom:'center',touchZoom:'center',doubleClickZoom:'center',dragging:true,keyboard:false,minZoom:4,maxZoom:19}).setView(point,zoom):L.map(container.value,{zoomControl:true,scrollWheelZoom:false,dragging:true,keyboard:false,doubleClickZoom:false}).setView(point,15)
+  map.on('dragstart',()=>following.value=false)
   map.attributionControl?.setPrefix(false)
   if(props.hero)map.on('zoomend',()=>{if(map)zoom=map.getZoom()})
   mapTiles(()=>tileFailed.value=true).addTo(map)
-  resize=new ResizeObserver(()=>{map?.invalidateSize({pan:false});const p=anchor();if(p)centre(p)});resize.observe(container.value)
+  resize=new ResizeObserver(()=>{map?.invalidateSize({pan:false});const p=anchor();if(p&&following.value)centre(p)});resize.observe(container.value)
   drawTrail()
  }
  // The marker is the newest recorded position; without one, the end of the trail is shown greyed.
@@ -73,12 +78,12 @@ function update(){
  else{marker.setLatLng(point);marker.setStyle({fillColor:colour})}
  accuracy?.remove();accuracy=undefined
  if(gps&&finite(gps.accuracyM)&&gps.accuracyM>0)accuracy=L.circle(point,{radius:gps.accuracyM,color:'#397fd7',weight:1,fillOpacity:.1,interactive:false}).addTo(map)
- centre(point)
+ if(following.value)centre(point)
 }
-watch(current,update,{flush:'post'})
-watch(()=>props.trail,()=>{if(map)drawTrail();else update()},{flush:'post'})
-onMounted(()=>{mounted=true;timer=setInterval(()=>now.value=Date.now(),1000);update();loadLive();liveTimer=setInterval(()=>{if(!document.hidden)loadLive()},2000)})
-onUnmounted(()=>{mounted=false;if(timer)clearInterval(timer);if(liveTimer)clearInterval(liveTimer);clear()})
+watch([current,lastTrail],update,{flush:'post'})
+watch(trail,()=>{if(map)drawTrail();else update()},{flush:'post'})
+onMounted(()=>{mounted=true;timer=setInterval(()=>now.value=Date.now(),1000);update();loadLive();liveTimer=setInterval(()=>{if(!document.hidden)loadLive()},2000);void loadTrail();trailTimer=setInterval(()=>{if(!document.hidden)void loadTrail()},60000);document.addEventListener('visibilitychange',visibilityChanged)})
+onUnmounted(()=>{mounted=false;if(timer)clearInterval(timer);if(liveTimer)clearInterval(liveTimer);clearInterval(trailTimer);document.removeEventListener('visibilitychange',visibilityChanged);clear()})
 </script>
 
 <template>
@@ -86,6 +91,7 @@ onUnmounted(()=>{mounted=false;if(timer)clearInterval(timer);if(liveTimer)clearI
   <div class="current-location-frame">
    <div ref="container" class="current-location-canvas radio-map-canvas" :class="{unavailable:!shown}" :style="canvasStyle" aria-label="現在地を示す地図"></div>
    <span v-if="current" class="current-location-label"><i></i>現在地</span>
+   <button v-if="shown&&!following" class="current-location-resume button secondary" @click="resume"><LocateFixed :size="16"/>{{current?'現在地に戻る':'最後の位置に戻る'}}</button>
    <div v-else-if="!shown" class="current-location-empty"><MapPin :size="28" stroke-width="1.5"/><strong>{{label}}</strong><p>測位すると、ここに現在地の地図を表示します。</p></div>
    <!-- On a hero map the readings sit at the bottom left and the map credit at the bottom right, on one line. -->
    <div class="current-location-foot">

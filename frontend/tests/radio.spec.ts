@@ -13,6 +13,7 @@ async function fixture(page:Page,theme:Theme,populated=false){
   if(url.pathname.endsWith('/auth/session'))body={csrf:'synthetic-test'}
   else if(url.pathname.endsWith('/settings'))body={revision:1,theme,locale:'ja',favorites:[]}
   else if(url.pathname.endsWith('/capabilities'))body=[]
+  else if(url.pathname.endsWith('/recordings/track'))body={data:{date:url.searchParams.get('date'),points:[],segments:[]}}
   else if(url.pathname.endsWith('/radio/history'))body={unit:'dBm',points:populated?[{at:'2026-11-11T08:00:00Z',gps:{at:'2026-11-11T08:00:00Z',lat:35,lon:135,accuracyM:4},value:-85,state:'measured',color:'#247976',carrier:'Fixture carrier',band:'B19',source:'synthetic-test',accuracyUnknown:false}]:[],cells:[],total:12,unplaced:populated?11:12,accuracyExcluded:0,missing:0,outOfService:0,carriers:['Fixture carrier'],bands:['B19'],truncated:false,reason:'同時刻の有効な測位がありません'}
   else if(url.pathname.endsWith('/radio/heatmap/legend'))body={unit:url.searchParams.get('metric')==='rsrp'?'dBm':'dB',note:'参考の目安です',thresholds:[{minimum:-80,label:'良好',color:'#247976'}]}
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(body)})
@@ -38,13 +39,13 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'] as co
   await page.emulateMedia({colorScheme:'light'})
   const requests=await fixture(page,theme)
   await page.goto('/#trips')
-  await expect(page.getByText('地図に表示できる測位がありません')).toBeVisible()
+  await expect(page.getByText('この日の位置記録はありません')).toBeVisible()
+  await page.getByLabel('電波強度のヒートマップを表示').check()
   expect(requests).toHaveLength(0)
   let c=await colors(page)
   expect(c.select).toBeGreaterThan(4.5);expect(c.empty).toBeGreaterThan(4.5);expect(c.control).toBeGreaterThan(4.5);expect(c.overflow).toBe(false)
   expect(c.mapBackground).toBe(theme==='dark'?'rgb(17, 19, 24)':'rgb(244, 245, 247)')
   await page.getByLabel('電波の指標').selectOption('sinr');await expect(page.getByText('SINR / dB')).toBeVisible()
-  await page.getByText('絞り込み・地図設定').click()
   const background=page.getByLabel('背景地図を表示')
   await expect(background).toBeChecked();await background.uncheck();await expect(page.locator('.radio-survey .leaflet-tile-pane img')).toHaveCount(0)
   await expect(page.getByText('表示範囲がOpenStreetMapへ送信されます')).toHaveCount(0)
@@ -63,7 +64,8 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'] as co
 }
 for(const theme of ['light','dark'] as const)test(`radio map popup and attribution use ${theme} theme`,async({page},testInfo)=>{
  await page.setViewportSize({width:320,height:780});await fixture(page,theme,true);await page.goto('/#trips')
- await page.locator('.radio-survey .leaflet-interactive').first().click()
+ await page.getByLabel('電波強度のヒートマップを表示').check();await page.getByLabel(/^表示/).selectOption('points')
+ await page.locator('.radio-overlay').first().click()
  await expect(page.locator('.radio-survey .leaflet-popup')).toBeVisible()
  await expect(page.locator('.radio-survey .leaflet-popup')).toHaveCSS('opacity','1')
  await expect(page.locator('.radio-survey .leaflet-popup')).toContainText('Fixture carrier / B19')
@@ -86,6 +88,7 @@ test('map images keep an origin Referer even on a no-referrer page',async({page}
  await fixture(page,'light',true)
  await page.route('https://tile.openstreetmap.org/**',async route=>{headers.push(await route.request().allHeaders());await route.fulfill({contentType:'image/png',body:tile})})
  await page.goto('/#trips')
+ await page.getByLabel('電波強度のヒートマップを表示').check();await page.getByLabel(/^表示/).selectOption('points')
  await expect.poll(()=>headers.length).toBeGreaterThan(0)
  expect(headers.every(h=>h.referer===new URL(page.url()).origin+'/')).toBe(true)
  await expect(page.locator('.radio-survey .leaflet-tile').first()).toHaveAttribute('referrerpolicy','strict-origin-when-cross-origin')

@@ -34,3 +34,23 @@ func TestDayTrackRejectsBadDateAndFutureFixes(t *testing.T) {
 		t.Fatal("future position displayed", out, err)
 	}
 }
+
+func TestWindowTrackCoversElapsed24HoursAcrossJSTMidnight(t *testing.T) {
+	now := time.Date(2026, 11, 12, 3, 0, 0, 0, time.UTC)
+	from := now.Add(-24 * time.Hour)
+	midnight := time.Date(2026, 11, 11, 15, 0, 0, 0, time.UTC)
+	snapshot := Snapshot{Samples: []Sample{sample(from.Add(-time.Second), 35, 139, 10), sample(from, 35, 139, 10), sample(midnight.Add(-time.Second), 35, 139, 10), sample(midnight, 35, 139.0001, 10), sample(now, 35, 139, 10), sample(now.Add(time.Second), 35, 139, 10)}}
+	out, err := WindowTrack(snapshot, from, now, now)
+	if err != nil || len(out.Points) != 4 || !out.Points[0].At.Equal(from) || !out.Points[3].At.Equal(now) {
+		t.Fatal(out, err)
+	}
+	if out.Points[1].Segment != out.Points[2].Segment {
+		t.Fatal("midnight split a continuous measured segment")
+	}
+	if _, err = WindowTrack(snapshot, from.Add(-time.Second), now, now); err == nil {
+		t.Fatal("unbounded window accepted")
+	}
+	if _, err = WindowTrack(snapshot, now, from, now); err == nil {
+		t.Fatal("reversed window accepted")
+	}
+}

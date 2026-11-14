@@ -18,6 +18,7 @@ func TestRadioQueriesAreBoundedAndReadOnly(t *testing.T) {
 		{"", 200}, {"?days=365&cellSize=20&metric=sinr", 200},
 		{"?days=0", 400}, {"?days=366", 400}, {"?days=abc", 400},
 		{"?cellSize=1", 400}, {"?metric=invalid", 400},
+		{"?date=2026-11-11", 200}, {"?date=2026-02-30", 400}, {"?date=2026-11-11&days=7", 400}, {"?date=2026-11-11&date=2026-11-12", 400},
 	} {
 		response := httptest.NewRecorder()
 		server.radioHistory(response, httptest.NewRequest("GET", "http://localhost/radio/history"+tc.query, nil))

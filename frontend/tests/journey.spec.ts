@@ -68,6 +68,6 @@ for(const empty of [false,true])test(`drive history shows ${empty?'no-fix eviden
  await expect(page.getByRole('heading',{name:'日別の詳細',exact:true})).toBeVisible()
  if(empty){await expect(page.getByTestId('trip-distance')).toHaveText('—km');await expect(page.getByText('距離・走行時間は未計測です')).toBeVisible();await expect(page.getByText('未測位 180 件',{exact:false})).toBeVisible();await expect(page.locator('.dh-trip-list')).toHaveCount(0)}
  else {await expect(page.locator('.dh-trip-list>li')).toHaveCount(1);await expect(page.locator('.dh-trip-list')).toContainText('09:00:00');await expect(page.locator('.dh-trip-list')).toContainText('0時間 15分');await page.getByLabel('詳細を表示する日付').fill('2026-11-06');await expect(page.getByText('この日に有効な連続測位の記録はありません。')).toBeVisible()}
- await expect(page.getByRole('heading',{name:'電波マップ',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await expect(page.getByRole('heading',{name:'走行履歴マップ',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:testInfo.outputPath(`drive-history-${empty?'empty':'populated'}-320.png`),fullPage:true})
 })
