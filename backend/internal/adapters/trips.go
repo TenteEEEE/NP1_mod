@@ -92,19 +92,20 @@ func HandleTrips(w http.ResponseWriter, r *http.Request) {
 func LatestGNSS(ctx context.Context, at time.Time) (*trips.Sample, error) {
 	return liveGNSS.Latest(ctx, at)
 }
+
+// gnssRecentWindow covers one closed recording clip (about three minutes) with margin.
+const gnssRecentWindow = 10 * time.Minute
+
 func GNSSSummary(ctx context.Context) model.Observation {
 	snapshot, e := tripIndex.Read(ctx)
 	if e != nil {
 		return model.Missing("stock-recording-nmea", e.Error())
 	}
-	fix, e := LatestGNSS(ctx, time.Now())
+	now := time.Now()
+	fix, e := liveGNSS.LatestWithin(ctx, now, gnssRecentWindow)
 	if e != nil {
 		return model.Missing("stock-recording-nmea", e.Error())
 	}
-	if fix == nil {
-		value := model.Missing("stock-recording-nmea", "直近5秒以内の有効な測位はありません")
-		value.Data = map[string]any{"fix": false, "sourceFiles": snapshot.Files, "noFixSentences": snapshot.NoFix, "indexedAt": snapshot.IndexedAt}
-		return value
-	}
-	return model.Value("stock-recording-nmea", map[string]any{"fix": true, "at": fix.At, "lat": fix.Lat, "lon": fix.Lon, "hdop": fix.HDOP, "accuracyM": fix.AccuracyM, "satellites": fix.Satellites})
+	meta, moving := liveMeta.read(now)
+	return combineGNSS(now, meta, moving, fix, map[string]any{"sourceFiles": snapshot.Files, "noFixSentences": snapshot.NoFix, "indexedAt": snapshot.IndexedAt})
 }

@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css'
 import {AlertTriangle,Camera,Image as ImageIcon,MapPin,Play,Plus,RefreshCw,ScanLine,Trash2,Upload,Volume2,X} from '@lucide/vue'
 import {api,apiUpload,bytes} from '../services/api'
 import {plateDisplay,sensorLabel,speechLabel,collectorLabel,newRuleId,jstDay,speechPreview,jobLabel,toClipWav,defaultPlateLED,type PlateRecord,type PlateRecordsResponse,type PlateRule,type PlateSettings,type PlateSpeech,type PlateStatus} from '../services/plate'
+import PlateClipDialog from './PlateClipDialog.vue'
 import '../plate-recognition.css'
 import '../radio-map.css'
 
@@ -14,7 +15,7 @@ const status=ref<PlateStatus>(),settings=ref<PlateSettings>(),draft=ref<PlateSet
 const records=ref<PlateRecordsResponse['records']>([]),truncated=ref(false),listReason=ref(''),listError=ref('')
 const loading=ref(false),saving=ref(false),error=ref(''),notice=ref('')
 const from=ref(jstDay(-6)),to=ref(jstDay(0)),matchedOnly=ref(false),query=ref(''),online=ref(true)
-const selectedId=ref(''),imageFor=ref<PlateRecord>()
+const selectedId=ref(''),imageFor=ref<PlateRecord>(),clipFor=ref<PlateRecord>()
 const speech=ref<PlateSpeech>(),uploading=ref(''),previewing=ref(''),listen=ref('')
 const tileFailed=ref(false)
 const mapEl=ref<HTMLElement>(),listEl=ref<HTMLElement>()
@@ -116,8 +117,9 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
        <span class="plate-badge" :class="{hit:record.matches.length}">{{plateDisplay(record)}}</span>
        <span class="plate-meta"><time :datetime="record.firstSeen">{{time(record.firstSeen)}}</time><span v-if="record.sightings>1">{{record.sightings}}回検出</span><span>信頼度 {{Math.round(record.reading.confidence*100)}}%</span><span :class="{'plate-nofix':!record.location}">{{record.location?'位置あり':'位置なし'}}</span></span>
       </button>
-      <div v-if="record.matches.length||record.imageId||record.imageNote||record.speech" class="plate-item-extra">
+      <div class="plate-item-extra">
        <span v-for="m in record.matches" :key="m.ruleId" class="plate-rule-tag">{{m.ruleName}}</span>
+       <button class="text-button" :aria-label="`${plateDisplay(record)} の録画を再生`" @click="clipFor=record"><Play :size="14"/>録画を再生</button>
        <button v-if="imageAvailable" class="text-button" @click="imageFor=record"><ImageIcon :size="14"/>画像を見る</button>
        <span v-else-if="record.imageId" class="muted plate-small">画像は保存期間・容量上限により削除済み</span>
        <span v-else-if="record.imageNote" class="muted plate-small">{{record.imageNote}}</span>
@@ -137,6 +139,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
      <label>同じ車両とみなす間隔（秒）<input v-model.number="draft.mergeSeconds" type="number" min="5" max="300" inputmode="numeric"></label>
      <label>記録する信頼度の下限<input v-model.number="draft.minConfidence" type="number" min="0.3" max="0.99" step="0.05" inputmode="decimal"></label>
      <label>記録に必要な検出回数<input v-model.number="draft.minSightings" type="number" min="1" max="5" inputmode="numeric"></label>
+     <label title="この信頼度以上で読めたナンバーは、1回の検出で記録します（対向車など、一瞬しか写らない車のため）。1で無効。">1回で記録する信頼度<input v-model.number="draft.instantConfidence" type="number" min="0.6" max="1" step="0.05" inputmode="decimal"></label>
     </div>
     <p class="hint">同じ車両として指定回数以上読めたものだけを記録します（1回だけの誤読を除くため、既定は2回）。保存日数や容量を超えた記録・画像は古いものから削除されます。記録と画像はこの端末内だけに保存されます。</p>
    </div>
@@ -205,6 +208,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
    </dl>
   </section>
 
+  <PlateClipDialog v-if="clipFor" :record="clipFor" @close="clipFor=undefined"/>
   <div v-if="imageFor" class="modal-backdrop" @click.self="imageFor=undefined">
    <section class="modal plate-image-modal" role="dialog" aria-modal="true" :aria-label="`${plateDisplay(imageFor)} の画像`">
     <div class="modal-title"><h2>{{plateDisplay(imageFor)}}</h2><button class="icon-button" aria-label="閉じる" @click="imageFor=undefined"><X :size="16"/></button></div>

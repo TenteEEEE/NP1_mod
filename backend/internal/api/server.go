@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -54,6 +55,7 @@ type Server struct {
 	logger     LoggerState
 	journeys   *journeyArchiveCollector
 	plates     *plateService
+	tailnet    tailnetHosts
 }
 
 func New(c config.Config) *Server {
@@ -116,7 +118,7 @@ func (s *Server) Handler() http.Handler {
 			if h, _, e := net.SplitHostPort(host); e == nil {
 				host = h
 			}
-			allowed := net.ParseIP(host) != nil || host == "localhost"
+			allowed := net.ParseIP(host) != nil || host == "localhost" || s.tailnet.allowed(host)
 			for _, h := range s.cfg.TrustedHosts {
 				if h == host {
 					allowed = true
@@ -130,7 +132,12 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Cache-Control", "no-store")
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			// Bundled files carry a content hash in their names, so they never change in place.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
@@ -166,7 +173,7 @@ func (s *Server) Handler() http.Handler {
 				}
 			}
 		}
-		s.mux.ServeHTTP(w, r)
+		withCompression(w, r, func(w http.ResponseWriter) { s.mux.ServeHTTP(w, r) })
 	})
 }
 func (s *Server) proxy(w http.ResponseWriter, r *http.Request, target string) {
@@ -298,6 +305,7 @@ func (s *Server) routes() {
 	for path, key := range map[string]string{"/network/wan": "routes", "/network/modem": "modem", "/network/apn": "modem", "/network/wifi-sta": "wifi", "/network/traffic": "traffic", "/storage/sd": "sd", "/device/usb": "usb", "/device/gps": "gps", "/device/sensors": "temperatures", "/vpn/tailscale/status": "tailscale"} {
 		s.mux.HandleFunc("GET /api/v1"+path, s.observation(key))
 	}
+	s.mux.HandleFunc("GET /api/v1/device/gps/live", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/gps") })
 	s.mux.HandleFunc("GET /api/v1/device/led", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/led") })
 	s.registerAudio()
 	s.registerScreenLEDRoutes()
@@ -345,13 +353,7 @@ func (s *Server) routes() {
 		jsonOut(w, 200, s.settings)
 	})
 	s.mux.HandleFunc("PUT /api/v1/settings", s.saveSettings)
-	s.mux.HandleFunc("POST /api/v1/backup/export", func(w http.ResponseWriter, r *http.Request) {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.audit("backup.export", "settings-only")
-		w.Header().Set("Content-Disposition", "attachment; filename=ncc-settings.json")
-		jsonOut(w, 200, map[string]any{"schemaVersion": 1, "settings": s.settings, "excludes": []string{"credentials", "tls", "tailscale", "position", "media", "vendor-settings"}})
-	})
+	s.mux.HandleFunc("POST /api/v1/backup/export", s.exportFullBackup)
 	s.mux.HandleFunc("POST /api/v1/backup/restore", s.restoreSettings)
 	s.mux.HandleFunc("GET /api/v1/logs", func(w http.ResponseWriter, r *http.Request) {
 		s.auditMu.Lock()
@@ -533,13 +535,33 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	s.commit(w, v.Settings, v.ExpectedRevision)
 }
 func (s *Server) restoreSettings(w http.ResponseWriter, r *http.Request) {
+	raw, e := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<20))
+	if e != nil {
+		fail(w, 400, "INVALID_INPUT", "入力を確認してください")
+		return
+	}
+	var head struct {
+		SchemaVersion int `json:"schemaVersion"`
+	}
+	if json.Unmarshal(raw, &head) == nil && head.SchemaVersion == 2 {
+		s.restoreFullBackup(w, r, raw)
+		return
+	}
+	session, _ := s.auth.Get(r)
+	if !auth.Allowed(session.Role, "settings") {
+		fail(w, 403, "PERMISSION_DENIED", "管理者権限が必要です")
+		return
+	}
 	var v struct {
 		SchemaVersion    int      `json:"schemaVersion"`
 		ExpectedRevision int      `json:"expectedRevision"`
 		DryRun           bool     `json:"dryRun"`
 		Settings         Settings `json:"settings"`
 	}
-	if !decode(w, r, &v) {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if d.Decode(&v) != nil {
+		fail(w, 400, "INVALID_INPUT", "入力を確認してください")
 		return
 	}
 	if v.SchemaVersion != 1 || !validateSettings(v.Settings) {

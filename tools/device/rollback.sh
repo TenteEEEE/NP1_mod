@@ -5,6 +5,22 @@ BASE=/overlay/owner-apps/np1-control
 BACKUP=$(cat "$BASE/recovery/latest")
 case "$BACKUP" in "$BASE"/recovery/[0-9]*T[0-9]*Z) ;; *) echo 'Invalid recovery path' >&2; exit 1;; esac
 test -d "$BACKUP"
+if test ! -f "$BACKUP/np1-control-uplink.service"; then
+    systemctl stop np1-control-uplink.service || true
+    python3 "$(dirname "$0")/postboot.py" remove-uplink
+    rm -f /etc/systemd/system/np1-control-uplink.service
+else
+    cp -p "$BACKUP/np1-control-uplink.service" /etc/systemd/system/np1-control-uplink.service
+fi
+if test ! -f "$BACKUP/np1-control-ota-guard.service"; then
+    # The guard is new in this installation: stop it and remove its network layer.
+    systemctl stop np1-control-ota-guard.service || true
+    sh "$(dirname "$0")/ota-policy.sh" guard-release || true
+    python3 "$(dirname "$0")/postboot.py" remove-ota-guard
+    rm -f /etc/systemd/system/np1-control-ota-guard.service
+else
+    cp -p "$BACKUP/np1-control-ota-guard.service" /etc/systemd/system/np1-control-ota-guard.service
+fi
 if test -f "$BACKUP/ota-policy-initialized" && test -f "$BASE/private/ota-policy/ledger.json"; then
     sh "$(dirname "$0")/ota-policy.sh" rollback
 fi

@@ -3,6 +3,15 @@
 set -eu
 BASE=/overlay/owner-apps/np1-control
 test "$(id -u)" = 0
+# Stop the uplink switcher first; it leaves the stock STA mode as it is (the owner can change it in the stock settings).
+systemctl stop np1-control-uplink.service || true
+python3 "$(dirname "$0")/postboot.py" remove-uplink
+rm -f /etc/systemd/system/np1-control-uplink.service
+# Stop the guard and remove its network layer before the flag, so neither is rebuilt.
+systemctl stop np1-control-ota-guard.service || true
+sh "$(dirname "$0")/ota-policy.sh" guard-release || true
+python3 "$(dirname "$0")/postboot.py" remove-ota-guard
+rm -f /etc/systemd/system/np1-control-ota-guard.service
 if test -f "$BASE/private/ota-policy/ledger.json"; then sh "$(dirname "$0")/ota-policy.sh" uninstall; fi
 systemctl stop np1-control-apn.service || true
 systemctl stop np1-control-plate.service || true

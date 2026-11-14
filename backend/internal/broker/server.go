@@ -89,6 +89,7 @@ func Serve(socket string, uid uint32) error {
 	mux.HandleFunc("GET /device/ota-policy", adapters.HandleOTAPolicy)
 	mux.HandleFunc("PUT /device/ota-policy", adapters.HandleOTAPolicy)
 	adapters.RegisterWiFiHandlers(mux)
+	adapters.RegisterOwnerBackupHandlers(mux)
 	// Recovery owns its own rollback context and does not wait for a browser visit.
 	go func() { _ = adapters.RecoverWiFi(ctx) }()
 	mux.HandleFunc("GET /apn", adapters.HandleAPNSettings)
@@ -138,6 +139,10 @@ func Serve(socket string, uid uint32) error {
 		result["recording"] = adapters.RecordingSummary(r.Context())
 		result["hotspot"] = adapters.APStatus()
 		json.NewEncoder(w).Encode(result)
+	})
+	// The dashboard map polls the position alone every couple of seconds.
+	mux.HandleFunc("GET /gps", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(adapters.GNSSSummary(r.Context()))
 	})
 	mux.HandleFunc("GET /capabilities", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(adapters.Capabilities()) })
 	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {

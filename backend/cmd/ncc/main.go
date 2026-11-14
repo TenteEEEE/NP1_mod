@@ -11,6 +11,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/modem"
+	"github.com/np1-control-center/ncc/internal/otaguard"
 	"github.com/np1-control-center/ncc/internal/otapolicy"
 	"log"
 	"net"
@@ -29,6 +30,7 @@ func main() {
 	uid := flag.Uint("worker-uid", 65534, "permitted peer UID")
 	otaAction := flag.String("ota-action", "status", "fixed OTA policy action")
 	apnRevision := flag.Int("apn-revision", 0, "private APN editor revision for fixed worker child")
+	trialSeconds := flag.Int("trial-seconds", 90, "sta-outage-trial: seconds without Wi-Fi")
 	flag.Parse()
 	switch *mode {
 	case "owned-cellular-session-probe":
@@ -116,6 +118,51 @@ func main() {
 		}
 		if e = json.NewEncoder(os.Stdout).Encode(value); e != nil {
 			log.Fatal(e)
+		}
+		return
+	case "uplink-supervisor":
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		if e := adapters.RunUplinkSupervisor(ctx); e != nil {
+			log.Fatal(e)
+		}
+		return
+	case "wifi-scan-probe":
+		adapters.WiFiScanProbe(os.Stdout)
+		return
+	case "sta-outage-trial":
+		// Field trial: disconnect the saved Wi-Fi for --trial-seconds, watch the uplinks, reconnect.
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer stop()
+		if e := adapters.RunSTAOutageTrial(ctx, time.Duration(*trialSeconds)*time.Second, os.Stdout); e != nil {
+			log.Fatal(e)
+		}
+		return
+	case "ota-guard":
+		// run: keep checking (unit np1-control-ota-guard); check: one round; release: remove the network layer.
+		guard := otaguard.Device(func() (otaguard.FlagState, error) {
+			v, e := otapolicy.Enforce()
+			return otaguard.FlagState{Disabled: v.Disabled, Managed: v.Managed, Protected: v.Protected, Heals: v.Heals, LastHeal: v.LastHeal}, e
+		}, otapolicy.FirmwareMatches)
+		switch *otaAction {
+		case "run":
+			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+			defer stop()
+			guard.Loop(ctx, 30*time.Second)
+		case "check":
+			report := guard.Check(context.Background())
+			if e := guard.Save(report); e != nil {
+				log.Fatal(e)
+			}
+			if e := json.NewEncoder(os.Stdout).Encode(report); e != nil {
+				log.Fatal(e)
+			}
+		case "release":
+			if e := guard.Release(context.Background()); e != nil {
+				log.Fatal(e)
+			}
+		default:
+			log.Fatal("unknown OTA guard action")
 		}
 		return
 	case "profiles-observer-check":

@@ -9,6 +9,9 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,13 +36,23 @@ func (f *fakeSensor) handler() http.Handler {
 		json.NewEncoder(w).Encode(PlateSensorStatus{State: "model-missing", Reason: "fixture", Instance: f.instance})
 	})
 	mux.HandleFunc("GET /detections", func(w http.ResponseWriter, r *http.Request) {
-		next := uint64(0)
+		// Like the real sensor: only detections after the cursor, next echoes the cursor
+		// when there are none, and last is the newest number this process produced.
+		after, _ := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
+		next, last := after, uint64(0)
+		out := []plate.Detection{}
 		for _, d := range f.detections {
-			if d.Seq > next {
-				next = d.Seq
+			if d.Seq > last {
+				last = d.Seq
+			}
+			if d.Seq > after {
+				out = append(out, d)
+				if d.Seq > next {
+					next = d.Seq
+				}
 			}
 		}
-		json.NewEncoder(w).Encode(plateBatch{Instance: f.instance, Next: next, Detections: f.detections})
+		json.NewEncoder(w).Encode(plateBatch{Instance: f.instance, Next: next, Last: &last, Detections: out})
 	})
 	mux.HandleFunc("GET /frames/{id}", func(w http.ResponseWriter, r *http.Request) {
 		f.frameHits++
@@ -274,7 +287,10 @@ func TestPlatePollRecordsImageAndUnsupportedSpeech(t *testing.T) {
 	if len(said) != 1 || said[0] != "対象|やりますねぇ！|12-34" {
 		t.Fatalf("speech %v", said)
 	}
-	res = request(t, client, ts, "GET", "/plate/records?matched=true", "", nil)
+	// The second reading is an hour later, which falls on the next JST day when the test runs
+	// between 23:00 and 24:00 JST; ask for both days instead of the default range.
+	jst := time.FixedZone("JST", 9*60*60)
+	res = request(t, client, ts, "GET", "/plate/records?matched=true&from="+now.In(jst).Format("2006-01-02")+"&to="+now.Add(time.Hour).In(jst).Format("2006-01-02"), "", nil)
 	json.NewDecoder(res.Body).Decode(&body)
 	res.Body.Close()
 	spoken := false
@@ -392,5 +408,65 @@ func TestPlateStatusWhenSensorMissing(t *testing.T) {
 	res.Body.Close()
 	if status.Sensor.State != "unavailable" || status.Speech.Available {
 		t.Fatalf("status %+v", status)
+	}
+}
+
+// A cursor saved beyond the sensor's newest number (the sensor numbered from 1 again under
+// the same instance) must not make the server ignore every new detection. Seen on the device
+// on 2026-11-13: cursor 3466 against a sensor at a few hundred, no records for hours.
+func TestPlatePollRecoversFromAStaleCursor(t *testing.T) {
+	now := time.Now().UTC()
+	sensor := &fakeSensor{instance: "same-instance", detections: []plate.Detection{
+		{Seq: 1, At: now, Reading: plate.Reading{Region: "相模", Class: "583", Number: "1919", Confidence: 0.91}},
+		{Seq: 2, At: now.Add(time.Second), Reading: plate.Reading{Region: "相模", Class: "583", Number: "1919", Confidence: 0.92}},
+	}}
+	srv, ts, client, csrf := plateFixture(t, sensor)
+	srv.plates.mu.Lock()
+	srv.plates.instance, srv.plates.cursor = "same-instance", 3466
+	srv.plates.mu.Unlock()
+	s := plate.DefaultSettings()
+	s.Enabled = true
+	s.MinSightings = 1
+	putPlateSettings(t, client, ts, csrf, 1, s).Body.Close()
+	if n := srv.plates.poll(context.Background()); n != 2 {
+		t.Fatalf("ingested %d detections after a stale cursor; want 2", n)
+	}
+	srv.plates.mu.Lock()
+	cursor := srv.plates.cursor
+	srv.plates.mu.Unlock()
+	if cursor != 2 {
+		t.Fatalf("cursor %d", cursor)
+	}
+	if n := srv.plates.poll(context.Background()); n != 0 {
+		t.Fatalf("re-ingested %d", n)
+	}
+}
+
+func TestPlateHealthLogRecordsOneLinePerCallAndPrunesOldDays(t *testing.T) {
+	srv, _, _, _ := plateFixture(t, &fakeSensor{instance: "health"})
+	p := srv.plates
+	dir := filepath.Join(p.dir, "health")
+	os.MkdirAll(dir, 0o700)
+	os.WriteFile(filepath.Join(dir, "2026-11-01.jsonl"), []byte("{}\n"), 0o600)
+	now := time.Date(2026, 11, 14, 3, 0, 0, 0, time.UTC)
+	p.mu.Lock()
+	p.ingested, p.sensorLast = 3, 42
+	p.mu.Unlock()
+	p.writeHealth(now)
+	p.writeHealth(now.Add(time.Minute))
+	b, e := os.ReadFile(filepath.Join(dir, "2026-11-14.jsonl"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	var first map[string]any
+	if len(lines) != 2 || json.Unmarshal([]byte(lines[0]), &first) != nil || first["ingested"] != float64(3) || first["sensorLast"] != float64(42) {
+		t.Fatalf("health lines: %q", lines)
+	}
+	if !strings.Contains(lines[1], `"ingested":0`) {
+		t.Fatal("ingested count is not reset per line")
+	}
+	if _, e := os.Stat(filepath.Join(dir, "2026-11-01.jsonl")); !os.IsNotExist(e) {
+		t.Fatal("old health day kept")
 	}
 }

@@ -37,6 +37,8 @@ const (
 	platePollInterval  = time.Second
 	plateStatusEvery   = 10 * time.Second
 	platePruneInterval = 10 * time.Minute
+	plateHealthEvery   = time.Minute
+	plateHealthDays    = 7
 	plateBatchLimit    = 2 << 20
 	plateFrameLimit    = 4 << 20
 	plateSettingsLimit = 64 * 1024
@@ -57,6 +59,7 @@ type PlateSensorStatus struct {
 type plateBatch struct {
 	Instance   string            `json:"instance"`
 	Next       uint64            `json:"next"`
+	Last       *uint64           `json:"last"`
 	Detections []plate.Detection `json:"detections"`
 }
 
@@ -84,6 +87,10 @@ type plateService struct {
 	cursor    uint64
 	lastPoll  time.Time
 	errorCode string
+	// Health log inputs: the sensor's newest sequence number and records ingested since the
+	// last health line.
+	sensorLast uint64
+	ingested   int
 }
 
 func unixClient(path string) *http.Client {
@@ -184,10 +191,21 @@ func (p *plateService) poll(ctx context.Context) int {
 		return 0
 	}
 	p.mu.Lock()
-	if batch.Instance != p.instance {
-		// The sensor restarted; its sequence numbers start again.
+	if batch.Instance != p.instance || (batch.Last != nil && *batch.Last < cursor) {
+		// The sensor restarted; its sequence numbers start again. A saved cursor beyond the
+		// sensor's newest number means the same: without this check every new detection
+		// would be ignored until the sensor caught up with the old cursor.
 		p.instance, p.cursor = batch.Instance, 0
 		cursor = 0
+		p.mu.Unlock()
+		if e := p.sensorGet(ctx, "/detections?after=0", plateBatchLimit, &batch); e != nil {
+			p.recordPoll("sensor-unavailable")
+			return 0
+		}
+		p.mu.Lock()
+	}
+	if batch.Last != nil {
+		p.sensorLast = *batch.Last
 	}
 	p.mu.Unlock()
 	if batch.Next < cursor {
@@ -215,6 +233,7 @@ func (p *plateService) poll(ctx context.Context) int {
 		p.cursor = batch.Next
 	}
 	instance, next := p.instance, p.cursor
+	p.ingested += count
 	p.mu.Unlock()
 	if advanced {
 		if e := config.Atomic(filepath.Join(p.dir, "cursor.json"), map[string]any{"instance": instance, "cursor": next}); e != nil {
@@ -294,12 +313,16 @@ func (p *plateService) collect(ctx context.Context) {
 	ticker := time.NewTicker(platePollInterval)
 	defer ticker.Stop()
 	defer p.store.Flush()
-	var statusAt, pruneAt time.Time
+	var statusAt, pruneAt, healthAt time.Time
 	for {
 		now := p.clock()
 		if now.Sub(statusAt) >= plateStatusEvery {
 			p.refreshStatus(ctx)
 			statusAt = now
+		}
+		if now.Sub(healthAt) >= plateHealthEvery {
+			p.writeHealth(now)
+			healthAt = now
 		}
 		if now.Sub(pruneAt) >= platePruneInterval {
 			_, _ = p.store.Prune(p.currentSettings())
@@ -554,4 +577,39 @@ func (s *Server) registerPlateSpeech() {
 		}
 		jsonOut(w, 200, points)
 	})
+}
+
+// writeHealth appends one line per minute to state/plate/health/<date>.jsonl, kept for a week.
+// The device journal does not survive a reboot, so this is what tells afterwards whether a
+// gap in records came from the collector (no lines), the camera (old lastFrameAt), the
+// detector (sensorLast not moving) or simply no plates in view.
+func (p *plateService) writeHealth(now time.Time) {
+	p.mu.Lock()
+	line := map[string]any{"at": now.UTC(), "enabled": p.settings.Enabled, "sensor": p.status.State, "reason": p.status.Reason,
+		"fps": p.status.FPS, "lastFrameAt": p.status.LastFrameAt, "instance": p.instance, "cursor": p.cursor,
+		"sensorLast": p.sensorLast, "ingested": p.ingested, "lastPollAt": p.lastPoll, "pollError": p.errorCode}
+	p.ingested = 0
+	p.mu.Unlock()
+	dir := filepath.Join(p.dir, "health")
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	b, e := json.Marshal(line)
+	if e != nil {
+		return
+	}
+	f, e := os.OpenFile(filepath.Join(dir, now.UTC().Format("2006-01-02")+".jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if e != nil {
+		return
+	}
+	f.Write(append(b, '\n'))
+	f.Close()
+	if entries, e := os.ReadDir(dir); e == nil {
+		cutoff := now.UTC().AddDate(0, 0, -plateHealthDays).Format("2006-01-02")
+		for _, entry := range entries {
+			if name := entry.Name(); len(name) >= 10 && name[:10] < cutoff {
+				os.Remove(filepath.Join(dir, name))
+			}
+		}
+	}
 }
