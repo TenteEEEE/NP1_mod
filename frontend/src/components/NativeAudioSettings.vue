@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed,onMounted,ref } from 'vue'
+import { computed,onMounted,ref,watch } from 'vue'
 import { api,type Observation } from '../services/api'
 
 type AudioData={masterVolume:number;mute:{value:number;enabled:boolean};correction:{value:number;label:string};writable:boolean;reason?:string}
 type SettingID='mute'|'volume-correction'
+const emit=defineEmits<{busy:[value:boolean]}>()
 const state=ref<Observation<AudioData>>(),loading=ref(true),busy=ref<SettingID>(),draftMute=ref(false),draftCorrection=ref(0),error=ref(''),message=ref('')
+watch(()=>loading.value||Boolean(busy.value),value=>emit('busy',value),{immediate:true})
 function valid(value?:Observation<AudioData>){const d=value?.data;return value?.status==='available'&&d&&Number.isInteger(d.masterVolume)&&d.masterVolume>=0&&d.masterVolume<=2147483647&&[0,1].includes(d.mute?.value)&&typeof d.mute.enabled==='boolean'&&d.mute.enabled===(d.mute.value===0)&&[0,1,2].includes(d.correction?.value)&&typeof d.writable==='boolean'}
 const writable=computed(()=>valid(state.value)&&state.value?.data.writable)
 const muteChanged=computed(()=>valid(state.value)&&draftMute.value!==state.value?.data.mute.enabled)

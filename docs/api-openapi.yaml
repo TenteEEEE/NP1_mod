@@ -606,6 +606,55 @@ paths:
       summary: 常時ロガーの稼働・保存件数・測位つき件数
       responses:
         '200': {description: 'Observation.dataにenabled/active/stored/located/lastObservedAt/lastStoredAt。個別同意ゲートなし。'}
+  /device/native-operations:
+    get:
+      summary: 純正の本体操作の項目・選択肢・利用可否
+      responses:
+        '200': {description: 'groupsとavailable。実際の状態はstateで再照会する。'}
+  /device/native-operations/state/{group}:
+    get:
+      summary: 純正SettingまたはDriveRecへ固定の状態照会
+      parameters:
+        - {in: path, name: group, required: true, schema: {type: string, enum: [storage, recorder, parking, vehicle, installation, alignment]}}
+      responses:
+        '200': {description: 'valuesとobservedAt。照合済みの純正応答。'}
+        '503': {description: '応答・cleanup未確認'}
+  /device/native-operations/settings/{id}:
+    put:
+      summary: 固定の録画・駐車監視・車両設定を変更して再照会
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [expectedValue, value], properties: {expectedValue: {type: integer, minimum: 0}, value: {type: integer, minimum: 0}}}
+      responses:
+        '200': {description: 'readback=trueと再照会値。永続保存完了とは別。'}
+        '503': {description: '結果未確認。自動再送しない。'}
+  /device/native-operations/sd-format/prepare:
+    post:
+      summary: SDの状態・カード識別を確認し1分の単回tokenを発行（消去なし）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '200': {description: 'token、expiresAt、capacityBytes。カード識別子は返さない。'}
+        '409': {description: '対象が不明・未挿入・処理中'}
+  /device/native-operations/sd-format/execute:
+    post:
+      summary: 同一カード・単回確認を照合し純正フォーマット要求を1回送信
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [token, confirmation, acknowledgeDataLoss], properties: {token: {type: string}, confirmation: {type: string, enum: [SDカードを消去]}, acknowledgeDataLoss: {type: boolean, enum: [true]}}}
+      responses:
+        '202': {description: 'accepted=true、completionConfirmed=false。受付のみで完了とはみなさない。'}
+        '409': {description: '期限切れ・カード交換・確認token再利用'}
+        '503': {description: '結果未確認。自動再送しない。'}
   /device/native-settings:
     get:
       summary: ファームウェア照合済みの純正設定と操作可能な選択肢

@@ -100,6 +100,8 @@ func Serve(socket string, uid uint32) error {
 		json.NewEncoder(w).Encode(adapters.RadioSample(r.Context(), modemObserver.Get()))
 	})
 	mux.HandleFunc("GET /native-settings", adapters.HandleNativeSettings)
+	mux.HandleFunc("GET /native-operations", adapters.HandleNativeOperationsCatalog)
+	mux.HandleFunc("/native-operations/", adapters.HandleNativeOperationsRemote)
 	mux.HandleFunc("GET /native-audio", adapters.HandleNativeAudioRemote)
 	mux.HandleFunc("PUT /native-audio/{id}", adapters.HandleNativeAudioRemote)
 	mux.HandleFunc("GET /trips", adapters.HandleTrips)

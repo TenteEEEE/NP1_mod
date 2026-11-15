@@ -308,6 +308,21 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/trips", s.journeys.history)
 	s.mux.HandleFunc("GET /api/v1/trips/archive", s.journeys.status)
 	s.mux.HandleFunc("GET /api/v1/device/native-settings", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-settings") })
+	s.mux.HandleFunc("GET /api/v1/device/native-operations", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-operations") })
+	s.mux.HandleFunc("GET /api/v1/device/native-operations/state/{group}", func(w http.ResponseWriter, r *http.Request) {
+		s.proxy(w, r, "/native-operations/state/"+url.PathEscape(r.PathValue("group")))
+	})
+	s.mux.HandleFunc("PUT /api/v1/device/native-operations/settings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.forwardControlLimit(w, r, "/native-operations/settings/"+url.PathEscape(r.PathValue("id")), "native.operation.setting", 2048)
+	})
+	for _, action := range []string{"prepare", "execute"} {
+		s.mux.HandleFunc("POST /api/v1/device/native-operations/sd-format/"+action, func(w http.ResponseWriter, r *http.Request) {
+			if action == "execute" {
+				s.audit("native.operation.sd-format.execute", "requested")
+			}
+			s.forwardControlLimit(w, r, "/native-operations/sd-format/"+action, "native.operation.sd-format."+action, 2048)
+		})
+	}
 	s.mux.HandleFunc("GET /api/v1/device/native-audio", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-audio") })
 	s.mux.HandleFunc("PUT /api/v1/device/native-audio/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")

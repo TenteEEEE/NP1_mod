@@ -42,6 +42,7 @@ func ServeNative() error {
 	mux.HandleFunc("GET /alexa-settings", adapters.HandleAlexaLocal)
 	mux.HandleFunc("PUT /alexa-settings", adapters.HandleAlexaLocal)
 	mux.HandleFunc("PUT /native-settings/{id}", adapters.HandleNativeControl)
+	mux.HandleFunc("/operations/", adapters.HandleNativeOperationsLocal)
 	s := &http.Server{Handler: mux, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 4096}
 	return s.Serve(listener{l, 0})
 }

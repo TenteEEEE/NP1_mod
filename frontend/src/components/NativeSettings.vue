@@ -4,6 +4,7 @@ import { Check,RefreshCw,Settings2 } from '@lucide/vue'
 import { api,type Observation } from '../services/api'
 import { nativePages } from '../services/native'
 import AlexaSettings from './AlexaSettings.vue'
+import NativeOperations from './NativeOperations.vue'
 type Item={id:string;label:string;description?:string;kind:'boolean'|'select'|'range'|'info';value:unknown;valueLabel?:string;options?:{value:unknown;label:string}[];min?:number;max?:number;step?:number;writable:boolean;reason?:string;group:string;status?:string}
 type NativeData={items:Item[];revision?:number;scope?:string}
 const props=defineProps<{section?:string}>()
@@ -24,6 +25,7 @@ onMounted(load)
 </script>
 <template>
  <div v-if="!section" class="native-alexa"><AlexaSettings/></div>
+ <NativeOperations v-if="!section"/>
  <div class="native-toolbar"><p>NP1の現在の設定を確認します。</p><button class="secondary" @click="load" :disabled="loading||!!saving"><RefreshCw :size="16"/>{{loading?'読込み中…':'状態を更新'}}</button></div>
  <p v-if="error" class="banner error" role="alert">{{error}}</p><p v-if="notice" class="banner success" role="status"><Check :size="17"/>{{notice}}</p>
  <div v-if="loading&&!state" class="panel native-empty" role="status">純正設定を読み込んでいます…</div>

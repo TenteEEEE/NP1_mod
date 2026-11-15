@@ -32,7 +32,7 @@ if 'restart'in args:
  runtime=root/'run-native'
  for p in runtime.iterdir():
   if p.name!='control.lock':p.unlink()
- shutil_map={'ncc-native-setting-helper':'helper','ncc-native-audio-helper':'audio-helper'}
+ shutil_map={'ncc-native-setting-helper':'helper','ncc-native-audio-helper':'audio-helper','ncc-native-operations-helper':'operations-helper'}
  (runtime/'ncc').write_bytes((root/'base/bin/ncc').read_bytes())
  for source,target in shutil_map.items():
   p=root/'base/experimental'/source
@@ -66,7 +66,7 @@ class NativeWorkerUpdateTests(unittest.TestCase):
         for directory in ('base/bin','base/experimental','base/recovery','run-native','etc','stage/bin','stage/systemd','stage/experimental','stage/tools','mock'):
             (root/directory).mkdir(parents=True,exist_ok=True)
         originals={'base/bin/ncc':b'#!/bin/sh\n# old fixture\nexit 0\n','base/experimental/ncc-native-setting-helper':b'original-helper','etc/native.service':b'original-unit'}
-        inputs={'bin/ncc':b'#!/bin/sh\n# new fixture\nexit 0\n','systemd/np1-control-native.service':b'new-native-unit','experimental/ncc-native-setting-helper':b'new-helper','experimental/ncc-native-audio-helper':b'new-audio'}
+        inputs={'bin/ncc':b'#!/bin/sh\n# new fixture\nexit 0\n','systemd/np1-control-native.service':b'new-native-unit','experimental/ncc-native-setting-helper':b'new-helper','experimental/ncc-native-audio-helper':b'new-audio','experimental/ncc-native-operations-helper':b'new-operations'}
         for name,data in originals.items():(root/name).write_bytes(data)
         for name,data in inputs.items():(root/'stage'/name).write_bytes(data)
         import hashlib
@@ -107,6 +107,7 @@ class NativeWorkerUpdateTests(unittest.TestCase):
         self.assertIn(b'PASS: native worker updated',result.stdout)
         self.assertEqual(len(mutations),1)
         self.assertEqual((root/'base/bin/ncc').read_bytes(),inputs['bin/ncc'])
+        self.assertEqual((root/'run-native/operations-helper').read_bytes(),b'new-operations')
         backups=list((root/'base/recovery').glob('native-worker-*'));self.assertEqual(len(backups),1)
         self.assertEqual((backups[0]/'original/bin/ncc').read_bytes(),originals['base/bin/ncc'])
 
@@ -116,6 +117,7 @@ class NativeWorkerUpdateTests(unittest.TestCase):
         self.assertEqual(len(mutations),2)
         for name,data in originals.items():self.assertEqual((root/name).read_bytes(),data)
         self.assertFalse((root/'base/experimental/ncc-native-audio-helper').exists())
+        self.assertFalse((root/'base/experimental/ncc-native-operations-helper').exists())
 
     def test_busy_native_refuses_before_any_file_or_service_change(self):
         root,result,originals,_,mutations=self.run_fixture('native-busy')
