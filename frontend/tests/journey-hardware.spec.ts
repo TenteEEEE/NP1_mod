@@ -4,6 +4,36 @@ import {readFileSync} from 'node:fs'
 test.describe('journey map on the installed device',()=>{
  test.skip(process.env.NCC_JOURNEY_HARDWARE!=='1','Explicit installed-device check required')
 
+ test('installed maps load vector tiles and their local worker under the production CSP',async({page},info)=>{
+  const errors:string[]=[],tiles:string[]=[],workers:string[]=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  page.on('console',message=>{if(message.type()==='error'&&/Content Security Policy|Refused to|WebGL/i.test(message.text()))errors.push(message.text())})
+  page.on('response',response=>{if(response.ok()&&response.url().includes('tiles.openfreemap.org/')&&!response.url().includes('/fonts/')&&!response.url().endsWith('/planet'))tiles.push(response.url());if(response.ok()&&/maplibre-gl-worker.*\.js/.test(response.url()))workers.push(response.url())})
+  const response=await page.goto('/#trips')
+  expect(response?.headers()['content-security-policy']).toContain('worker-src \'self\'')
+  await page.getByLabel('地図に表示する日付').fill('2026-11-13')
+  const map=page.locator('.journey-map .radio-map-canvas')
+  await expect(map).toHaveAttribute('data-map-ready','true')
+  await expect.poll(()=>tiles.length,{timeout:30000}).toBeGreaterThan(0)
+  expect(workers.length).toBeGreaterThan(0)
+  const count=await map.getAttribute('data-features-journey')
+  expect(Number(count)).toBeGreaterThan(0)
+  for(const theme of ['mist','night','sage','colorful']){
+   await page.evaluate(value=>document.documentElement.setAttribute('data-map-journey-theme',value),theme)
+   await expect(map).toHaveAttribute('data-map-theme',theme)
+   await expect(map).toHaveAttribute('data-map-ready','true')
+   await expect(map).toHaveAttribute('data-features-journey',count!)
+   await map.screenshot({path:info.outputPath('vector-'+theme+'.private.png')})
+  }
+  await page.goto('/#plates')
+  const records=await (await page.request.get('/api/v1/plate/records?from=2026-11-10&to=2026-11-16')).json()
+  if(records.records?.length){
+   await expect(page.locator('.plate-day-heading')).not.toHaveCount(0)
+   await expect(page.locator('.plate-day-heading time').first()).toHaveAttribute('datetime',/^2026-11-/)
+  }
+  expect(errors).toEqual([])
+ })
+
  test('restored detailed track retains its source points and renders lines',async({page,request},info)=>{
   const file=process.env.NCC_JOURNEY_REFERENCE_TRACK
   test.skip(!file,'A private measured reference export is required')
@@ -22,9 +52,8 @@ test.describe('journey map on the installed device',()=>{
   }
   await page.goto('/#trips')
   await page.getByLabel('地図に表示する日付').fill(reference.date)
-  // Circle markers also use SVG paths. Requiring L commands verifies actual
-  // polylines instead of considering a handful of isolated dots a success.
-  await expect.poll(()=>page.locator('.journey-route').evaluateAll(nodes=>nodes.reduce((count,node)=>count+(node.getAttribute('d')?.match(/L/g)?.length||0),0))).toBeGreaterThan(100)
+  await expect(page.locator('.journey-map .radio-map-canvas')).toHaveAttribute('data-map-ready','true')
+  await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
   await expect(page.locator('.journey-map-status')).toContainText(actual.points.length.toLocaleString())
   await page.locator('.dh-radio').screenshot({path:info.outputPath('restored-detailed-route.private.png')})
  })
@@ -38,7 +67,7 @@ test.describe('journey map on the installed device',()=>{
    const track=await request.get('/api/v1/recordings/track?date='+date);expect(track.ok()).toBe(true);expect((await track.json()).data.points.length).toBeGreaterThan(0)
    await page.getByLabel('地図に表示する日付').fill(date)
    await expect(page.getByLabel('詳細を表示する日付')).toHaveValue(date)
-   await expect(page.locator('.journey-route').first()).toBeAttached()
+   await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
    await expect(page.locator('.dh-day-values')).toContainText(day.distanceKm.toLocaleString('ja-JP',{maximumFractionDigits:1}))
    await page.locator('.dh-radio').screenshot({path:info.outputPath(date+'.private.png')})
   }
@@ -46,8 +75,8 @@ test.describe('journey map on the installed device',()=>{
 
  test('recorded GPS route survives radio toggles, panning and mobile layout',async({page,request},info)=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
-  const recordings=await request.get('/api/v1/recordings');expect(recordings.ok()).toBe(true)
-  const dates=(await recordings.json()).data.days.map((day:any)=>typeof day==='string'?day:day.date).sort()
+  const history=await request.get('/api/v1/trips?period=7');expect(history.ok()).toBe(true)
+  const dates=(await history.json()).data.days.filter((day:any)=>day.observed).map((day:any)=>day.date).sort()
   expect(dates.length).toBeGreaterThan(0)
   const date=dates.at(-1)!
   const response=await request.get('/api/v1/recordings/track?date='+date);expect(response.ok()).toBe(true)
@@ -55,26 +84,26 @@ test.describe('journey map on the installed device',()=>{
   expect(track.points.length).toBeGreaterThan(0)
   await page.goto('/#trips')
   await page.getByLabel('地図に表示する日付').fill(date)
-  await expect(page.locator('.journey-route').first()).toBeAttached()
+  await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
   await expect(page.getByText('地図に表示できる測位がありません',{exact:true})).toHaveCount(0)
   const order=await page.locator('.drive-history>section').evaluateAll(nodes=>nodes.map(node=>node.querySelector('h2')?.textContent))
   expect(order).toEqual(['走行の記録','走行履歴マップ','日別の詳細'])
   const toggle=page.getByLabel('電波強度のヒートマップを表示');await expect(toggle).not.toBeChecked()
-  await toggle.check();await expect(page.locator('.radio-overlay').first()).toBeAttached()
-  await expect(page.locator('.journey-route').first()).toBeAttached()
+  await toggle.check();await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-radio'))).toBeGreaterThan(0)
+  await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
   await page.locator('.dh-radio').screenshot({path:info.outputPath('journey-radio-overlay.private.png')})
-  await toggle.uncheck();await expect(page.locator('.radio-overlay')).toHaveCount(0)
-  await expect(page.locator('.journey-route').first()).toBeAttached()
+  await toggle.uncheck();await expect(page.locator('.journey-map .radio-map-canvas')).toHaveAttribute('data-features-radio','0')
+  await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
   const canvas=page.locator('.journey-map .radio-map-canvas');await canvas.scrollIntoViewIfNeeded()
-  const box=(await canvas.boundingBox())!,pane=canvas.locator('.leaflet-map-pane'),before=await pane.getAttribute('style')
+  const box=(await canvas.boundingBox())!,pane=canvas,before=await pane.getAttribute('data-map-center')
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+100,box.y+box.height/2+40,{steps:12});await page.mouse.up()
-  expect(await pane.getAttribute('style')).not.toBe(before)
+  expect(await pane.getAttribute('data-map-center')).not.toBe(before)
   await page.getByRole('button',{name:'全体を表示',exact:true}).click()
   await page.locator('.dh-radio').screenshot({path:info.outputPath('journey-desktop.private.png')})
   await page.setViewportSize({width:390,height:844});await page.getByRole('heading',{name:'走行履歴マップ',exact:true}).scrollIntoViewIfNeeded()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
   await expect(page.getByLabel('詳細を表示する日付')).toHaveValue(date)
-  await expect(page.locator('.journey-route').first()).toBeAttached()
+  await expect.poll(async()=>Number(await page.locator('.journey-map .radio-map-canvas').getAttribute('data-features-journey'))).toBeGreaterThan(0)
   await page.locator('.dh-radio').screenshot({path:info.outputPath('journey-mobile.private.png')})
   expect(errors).toEqual([])
  })
@@ -99,12 +128,12 @@ test.describe('journey map on the installed device',()=>{
   const query=tracks[0]!
   expect(Date.parse(query.get('to')!)-Date.parse(query.get('from')!)).toBe(86400000)
   expect(query.has('date')).toBe(false)
-  await expect(page.locator('.current-location-trail').first()).toBeAttached()
+  await expect.poll(async()=>Number(await page.locator('.current-location-canvas').getAttribute('data-features-current-trail'))).toBeGreaterThan(0)
   const box=(await page.locator('.dh-window').boundingBox())!,x=box.x+box.width/2,y=box.y+box.height/2
-  const pane=page.locator('.current-location-canvas .leaflet-map-pane'),before=await pane.getAttribute('style')
+  const pane=page.locator('.current-location-canvas'),before=await pane.getAttribute('data-map-center')
   await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+100,y+40,{steps:12});await page.mouse.up()
   const resume=page.getByRole('button',{name:/現在地に戻る|最後の位置に戻る/})
-  await expect(resume).toBeVisible();expect(await pane.getAttribute('style')).not.toBe(before)
+  await expect(resume).toBeVisible();expect(await pane.getAttribute('data-map-center')).not.toBe(before)
   expect(await resume.textContent()).toBe('')
   const buttonRect=(await resume.boundingBox())!,credit=(await page.locator('.current-location-credit').boundingBox())!
   const mapFrame=(await page.locator('.current-location-frame').boundingBox())!
@@ -113,9 +142,9 @@ test.describe('journey map on the installed device',()=>{
   expect(Math.abs(buttonRect.x+buttonRect.width-credit.x-credit.width)).toBeLessThan(2)
   expect(credit.y-buttonRect.y-buttonRect.height).toBeGreaterThanOrEqual(3)
   expect(credit.y-buttonRect.y-buttonRect.height).toBeLessThan(25)
-  // Let Leaflet's drag inertia settle before checking that GPS does not recenter it.
+  // Let the map's drag inertia settle before checking that GPS does not recenter it.
   await page.waitForTimeout(600)
-  const moved=await pane.getAttribute('style');await page.waitForTimeout(2500);expect(await pane.getAttribute('style')).toBe(moved)
+  const moved=await pane.getAttribute('data-map-center');await page.waitForTimeout(2500);expect(await pane.getAttribute('data-map-center')).toBe(moved)
   await resume.click();await expect(resume).toHaveAttribute('aria-pressed','true')
   await page.screenshot({path:info.outputPath('dashboard-24h.private.png')})
  })
@@ -154,7 +183,7 @@ test.describe('journey map on the installed device',()=>{
    await page.emulateMedia({reducedMotion:'reduce'})
    await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');localStorage.setItem('ncc.nav','float')})
    await page.setViewportSize({width:390,height:844});await page.goto('/#dashboard')
-   await expect(page.locator('.current-location-trail').first()).toBeAttached()
+   await expect.poll(async()=>Number(await page.locator('.current-location-canvas').getAttribute('data-features-current-trail'))).toBeGreaterThan(0)
    const box=(await page.locator('.dh-window').boundingBox())!,x=box.x+box.width/2,y=box.y+box.height/2
    const session=await page.context().newCDPSession(page)
    await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]})

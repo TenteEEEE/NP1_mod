@@ -3,8 +3,8 @@
   "inputHashes": {
     "backend/go.mod": "ade70b61d08bd0044d6613a6799adac5a2003ffcf792879223f969eb3547d09d",
     "backend/go.sum": "5c0bc83cf103e3b8abd6626acbb02cbcf42be1097c7770a98a6d1b2836f42cc4",
-    "frontend/package.json": "8a2b291455c5e75ac5c32729978b20d941eb88fe1b1be9a00253494b1f9a54d4",
-    "frontend/package-lock.json": "e4b6f6baf838b280d74486454dc3b6bab814605ff2b83e68e9be6fa3835d45cc"
+    "frontend/package.json": "d71cf419069d5e5e7b3995b15bbeb13f0aa34a11e8c6af3a4ffe1109eb4326f0",
+    "frontend/package-lock.json": "49ce083ce57087f28fb1f42f40adced2808dd77fab6769f52477e45b2ba00402"
   },
   "packages": [
     {
@@ -106,6 +106,159 @@
           "path": "licenses/npm/lucide-vue-1.72.0/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "b495047bd93a9b06913511076f504daba17d5bbeb3e0650f3bb53a4220329c57"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@mapbox/jsonlint-lines-primitives",
+      "version": "2.0.3",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@mapbox/jsonlint-lines-primitives/v/2.0.3",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/mapbox-jsonlint-lines-primitives-2.0.3/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "5dcae6b71018b5454d00228bd08ccbcd9801ee27b19959b88ebcb55602604e6d"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@mapbox/point-geometry",
+      "version": "1.1.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@mapbox/point-geometry/v/1.1.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/mapbox-point-geometry-1.1.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "0c0ede0036a425ff8b2d49341ea9aa8eccbeeae1ac4eb59874c9dd8bcf5186d3"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@mapbox/tiny-sdf",
+      "version": "2.3.0",
+      "license": "BSD-2-Clause",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@mapbox/tiny-sdf/v/2.3.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/mapbox-tiny-sdf-2.3.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "4f78063c6c0757df950aa3440cef9a2a6bd1c552c994c32237c3acc283e72ee6"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@mapbox/unitbezier",
+      "version": "1.0.0",
+      "license": "BSD-2-Clause",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@mapbox/unitbezier/v/1.0.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/mapbox-unitbezier-1.0.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "f0dc305ad097eddbc66eebb79288c92d8a5043818ace81206383a4c1a3268fe3"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@mapbox/vector-tile",
+      "version": "3.0.0",
+      "license": "BSD-3-Clause",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@mapbox/vector-tile/v/3.0.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/mapbox-vector-tile-3.0.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "5b09a507df6f21d6c2112c46dcaf2927b9dbd8b580a08b542d8ec2f9191d783d"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@maplibre/geojson-vt",
+      "version": "6.3.1",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@maplibre/geojson-vt/v/6.3.1",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/maplibre-geojson-vt-6.3.1/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "9eb90e1c920aeccc6d630bd48c1512683d454c669701d46ff8c4c41f922dc4f3"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@maplibre/maplibre-gl-style-spec",
+      "version": "26.8.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@maplibre/maplibre-gl-style-spec/v/26.8.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/maplibre-maplibre-gl-style-spec-26.8.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "bfd4cb919eec574e9213e1e61f880831eb5fc372d467be429fd0a8d51d1df890"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@maplibre/mlt",
+      "version": "1.3.0",
+      "license": "(MIT OR Apache-2.0)",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@maplibre/mlt/v/1.3.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/maplibre-mlt-1.3.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "3c0a2cc8dfe44b856c2577b4d6fe30a999557c795686d52b159a6e1659ea8023"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@maplibre/vt-pbf",
+      "version": "4.3.3",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/@maplibre/vt-pbf/v/4.3.3",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/maplibre-vt-pbf-4.3.3/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "4c61c5753d4b021bc3b07f21d2a830506974ce200c19cfadf3d4a25e747fc853"
         }
       ]
     },
@@ -500,30 +653,13 @@
       "name": "@types/geojson",
       "version": "7946.0.16",
       "license": "MIT",
-      "scope": "build/test",
+      "scope": "UI runtime",
       "optional": false,
       "upstream": "https://www.npmjs.com/package/@types/geojson/v/7946.0.16",
       "evidence": "npm distribution",
       "notices": [
         {
           "path": "licenses/npm/types-geojson-7946.0.16/LICENSE.txt",
-          "upstreamFile": "LICENSE",
-          "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
-        }
-      ]
-    },
-    {
-      "ecosystem": "npm",
-      "name": "@types/leaflet",
-      "version": "1.9.22",
-      "license": "MIT",
-      "scope": "build/test",
-      "optional": false,
-      "upstream": "https://www.npmjs.com/package/@types/leaflet/v/1.9.22",
-      "evidence": "npm distribution",
-      "notices": [
-        {
-          "path": "licenses/npm/types-leaflet-1.9.22/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
         }
@@ -820,6 +956,23 @@
     },
     {
       "ecosystem": "npm",
+      "name": "bidi-js",
+      "version": "1.1.0",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/bidi-js/v/1.1.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/bidi-js-1.1.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "49d4d143fed599deb502a0fe6e02f49832f87e9a3a4cd0502e469596d50faa6d"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
       "name": "csstype",
       "version": "3.2.3",
       "license": "MIT",
@@ -849,6 +1002,23 @@
           "path": "licenses/npm/detect-libc-2.1.2/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "earcut",
+      "version": "3.2.4",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/earcut/v/3.2.4",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/earcut-3.2.4/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "0b348fff56384b43dbb37593906904e56d0f9deb51eae590d4dc6d427fbf1808"
         }
       ]
     },
@@ -922,18 +1092,52 @@
     },
     {
       "ecosystem": "npm",
-      "name": "leaflet",
-      "version": "1.9.4",
-      "license": "BSD-2-Clause",
+      "name": "gl-matrix",
+      "version": "3.4.4",
+      "license": "MIT",
       "scope": "UI runtime",
       "optional": false,
-      "upstream": "https://www.npmjs.com/package/leaflet/v/1.9.4",
+      "upstream": "https://www.npmjs.com/package/gl-matrix/v/3.4.4",
       "evidence": "npm distribution",
       "notices": [
         {
-          "path": "licenses/npm/leaflet-1.9.4/LICENSE.txt",
+          "path": "licenses/npm/gl-matrix-3.4.4/LICENSE.md.txt",
+          "upstreamFile": "LICENSE.md",
+          "sha256": "af62d31a0cdc1bf95d5e19428c3e0de368b727d9d5b6b6cdb466f8a52e68ad06"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "json-stringify-pretty-compact",
+      "version": "4.0.0",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/json-stringify-pretty-compact/v/4.0.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/json-stringify-pretty-compact-4.0.0/LICENSE.txt",
           "upstreamFile": "LICENSE",
-          "sha256": "bbc959aaef7488b38942e7f05cfd1244351f8bce54261951ea17dd7cf60f894b"
+          "sha256": "2d51145876dda3dd13253463b852aa83b78aa598b90fca1709f39f1740ff9a2f"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "kdbush",
+      "version": "4.1.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/kdbush/v/4.1.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/kdbush-4.1.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "0aba693a2c2e5b1b1465f9e06d29c21769450add9dbb7dc915b41a60e900196f"
         }
       ]
     },
@@ -1160,6 +1364,40 @@
     },
     {
       "ecosystem": "npm",
+      "name": "maplibre-gl",
+      "version": "6.18.0",
+      "license": "BSD-3-Clause",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/maplibre-gl/v/6.18.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/maplibre-gl-6.18.0/LICENSE.txt.txt",
+          "upstreamFile": "LICENSE.txt",
+          "sha256": "ee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "minimist",
+      "version": "1.2.8",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/minimist/v/1.2.8",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/minimist-1.2.8/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "435a6722c786b0a56fbe7387028f1d9d3f3a2d0fb615bb8fee118727c3f59b7b"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
       "name": "muggle-string",
       "version": "0.4.1",
       "license": "MIT",
@@ -1172,6 +1410,23 @@
           "path": "licenses/npm/muggle-string-0.4.1/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "df52411dcd3c8f5897bbbec8c94e971519e13e75818c263e9a99a86255dd301b"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "murmurhash-js",
+      "version": "1.0.0",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/murmurhash-js/v/1.0.0",
+      "evidence": "npm distribution README License (MIT) section",
+      "notices": [
+        {
+          "path": "licenses/npm/murmurhash-js-1.0.0/README-LICENSE.txt",
+          "upstreamFile": "README-LICENSE",
+          "sha256": "0439b967686bd53ae0f059314fdcf140bbc08002891c54b0ee7597a6bb5ef215"
         }
       ]
     },
@@ -1206,6 +1461,23 @@
           "path": "licenses/npm/path-browserify-1.0.1/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "a22b9d5763f574e5db347c30acc0b33eaf4846767c03d2e27d012e864e79a824"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "pbf",
+      "version": "5.1.2",
+      "license": "BSD-3-Clause",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/pbf/v/5.1.2",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/pbf-5.1.2/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "fdf1d5279107d760c7df8c6edab1faab2b72ba17528273a8b417b08f1e12ebbe"
         }
       ]
     },
@@ -1316,6 +1588,91 @@
     },
     {
       "ecosystem": "npm",
+      "name": "potpack",
+      "version": "2.1.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/potpack/v/2.1.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/potpack-2.1.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "cfec0482fb785fe27e3b368a2d9e84bf7a61b275e83ec582bf288e98cd530bb0"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "protocol-buffers-schema",
+      "version": "3.6.1",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/protocol-buffers-schema/v/3.6.1",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/protocol-buffers-schema-3.6.1/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "3fe8d55a98dbf260eace67c00cf9bc53edb46234e840098a0b93df3096b97fb6"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "quickselect",
+      "version": "3.0.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/quickselect/v/3.0.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/quickselect-3.0.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "238ddb00e12a420a54e060afa19bdab4f70bf49e0e2a8ebb1a5e851f9ef447df"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "require-from-string",
+      "version": "2.0.2",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/require-from-string/v/2.0.2",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/require-from-string-2.0.2/license.txt",
+          "upstreamFile": "license",
+          "sha256": "6ee0feb1f6ef996ff5a68600f8cf98909cf412d39ef3cdceaefd87d636fa1b7f"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "resolve-protobuf-schema",
+      "version": "2.1.0",
+      "license": "MIT",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/resolve-protobuf-schema/v/2.1.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/resolve-protobuf-schema-2.1.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "c0993ca46cd47c09710a977d3a3d51602cff96f19e8d2eb8d5887aa20a7beead"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
       "name": "rolldown",
       "version": "1.2.18",
       "license": "MIT",
@@ -1367,6 +1724,23 @@
           "path": "licenses/npm/tinyglobby-0.2.17/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "22c68811e174cbbfb3813d4135918df4f540959c14d872e601d9abe83d3cde8f"
+        }
+      ]
+    },
+    {
+      "ecosystem": "npm",
+      "name": "tinyqueue",
+      "version": "3.0.0",
+      "license": "ISC",
+      "scope": "UI runtime",
+      "optional": false,
+      "upstream": "https://www.npmjs.com/package/tinyqueue/v/3.0.0",
+      "evidence": "npm distribution",
+      "notices": [
+        {
+          "path": "licenses/npm/tinyqueue-3.0.0/LICENSE.txt",
+          "upstreamFile": "LICENSE",
+          "sha256": "780453e05abdc22307ee01c706a2e73f508d3e484fc4c804485ebf6fe0964694"
         }
       ]
     },
@@ -1832,19 +2206,19 @@
     {
       "ecosystem": "toolchain",
       "name": "Go standard library/runtime",
-      "version": "go1.27.4",
+      "version": "go1.27.3",
       "license": "BSD-3-Clause",
       "scope": "linked Go runtime and standard library",
-      "upstream": "https://go.googlesource.com/go/+/refs/tags/go1.27.4/LICENSE",
+      "upstream": "https://go.googlesource.com/go/+/refs/tags/go1.27.3/LICENSE",
       "evidence": "installed Go distribution",
       "notices": [
         {
-          "path": "licenses/toolchain/go-go1.27.4/LICENSE.txt",
+          "path": "licenses/toolchain/go-go1.27.3/LICENSE.txt",
           "upstreamFile": "LICENSE",
           "sha256": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
         },
         {
-          "path": "licenses/toolchain/go-go1.27.4/PATENTS.txt",
+          "path": "licenses/toolchain/go-go1.27.3/PATENTS.txt",
           "upstreamFile": "PATENTS",
           "sha256": "96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
         }

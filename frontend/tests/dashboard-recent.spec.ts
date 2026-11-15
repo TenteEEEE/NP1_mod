@@ -1,13 +1,14 @@
 import {test,expect,type Page} from '@playwright/test'
+import {vectorTiles,vectorState,overlayCount,clickVectorFeature} from './fixtures/vector-tiles'
 import {rollingHourTicks} from '../src/services/journey'
 const now=Date.parse('2026-11-15T00:30:00Z'),since=now-86400000
 const observation=(data:unknown)=>({status:'available',data,source:'synthetic-recent-dashboard',verified:false})
 async function seed(page:Page){
- await page.clock.install({time:new Date(now)});await page.clock.pauseAt(new Date(now))
+ await page.clock.install({time:new Date(now)})
  await page.emulateMedia({reducedMotion:'reduce'})
  await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');localStorage.setItem('ncc.nav','float');(window as any).EventSource=class extends EventTarget{close(){}}})
  const requests:string[]=[]
- await page.route('https://tile.openstreetmap.org/**',route=>route.abort())
+ await vectorTiles(page)
  await page.route('**/api/v1/**',async route=>{
   const url=new URL(route.request().url()),path=url.pathname;let data:unknown={}
   if(path.endsWith('/auth/session'))data={csrf:'fixture'}
@@ -56,12 +57,29 @@ test('24-hour ticks use whole JST hours every three hours, including day endpoin
  expect(shifted.map(tick=>tick.label)).toEqual(['6','9','12','15','18','21','0','3'])
 })
 
+test('daily grouping stays beside Custom instead of wrapping in narrow dashboard cards',async({page})=>{
+ await seed(page);await page.goto('/#dashboard')
+ for(const width of [320,390,1000,1200,1440,2618]){
+  await page.setViewportSize({width,height:1000})
+  // Crossing the mobile breakpoint replaces the shell and its chart. Resolve
+  // the controls again once that responsive render has settled.
+  await expect(async()=>{
+   const custom=page.getByRole('button',{name:'カスタム',exact:true}),group=page.getByLabel('走行グラフの集約')
+   await custom.scrollIntoViewIfNeeded()
+   const c=(await custom.boundingBox())!,g=(await group.boundingBox())!
+   expect(Math.abs(c.y+c.height/2-g.y-g.height/2)).toBeLessThan(3)
+   expect(g.x-c.x-c.width).toBeGreaterThanOrEqual(0)
+  }).toPass()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ }
+})
+
 test('past recorded days remain selectable and retain their measured totals',async({page})=>{
  await seed(page);await page.goto('/#trips')
  for(const date of ['2026-11-13','2026-11-14']){
   await page.getByLabel('地図に表示する日付').fill(date)
   await expect(page.getByLabel('詳細を表示する日付')).toHaveValue(date)
-  await expect(page.locator('.journey-route')).toHaveCount(1)
+  await expect.poll(()=>overlayCount(page,'.journey-map .radio-map-canvas','journey')).toBe(1)
   await expect(page.locator('.dh-day-values')).toContainText(date.endsWith('13')?'16.6':'57.6')
  }
 })
@@ -78,8 +96,8 @@ test('dashboard draws a detailed rolling route across midnight as a line',async(
  await page.goto('/#dashboard')
  // Dots are SVG paths too; require actual line commands and a single route
  // through JST midnight instead of accepting any path as a recovered line.
- await expect(page.locator('.current-location-trail')).toHaveCount(1)
- await expect.poll(()=>page.locator('.current-location-trail').getAttribute('d').then(value=>value?.match(/L/g)?.length||0)).toBeGreaterThan(30)
+ await expect.poll(()=>overlayCount(page,'.current-location-canvas','current-trail')).toBe(1)
+ expect((await vectorState(page,'.current-location-canvas'))!.sources['current-trail'].features[0].geometry.coordinates).toHaveLength(1200)
 })
 
 for(const viewport of [{width:1440,height:900},{width:2618,height:1886}])test(`map credit and modern locate button align to the actual right edge at ${viewport.width}px`,async({page},info)=>{

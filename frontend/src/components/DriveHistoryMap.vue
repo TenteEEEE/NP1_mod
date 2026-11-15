@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
-import L from 'leaflet'
-import {mapTiles} from '../services/map-tiles'
+import {VectorMap,collection,feature,routeFeatures,routeLayers,type LatLon,type Feature} from '../services/vector-map'
 import {api,type Observation} from '../services/api'
 import {jstDate} from '../services/journey'
 import type {PlaybackTrack,TrackPoint} from '../services/playbackTrack'
-import 'leaflet/dist/leaflet.css'
 import '../radio-map.css'
 
 type Point={at:string;gps:{at:string;lat:number;lon:number;accuracyM?:number};value:number|null;state:string;color:string;carrier?:string;band?:string;source:string;accuracyUnknown:boolean}
@@ -16,7 +14,7 @@ const props=defineProps<{date:string}>()
 const day=computed(()=>props.date||jstDate())
 const container=ref<HTMLElement>(),overlay=ref(false),online=ref(true),metric=ref('rsrp'),mode=ref('grid'),carrier=ref(''),band=ref(''),size=ref('50'),unknown=ref(true)
 const track=ref<PlaybackTrack>(),result=ref<History>(),legend=ref<Legend>(),loading=ref(false),radioLoading=ref(false),error=ref(''),radioError=ref(''),tileFailed=ref(false),selected=ref<Point>()
-let map:L.Map|undefined,routeLayer:L.LayerGroup|undefined,radioLayer:L.LayerGroup|undefined,tiles:L.TileLayer|undefined,resize:ResizeObserver|undefined,timer:ReturnType<typeof setInterval>|undefined
+let map:VectorMap|undefined,timer:ReturnType<typeof setInterval>|undefined
 let request:AbortController|undefined,radioRequest:AbortController|undefined,sequence=0,radioSequence=0,fitted=false,active=true
 const overlayPoints=computed(()=>!overlay.value?[]:mode.value==='points'||!result.value?.cells.length?result.value?.points||[]:(result.value?.points||[]).filter(point=>point.accuracyUnknown))
 const empty=computed(()=>!track.value?.points.length&&!overlayPoints.value.length&&(!overlay.value||mode.value!=='grid'||!result.value?.cells.length))
@@ -46,34 +44,37 @@ async function loadRadio(){
  finally{if(id===radioSequence)radioLoading.value=false}
 }
 function bounds(){
- const points:L.LatLngTuple[]=(track.value?.points||[]).map(p=>[p.lat,p.lon])
+ const points:LatLon[]=(track.value?.points||[]).map(p=>[p.lat,p.lon])
  if(overlay.value){if(mode.value==='grid')for(const cell of result.value?.cells||[])points.push(...cell.bounds);for(const p of overlayPoints.value)points.push([p.gps.lat,p.gps.lon])}
  return points
 }
-function fit(){const points=bounds();if(map&&points.length){map.fitBounds(L.latLngBounds(points),{padding:[28,28],maxZoom:17,animate:false});fitted=true}}
+function fit(){const points=bounds();if(map&&points.length){map.fit(points);fitted=true}}
 function render(){
- if(!map||!routeLayer||!radioLayer)return
- routeLayer.clearLayers();radioLayer.clearLayers()
- const groups=new Map<number,TrackPoint[]>()
- for(const point of track.value?.points||[]){const group=groups.get(point.segment)||[];group.push(point);groups.set(point.segment,group)}
- for(const points of groups.values()){
-  const path=points.length>1?L.polyline(points.map(p=>[p.lat,p.lon]),{color:'#397fd7',weight:4,opacity:.9,className:'journey-route'}):L.circleMarker([points[0]!.lat,points[0]!.lon],{radius:4,color:'#397fd7',className:'journey-route'})
-  path.bindPopup(popup([fmt(points[0]!.at)+' — '+fmt(points[points.length-1]!.at),points.length.toLocaleString()+' 測位点'])).addTo(routeLayer)
- }
+ if(!map)return
+ const radio:Feature[]=[]
  if(overlay.value&&result.value){
-  const data=result.value
-  if(mode.value==='grid')for(const cell of data.cells)L.rectangle(cell.bounds,{className:'radio-overlay',color:cell.color,fillOpacity:cell.low_confidence?.25:.5,weight:1,dashArray:cell.low_confidence?'3 3':undefined}).bindPopup(popup(['中央値 '+cell.median.toFixed(1)+' '+data.unit,cell.sample_count+' 観測 / '+(data.tripCountKnown?cell.distinct_trip_count+' 走行':'走行数不明')])).addTo(radioLayer)
-  for(const point of overlayPoints.value){
-   const dot=L.circleMarker([point.gps.lat,point.gps.lon],{className:'radio-overlay',radius:5,color:point.color,fillColor:point.color,fillOpacity:point.state==='missing'?.2:.9,weight:point.accuracyUnknown?1:2,dashArray:point.accuracyUnknown?'2 2':undefined})
-   dot.bindPopup(popup([fmt(point.at),metric.value.toUpperCase()+' '+(point.value===null?'未取得':point.value+' '+data.unit),(point.carrier||'回線不明')+' / '+(point.band||'バンド不明'),point.accuracyUnknown?'位置精度: 不明':'位置精度: '+point.gps.accuracyM+' m']))
-   dot.on('click',()=>selected.value=point);dot.addTo(radioLayer)
-  }
+  if(mode.value==='grid')for(const [index,cell]of result.value.cells.entries()){const [[south,west],[north,east]]=cell.bounds;radio.push(feature({type:'Polygon',coordinates:[[[west,south],[east,south],[east,north],[west,north],[west,south]]]},{kind:'grid',index,color:cell.color,opacity:cell.low_confidence?.25:.5}))}
+  for(const [index,point]of overlayPoints.value.entries())radio.push(feature({type:'Point',coordinates:[point.gps.lon,point.gps.lat]},{kind:'point',index,color:point.color,opacity:point.state==='missing'?.2:point.accuracyUnknown?.35:.9,unknown:point.accuracyUnknown}))
  }
- routeLayer.invoke('bringToFront')
+ map.setOverlay('radio',collection(radio),[
+  {id:'radio-cells',type:'fill',source:'radio',filter:['==',['get','kind'],'grid'],paint:{'fill-color':['get','color'],'fill-opacity':['get','opacity']}},
+  {id:'radio-cell-edges',type:'line',source:'radio',filter:['==',['get','kind'],'grid'],paint:{'line-color':['get','color'],'line-width':1}},
+  {id:'radio-points',type:'circle',source:'radio',filter:['==',['get','kind'],'point'],paint:{'circle-radius':5,'circle-color':['get','color'],'circle-opacity':['get','opacity'],'circle-stroke-color':['get','color'],'circle-stroke-width':['case',['get','unknown'],1,2]}}
+ ])
+ map.setOverlay('journey',routeFeatures(track.value?.points||[]),routeLayers('journey'))
  if(!fitted)fit()
  renderBackground()
 }
-function renderBackground(){if(!map)return;if(online.value&&!empty.value&&!tiles){tileFailed.value=false;tiles=mapTiles(()=>tileFailed.value=true).addTo(map)}else if(!online.value||empty.value){tiles?.remove();tiles=undefined;tileFailed.value=false}}
+function renderBackground(){if(map){map.background(online.value&&!empty.value);if(!online.value||empty.value)tileFailed.value=false}}
+function mapClick(event:import('maplibre-gl').MapMouseEvent){
+ if(!map)return
+ const hit=map.features(event,['radio-points','radio-cells','journey-line','journey-points'])[0]
+ if(!hit)return
+ const p=hit.properties
+ if(hit.source==='radio'&&p.kind==='point'){const point=overlayPoints.value[Number(p.index)];if(!point)return;selected.value=point;map.popup([point.gps.lat,point.gps.lon],popup([fmt(point.at),metric.value.toUpperCase()+' '+(point.value===null?'未取得':point.value+' '+(result.value?.unit||'')),(point.carrier||'')+' / '+(point.band||'')]))}
+ else if(hit.source==='radio'){const cell=result.value?.cells[Number(p.index)];if(cell)map.popup([event.lngLat.lat,event.lngLat.lng],popup([cell.median.toFixed(1)+' '+result.value!.unit]))}
+ else map.popup([event.lngLat.lat,event.lngLat.lng],popup([fmt(String(p.from))+' ～ '+fmt(String(p.to)),Number(p.count).toLocaleString()+' GPS']))
+}
 function refresh(){void loadTrack();void loadRadio()}
 function download(format:'csv'|'geojson'){
  const data=result.value;if(!data?.points.length)return
@@ -85,8 +86,8 @@ function download(format:'csv'|'geojson'){
 watch(day,()=>{fitted=false;void loadTrack();void loadRadio()})
 watch([overlay,metric,carrier,band,size,unknown],loadRadio);watch(mode,render);watch(online,renderBackground)
 function visibility(){if(!document.hidden)refresh()}
-onMounted(()=>{if(!container.value)return;map=L.map(container.value).setView([36.2,138.2],5);map.attributionControl.setPrefix(false);radioLayer=L.layerGroup().addTo(map);routeLayer=L.layerGroup().addTo(map);resize=new ResizeObserver(()=>map?.invalidateSize({pan:false}));resize.observe(container.value);refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},30000);document.addEventListener('visibilitychange',visibility)})
-onUnmounted(()=>{active=false;sequence++;radioSequence++;request?.abort();radioRequest?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',visibility);resize?.disconnect();map?.remove()})
+onMounted(()=>{if(!container.value)return;try{map=new VectorMap({view:'journey',container:container.value,failed:()=>tileFailed.value=true});map.map.on('click',mapClick)}catch{tileFailed.value=true}refresh();timer=setInterval(()=>{if(!document.hidden)refresh()},30000);document.addEventListener('visibilitychange',visibility)})
+onUnmounted(()=>{active=false;sequence++;radioSequence++;request?.abort();radioRequest?.abort();clearInterval(timer);document.removeEventListener('visibilitychange',visibility);map?.destroy()})
 </script>
 <template>
  <div class="radio-survey journey-map">
@@ -103,7 +104,7 @@ onUnmounted(()=>{active=false;sequence++;radioSequence++;request?.abort();radioR
    <div v-if="radioError" class="radio-error" role="status">{{radioError}}<button class="button secondary" @click="loadRadio">電波履歴を再試行</button></div>
    <div class="radio-observation-status"><span><strong>{{result?.total?.toLocaleString()??'—'}}</strong> 電波観測</span><span><strong>{{result?.points.length.toLocaleString()??'—'}}</strong> 位置付き</span><span v-if="result?.unplaced">対応する測位なし {{result.unplaced.toLocaleString()}}</span><span v-if="result?.accuracyExcluded">精度不明 {{result.accuracyExcluded.toLocaleString()}}</span><span v-if="result?.truncated">直近20,000件を表示</span></div>
    <p v-if="!radioLoading&&!radioError&&!overlayPoints.length&&!(mode==='grid'&&result?.cells.length)" class="radio-note" role="status">この日の表示条件に合う電波観測はありません。GPSの走行経路は独立して表示します。</p>
-   <p v-if="mode==='grid'&&overlayPoints.some(point=>point.accuracyUnknown)" class="radio-note" role="note">メートル単位の精度が記録されていない位置は、破線の測定点で表示します。エリア集計には含めません。</p>
+   <p v-if="mode==='grid'&&overlayPoints.some(point=>point.accuracyUnknown)" class="radio-note" role="note">メートル単位の精度が記録されていない位置は、淡い色の測定点で表示します。エリア集計には含めません。</p>
    <div class="radio-legend"><strong>{{metric.toUpperCase()}} / {{legend?.unit}}</strong><span v-for="item in legend?.thresholds" :key="item.label"><i :style="{background:item.color}"></i>{{item.minimum===null?'下限未満':`≥ ${item.minimum}`}} {{item.label}}</span><span><i style="background:#3f4a5a"></i>圏外</span><span><i style="background:#a8afb8"></i>未取得</span></div>
    <p class="radio-note">{{mode==='grid'?(result?.tripWeighted?'走行ごとの中央値をエリア集計。':'全観測の中央値をエリア集計。')+'観測3件未満は薄く表示します。':''}} {{legend?.note}}</p>
    <div v-if="selected" class="radio-selected"><strong>{{fmt(selected.at)}}</strong><span>{{metric.toUpperCase()}} {{selected.value??'未取得'}} {{selected.value===null?'':result?.unit}}</span><span>{{selected.carrier||'回線不明'}} / {{selected.band||'バンド不明'}}</span></div>

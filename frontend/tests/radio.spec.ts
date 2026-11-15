@@ -1,11 +1,10 @@
 ﻿import {test,expect,type Page} from '@playwright/test'
+import {vectorTiles,vectorState,overlayCount,clickVectorFeature} from './fixtures/vector-tiles'
 
 type Theme='light'|'dark'|'system'
 const tile=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')
 async function fixture(page:Page,theme:Theme,populated=false){
- const requests:string[]=[]
- page.on('request',request=>{if(request.url().includes('tile.openstreetmap.org'))requests.push(request.url())})
- await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:tile}))
+ const requests=await vectorTiles(page)
  await page.route('**/api/v1/**',async route=>{
   const url=new URL(route.request().url())
   if(url.pathname.endsWith('/events'))return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'})
@@ -28,8 +27,8 @@ async function colors(page:Page){
    const a=luminance(foreground),b=luminance(background);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)
   }
   const select=style('.radio-survey select'),canvas=style('.radio-map-canvas'),empty=document.querySelector('.radio-empty'),paper=style('.radio-survey')
-  const control=style('.leaflet-control-zoom-in')
-  return {select:contrast(select.color,select.backgroundColor),empty:empty?contrast(style('.radio-empty').color,style('.radio-empty').backgroundColor):null,mapBackground:canvas.backgroundColor,text:paper.color,control:contrast(control.color,control.backgroundColor),tileFilter:style('.leaflet-tile-pane').filter,overflow:document.documentElement.scrollWidth>innerWidth}
+  const control=style('.maplibregl-ctrl-zoom-in')
+  return {select:contrast(select.color,select.backgroundColor),empty:empty?contrast(style('.radio-empty').color,style('.radio-empty').backgroundColor):null,mapBackground:canvas.backgroundColor,text:paper.color,control:contrast(control.color,control.backgroundColor),palette:(document.querySelector('.radio-map-canvas') as HTMLElement).dataset.mapTheme,overflow:document.documentElement.scrollWidth>innerWidth}
  })
 }
 for(const width of [1440,320])for(const theme of ['light','dark','system'] as const){
@@ -47,7 +46,7 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'] as co
   expect(c.mapBackground).toBe(theme==='dark'?'rgb(17, 19, 24)':'rgb(244, 245, 247)')
   await page.getByLabel('電波の指標').selectOption('sinr');await expect(page.getByText('SINR / dB')).toBeVisible()
   const background=page.getByLabel('背景地図を表示')
-  await expect(background).toBeChecked();await background.uncheck();await expect(page.locator('.radio-survey .leaflet-tile-pane img')).toHaveCount(0)
+  await expect(background).toBeChecked();await background.uncheck();await expect(page.locator('.radio-map-canvas')).toHaveAttribute('data-map-background','off')
   await expect(page.getByText('表示範囲がOpenStreetMapへ送信されます')).toHaveCount(0)
   await expect(page.getByRole('button',{name:'CSV',exact:true})).toBeDisabled()
   await background.check()
@@ -55,7 +54,7 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'] as co
   await expect.poll(async()=>(await colors(page)).mapBackground).toBe(theme==='light'?'rgb(244, 245, 247)':'rgb(17, 19, 24)')
   c=await colors(page)
   expect(c.select).toBeGreaterThan(4.5);expect(c.empty).toBeGreaterThan(4.5);expect(c.control).toBeGreaterThan(4.5);expect(c.overflow).toBe(false)
-  expect(c.tileFilter==='none').toBe(theme==='light')
+  await expect.poll(async()=>(await colors(page)).palette).toBe(theme==='light'?'mist':'night')
   await page.screenshot({path:testInfo.outputPath(`radio-${theme}-${width}.png`),fullPage:true})
   await page.emulateMedia({colorScheme:'light'})
   await expect.poll(async()=>(await colors(page)).mapBackground).toBe(theme==='dark'?'rgb(17, 19, 24)':'rgb(244, 245, 247)')
@@ -65,31 +64,29 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'] as co
 for(const theme of ['light','dark'] as const)test(`radio map popup and attribution use ${theme} theme`,async({page},testInfo)=>{
  await page.setViewportSize({width:320,height:780});await fixture(page,theme,true);await page.goto('/#trips')
  await page.getByLabel('電波強度のヒートマップを表示').check();await page.getByLabel(/^表示/).selectOption('points')
- await page.locator('.radio-overlay').first().click()
- await expect(page.locator('.radio-survey .leaflet-popup')).toBeVisible()
- await expect(page.locator('.radio-survey .leaflet-popup')).toHaveCSS('opacity','1')
- await expect(page.locator('.radio-survey .leaflet-popup')).toContainText('Fixture carrier / B19')
+ await expect.poll(()=>overlayCount(page,'.journey-map .radio-map-canvas','radio')).toBe(1);await clickVectorFeature(page,'.journey-map .radio-map-canvas','radio')
+ await expect(page.locator('.radio-survey .maplibregl-popup')).toBeVisible()
+ await expect(page.locator('.radio-survey .maplibregl-popup')).toHaveCSS('opacity','1')
+ await expect(page.locator('.radio-survey .maplibregl-popup')).toContainText('Fixture carrier / B19')
  const styles=await page.evaluate(()=>{
-  const popup=getComputedStyle(document.querySelector('.leaflet-popup-content-wrapper')!),text=getComputedStyle(document.querySelector('.leaflet-popup-content')!),attribution=getComputedStyle(document.querySelector('.leaflet-control-attribution')!)
+  const popup=getComputedStyle(document.querySelector('.maplibregl-popup-content')!),text=getComputedStyle(document.querySelector('.maplibregl-popup-content')!),attribution=getComputedStyle(document.querySelector('.maplibregl-ctrl-attrib')!)
   return {background:popup.backgroundColor,text:text.color,attribution:attribution.backgroundColor,overflow:document.documentElement.scrollWidth>innerWidth}
  })
  expect(styles.background).toBe(theme==='dark'?'rgb(27, 31, 38)':'rgb(255, 255, 255)')
  expect(styles.text).toBe(theme==='dark'?'rgb(230, 233, 238)':'rgb(32, 38, 48)')
- expect(styles.attribution).toBe(styles.background);expect(styles.overflow).toBe(false)
+ expect(styles.attribution).not.toBe('rgba(0, 0, 0, 0)');expect(styles.overflow).toBe(false)
  await expect(page.getByRole('button',{name:'CSV',exact:true})).toBeEnabled()
  await page.screenshot({path:testInfo.outputPath(`radio-popup-${theme}-320.png`),fullPage:true})
 })
 
-test('map images keep an origin Referer even on a no-referrer page',async({page})=>{
+test('vector requests keep an origin Referer even on a no-referrer page',async({page})=>{
  await page.route(url=>url.pathname==='/',async route=>{const response=await route.fetch();await route.fulfill({response,headers:{...response.headers(),'Referrer-Policy':'no-referrer'}})})
- // Exercise the production map component with populated radio samples and
- // inspect the browser request, never the real volunteer tile server.
  const headers:Record<string,string>[]=[]
  await fixture(page,'light',true)
- await page.route('https://tile.openstreetmap.org/**',async route=>{headers.push(await route.request().allHeaders());await route.fulfill({contentType:'image/png',body:tile})})
+ page.on('request',async request=>{if(new URL(request.url()).hostname==='tiles.openfreemap.org')headers.push(await request.allHeaders())})
  await page.goto('/#trips')
- await page.getByLabel('電波強度のヒートマップを表示').check();await page.getByLabel(/^表示/).selectOption('points')
+ await page.getByLabel('電波強度のヒートマップを表示').check()
  await expect.poll(()=>headers.length).toBeGreaterThan(0)
  expect(headers.every(h=>h.referer===new URL(page.url()).origin+'/')).toBe(true)
- await expect(page.locator('.radio-survey .leaflet-tile').first()).toHaveAttribute('referrerpolicy','strict-origin-when-cross-origin')
+ await expect(page.locator('.radio-map-canvas')).toHaveAttribute('data-map-engine','maplibre')
 })

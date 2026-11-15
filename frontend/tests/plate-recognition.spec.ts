@@ -1,4 +1,5 @@
 import {test,expect,type Page,type Route} from '@playwright/test'
+import {vectorTiles,vectorState,overlayCount,clickVectorFeature} from './fixtures/vector-tiles'
 // All plates, places and images below are synthetic fixtures, not device data.
 const reviewURL=process.env.NCC_UI_REVIEW_URL
 const now=Date.now()
@@ -23,7 +24,7 @@ const jpeg=Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAV
 type Handler=(route:Route)=>Promise<boolean|void>
 async function open(page:Page,extra?:Handler,key=false){
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
- await page.route('https://tile.openstreetmap.org/**',route=>route.abort())
+ await vectorTiles(page)
  await page.route('**/api/v1/**',async route=>{
   if(extra&&await extra(route))return
   const url=new URL(route.request().url())
@@ -43,6 +44,22 @@ async function open(page:Page,extra?:Handler,key=false){
 
 test.describe('plate recognition isolated review (synthetic only)',()=>{
  test.skip(!reviewURL,'Set NCC_UI_REVIEW_URL to an isolated Vite server.')
+
+ test('date dividers use Japan time, newest first, and follow the current filter',async({page})=>{
+  const dates=['2026-11-14T15:01:00Z','2026-11-14T14:59:00Z','2026-11-14T15:00:00Z','2026-11-13T14:59:00Z']
+  const dated=records.map((item,i)=>({...item,record:{...item.record,firstSeen:dates[i]!,lastSeen:dates[i]!}}))
+  await open(page,async route=>{
+   const url=new URL(route.request().url());if(!url.pathname.endsWith('/plate/records'))return false
+   await route.fulfill({json:{records:url.searchParams.get('matched')==='true'?dated.filter(item=>item.record.matches.length):dated,truncated:false,reason:''}});return true
+  })
+  await expect(page.locator('.plate-day-heading time')).toHaveText(['2026年11月15日(日)','2026年11月14日(土)','2026年11月13日(金)'])
+  expect(await page.locator('.plate-list > *').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-record')||node.querySelector('time')?.getAttribute('datetime')))).toEqual(['2026-11-15','pfix-0001','pfix-0003','2026-11-14','pfix-0002','2026-11-13','pfix-0004'])
+  await expect(page.locator('.plate-day-heading span')).toHaveText(['2 件','1 件','1 件'])
+  await page.getByLabel('条件に合ったものだけ').check()
+  await expect(page.locator('.plate-day-heading')).toHaveCount(1)
+  await expect(page.locator('.plate-day-heading time')).toHaveAttribute('datetime','2026-11-15')
+  await expect(page.locator('.plate-item')).toHaveCount(1)
+ })
 
  test('first-run null rules do not break tabs, editing or reset',async({page})=>{
   const errors=await open(page,async route=>{if(new URL(route.request().url()).pathname==='/api/v1/plate/settings') {await route.fulfill({json:{...settings,rules:null}});return true}})
@@ -64,8 +81,8 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   const errors=await open(page)
   await expect(page.locator('.plate-item.hit')).toHaveCount(1)
   await expect(page.locator('.plate-item.hit .plate-rule-tag')).toHaveText('家族の車')
-  await expect(page.locator('path.plate-marker-hit')).toHaveCount(1)
-  await expect(page.locator('path.plate-marker')).toHaveCount(2)
+  await expect.poll(async()=>(await vectorState(page,'.plate-map'))?.sources.plates.features.filter((f:any)=>f.properties.hit).length??0).toBe(1)
+  await expect.poll(async()=>(await vectorState(page,'.plate-map'))?.sources.plates.features.filter((f:any)=>!f.properties.hit).length??0).toBe(2)
   await expect(page.getByText('位置なし',{exact:true})).toHaveCount(1)
   await expect(page.locator('[data-record="pfix-0003"] .plate-estimated')).toHaveText('位置推定')
   await expect(page.locator('.plate-speech.unsupported')).toHaveText('発話できず（未設定）')
@@ -80,13 +97,13 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await open(page)
   await page.locator('[data-record="pfix-0003"] .plate-item-main').click()
   await expect(page.locator('[data-record="pfix-0003"]')).toHaveClass(/selected/)
-  await expect(page.locator('.leaflet-popup-content')).toContainText('多摩 330 わ 45-67')
-  await expect(page.locator('.leaflet-popup-content')).toContainText('推定した位置です（誤差 約400m）')
-  await page.locator('path.plate-marker-hit').click({force:true})
+  await expect(page.locator('.maplibregl-popup-content')).toContainText('多摩 330 わ 45-67')
+  await expect(page.locator('.maplibregl-popup-content')).toContainText('推定した位置です（誤差 約400m）')
+  await clickVectorFeature(page,'.plate-map','plates',{key:'hit',value:true})
   await expect(page.locator('[data-record="pfix-0001"]')).toHaveClass(/selected/)
   await expect(page.locator('[data-record="pfix-0003"]')).not.toHaveClass(/selected/)
-  await expect(page.locator('.leaflet-popup')).toHaveCount(1)
-  await expect(page.locator('.leaflet-popup-content')).toContainText('条件: 家族の車')
+  await expect(page.locator('.maplibregl-popup')).toHaveCount(1)
+  await expect(page.locator('.maplibregl-popup-content')).toContainText('条件: 家族の車')
  })
 
  test('matched-only filter requests matched records and the image dialog shows the stored frame',async({page})=>{
@@ -256,13 +273,12 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
  test('plate map follows explicit and system themes including popup and controls',async({page})=>{
   await open(page)
   await page.locator('.plate-item.hit .plate-item-main').click()
-  const wrapper=page.locator('.plate-page .leaflet-popup-content-wrapper')
+  const wrapper=page.locator('.plate-page .maplibregl-popup-content')
   for(const theme of ['dark','light'] as const){
    await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme)
    await expect(wrapper).toHaveCSS('background-color',theme==='dark'?'rgb(27, 31, 38)':'rgb(255, 255, 255)')
-   await expect(page.locator('.plate-page .leaflet-control-zoom-in')).toHaveCSS('color',theme==='dark'?'rgb(230, 233, 238)':'rgb(32, 38, 48)')
-   const filter=await page.locator('.plate-page .leaflet-tile-pane').evaluate(el=>getComputedStyle(el).filter)
-   expect(filter==='none').toBe(theme==='light')
+   await expect(page.locator('.plate-page .maplibregl-ctrl-zoom-in')).toHaveCSS('color',theme==='dark'?'rgb(230, 233, 238)':'rgb(32, 38, 48)')
+   await expect(page.locator('.plate-map')).toHaveAttribute('data-map-theme',theme==='light'?'mist':'night')
   }
   await page.evaluate(()=>delete document.documentElement.dataset.theme)
   await page.emulateMedia({colorScheme:'dark'})
@@ -272,12 +288,12 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
  })
 
  test('an empty plate map requests no tiles and shows a readable themed placeholder',async({page})=>{
-  let tileRequests=0;page.on('request',r=>{if(r.url().includes('tile.openstreetmap.org'))tileRequests++})
+  let tileRequests=0;page.on('request',r=>{if(r.url().includes('tiles.openfreemap.org'))tileRequests++})
   await open(page)
   await page.route('**/api/v1/plate/records?*',route=>route.fulfill({json:{records:[],truncated:false,reason:''}}))
   await page.getByRole('button',{name:'更新',exact:true}).click()
   await expect(page.locator('.plate-map-placeholder')).toBeVisible()
-  await expect(page.locator('.plate-map img.leaflet-tile')).toHaveCount(0)
+  await expect(page.locator('.plate-map')).toHaveAttribute('data-map-background','off')
   const count=tileRequests
   await page.getByLabel('地図の背景を表示').uncheck();await page.getByLabel('地図の背景を表示').check()
   expect(tileRequests).toBe(count)

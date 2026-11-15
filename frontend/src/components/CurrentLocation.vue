@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import {Navigation,MapPin} from '@lucide/vue'
-import L from 'leaflet'
-import {mapAttribution,mapTiles} from '../services/map-tiles'
-import 'leaflet/dist/leaflet.css'
+import {VectorMap,Marker,mapAttribution,collection,feature,circleGeometry,routeLayers,locationElement,type LatLon} from '../services/vector-map'
 import '../radio-map.css'
 import {api,type Observation} from '../services/api'
 import {recentTrail} from '../services/trail'
@@ -26,7 +24,7 @@ const observation=computed(()=>typeof live.value?.status==='string'?live.value:p
 // always with its age. Satellites and accuracy come from NMEA and show their own age.
 const MAX_AGE=11*60*1000
 const container=ref<HTMLElement>(),now=ref(Date.now()),tileFailed=ref(false),following=ref(true)
-let zoom=15,markerLive=false,map:L.Map|undefined,marker:L.CircleMarker|undefined,accuracy:L.Circle|undefined,trailLayer:L.LayerGroup|undefined,resize:ResizeObserver|undefined,timer:ReturnType<typeof setInterval>|undefined,mounted=false
+let zoom=15,markerLive=false,map:VectorMap|undefined,marker:Marker|undefined,resize:ResizeObserver|undefined,timer:ReturnType<typeof setInterval>|undefined,mounted=false
 const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)
 const current=computed(()=>{
  const gps=observation.value?.data,at=Date.parse(gps?.at||'')
@@ -49,11 +47,11 @@ const canvasStyle=computed(()=>{
  const x=hidden.left-hidden.right,y=hidden.top-hidden.bottom
  return {left:Math.min(0,x)+'px',right:Math.min(0,-x)+'px',top:Math.min(0,y)+'px',bottom:Math.min(0,-y)+'px'}
 })
-function centre(point:L.LatLngTuple){map?.setView(point,map.getZoom(),{animate:false})}
+function centre(point:LatLon){map?.centre(point)}
 function resume(){following.value=true;const point=anchor();if(point)centre(point)}
-function clear(){resize?.disconnect();resize=undefined;map?.remove();map=undefined;marker=undefined;accuracy=undefined;trailLayer=undefined}
-function anchor():L.LatLngTuple|undefined{const gps=current.value;return gps?[gps.lat!,gps.lon!]:lastTrail.value}
-function drawTrail(){if(!map)return;trailLayer?.remove();trailLayer=L.layerGroup();for(const seg of trail.value){if(seg.length>1)L.polyline(seg,{color:'#2f5bd8',weight:4,opacity:.75,interactive:false,className:'current-location-trail'}).addTo(trailLayer);else if(seg.length)L.circleMarker(seg[0]!,{radius:3,color:'#2f5bd8',interactive:false,className:'current-location-trail'}).addTo(trailLayer)}trailLayer.addTo(map)}
+function clear(){resize?.disconnect();resize=undefined;map?.destroy();map=undefined;marker=undefined}
+function anchor():LatLon|undefined{const gps=current.value;return gps?[gps.lat!,gps.lon!]:lastTrail.value}
+function drawTrail(){if(!map)return;map.setOverlay('current-trail',collection(trail.value.map((seg,index)=>feature(seg.length>1?{type:'LineString',coordinates:seg.map(p=>[p[1],p[0]])}:{type:'Point',coordinates:[seg[0]![1],seg[0]![0]]},{segment:index,count:seg.length}))),routeLayers('current-trail','#2f5bd8',4))}
 function update(){
  if(!mounted||!container.value)return
  const gps=current.value,point=anchor()
@@ -61,23 +59,18 @@ function update(){
  if(!map){
   tileFailed.value=false
   // Dragging suspends following until the user explicitly returns to the vehicle.
-  map=props.hero?L.map(container.value,{zoomControl:false,attributionControl:false,scrollWheelZoom:'center',touchZoom:'center',doubleClickZoom:'center',dragging:true,keyboard:false,minZoom:4,maxZoom:19}).setView(point,zoom):L.map(container.value,{zoomControl:true,scrollWheelZoom:false,dragging:true,keyboard:false,doubleClickZoom:false}).setView(point,15)
-  map.on('dragstart',()=>following.value=false)
-  map.attributionControl?.setPrefix(false)
-  if(props.hero)map.on('zoomend',()=>{if(map)zoom=map.getZoom()})
-  mapTiles(()=>tileFailed.value=true).addTo(map)
-  resize=new ResizeObserver(()=>{map?.invalidateSize({pan:false});const p=anchor();if(p&&following.value)centre(p)});resize.observe(container.value)
+  try{map=new VectorMap({view:'dashboard',container:container.value,hero:props.hero,background:true,center:[point[1],point[0]],zoom:props.hero?zoom:15,scrollZoom:props.hero,failed:()=>tileFailed.value=true})}catch{tileFailed.value=true;return}
+  map.map.on('dragstart',()=>following.value=false)
+  if(props.hero)map.map.on('zoomend',()=>{if(map)zoom=map.map.getZoom()})
+  resize=new ResizeObserver(()=>{const p=anchor();if(p&&following.value)centre(p)});resize.observe(container.value)
   drawTrail()
  }
  // The marker is the newest recorded position; without one, the end of the trail is shown greyed.
- const colour=gps?'#397fd7':'#8a94a3'
- // A live marker and a last-known marker differ in class and tooltip, so switching rebuilds it.
  if(marker&&markerLive!==!!gps){marker.remove();marker=undefined}
  markerLive=!!gps
- if(!marker)marker=L.circleMarker(point,{radius:8,color:'#fff',weight:3,fillColor:colour,fillOpacity:1,className:gps?'current-location-marker':'current-location-last'}).addTo(map).bindTooltip(gps?'現在地':lastLabel.value)
- else{marker.setLatLng(point);marker.setStyle({fillColor:colour})}
- accuracy?.remove();accuracy=undefined
- if(gps&&finite(gps.accuracyM)&&gps.accuracyM>0)accuracy=L.circle(point,{radius:gps.accuracyM,color:'#397fd7',weight:1,fillOpacity:.1,interactive:false}).addTo(map)
+ if(!marker){const element=locationElement(gps?'current-location-marker':'current-location-last',!!gps);element.title=gps?'現在地':lastLabel.value;marker=new Marker({element}).setLngLat([point[1],point[0]]).addTo(map.map)}
+ else marker.setLngLat([point[1],point[0]])
+ map.setOverlay('gps-accuracy',collection(gps&&finite(gps.accuracyM)&&gps.accuracyM>0?[feature(circleGeometry(gps.lat!,gps.lon!,gps.accuracyM))]:[]),[{id:'gps-accuracy-area',type:'fill',source:'gps-accuracy',paint:{'fill-color':'#397fd7','fill-opacity':.1}},{id:'gps-accuracy-edge',type:'line',source:'gps-accuracy',paint:{'line-color':'#397fd7','line-opacity':.4,'line-width':1}}])
  if(following.value)centre(point)
 }
 watch([current,lastTrail],update,{flush:'post'})

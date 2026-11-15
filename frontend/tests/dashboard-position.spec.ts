@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test'
+import {vectorTiles,vectorState,overlayCount,clickVectorFeature} from './fixtures/vector-tiles'
 import {readFileSync} from 'node:fs'
 const {version}=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'))
 const base=process.env.NCC_UI_REVIEW_URL,stamp='2026-11-12T03:00:00Z'
@@ -8,7 +9,7 @@ async function fixture(page:Page,theme:string){
  await page.clock.install({time:new Date(stamp)})
  await page.addInitScript(()=>{(window as any).EventSource=class extends EventTarget{onerror=null;close(){}}})
  const state={gps:observation({fix:true,at:stamp,lat:35.68,lon:139.76,satellites:12,accuracyM:8}),recording:observation({writing:true,cameras:{front:true,in:true},writingObservedAt:stamp,finalizedClips:128})}
- await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/svg+xml',body:tile}))
+ await vectorTiles(page)
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname;let data:unknown={}
   if(path.endsWith('/auth/session'))data={csrf:'fixture'}
@@ -29,7 +30,7 @@ test.describe('dashboard current location and recording',()=>{
   await page.goto(base!);const panel=page.locator('.gps-panel');await panel.scrollIntoViewIfNeeded()
   await expect(panel.getByRole('region',{name:'現在地の地図'})).toBeVisible()
   await expect(panel.locator('.current-location-marker')).toHaveCount(1)
-  await expect(panel.locator('.leaflet-tile-loaded').first()).toBeVisible()
+  await expect(panel.locator('.current-location-canvas')).toHaveAttribute('data-map-ready','true')
   await expect(panel.getByLabel('現在地の緯度経度')).toContainText('緯度 35.680000')
   await expect(panel.getByLabel('現在地の緯度経度')).toContainText('経度 139.760000')
   const geometry=await panel.evaluate(element=>{
@@ -45,7 +46,7 @@ test.describe('dashboard current location and recording',()=>{
   state.gps=observation({fix:false} as any,'unknown');state.recording=observation({writing:false,cameras:{front:false,in:false},writingObservedAt:stamp,finalizedClips:128})
   await page.getByRole('button',{name:'状態を更新',exact:true}).evaluate(element=>(element as HTMLButtonElement).click());await panel.scrollIntoViewIfNeeded()
   await expect(panel.locator('.current-location-empty')).toContainText('測位待ち')
-  await expect(panel.locator('.current-location-marker,.leaflet-tile')).toHaveCount(0)
+  await expect(panel.locator('.current-location-marker,.maplibregl-canvas')).toHaveCount(0)
   await expect(panel.getByLabel('現在地の緯度経度')).not.toContainText('35.680000')
   await expect(panel.getByRole('status',{name:'録画状態'})).toContainText('録画停止中')
   await page.getByRole('button',{name:'ドラレコ再生を開く'}).click();await expect(page).toHaveURL(/#recordings$/)

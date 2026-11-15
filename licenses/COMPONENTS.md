@@ -7,6 +7,15 @@
 | [@babel/types](https://www.npmjs.com/package/@babel/types/v/7.29.11) | 7.29.11 | MIT | UI runtime | [LICENSE](../licenses/npm/babel-types-7.29.11/LICENSE.txt) |
 | [@jridgewell/sourcemap-codec](https://www.npmjs.com/package/@jridgewell/sourcemap-codec/v/1.6.0) | 1.6.0 | MIT | UI runtime | [LICENSE](../licenses/npm/jridgewell-sourcemap-codec-1.6.0/LICENSE.txt) |
 | [@lucide/vue](https://www.npmjs.com/package/@lucide/vue/v/1.72.0) | 1.72.0 | ISC | UI runtime | [LICENSE](../licenses/npm/lucide-vue-1.72.0/LICENSE.txt) |
+| [@mapbox/jsonlint-lines-primitives](https://www.npmjs.com/package/@mapbox/jsonlint-lines-primitives/v/2.0.3) | 2.0.3 | MIT | UI runtime | [LICENSE](../licenses/npm/mapbox-jsonlint-lines-primitives-2.0.3/LICENSE.txt) |
+| [@mapbox/point-geometry](https://www.npmjs.com/package/@mapbox/point-geometry/v/1.1.0) | 1.1.0 | ISC | UI runtime | [LICENSE](../licenses/npm/mapbox-point-geometry-1.1.0/LICENSE.txt) |
+| [@mapbox/tiny-sdf](https://www.npmjs.com/package/@mapbox/tiny-sdf/v/2.3.0) | 2.3.0 | BSD-2-Clause | UI runtime | [LICENSE.txt](../licenses/npm/mapbox-tiny-sdf-2.3.0/LICENSE.txt.txt) |
+| [@mapbox/unitbezier](https://www.npmjs.com/package/@mapbox/unitbezier/v/1.0.0) | 1.0.0 | BSD-2-Clause | UI runtime | [LICENSE](../licenses/npm/mapbox-unitbezier-1.0.0/LICENSE.txt) |
+| [@mapbox/vector-tile](https://www.npmjs.com/package/@mapbox/vector-tile/v/3.0.0) | 3.0.0 | BSD-3-Clause | UI runtime | [LICENSE.txt](../licenses/npm/mapbox-vector-tile-3.0.0/LICENSE.txt.txt) |
+| [@maplibre/geojson-vt](https://www.npmjs.com/package/@maplibre/geojson-vt/v/6.3.1) | 6.3.1 | ISC | UI runtime | [LICENSE](../licenses/npm/maplibre-geojson-vt-6.3.1/LICENSE.txt) |
+| [@maplibre/maplibre-gl-style-spec](https://www.npmjs.com/package/@maplibre/maplibre-gl-style-spec/v/26.8.0) | 26.8.0 | ISC | UI runtime | [LICENSE.txt](../licenses/npm/maplibre-maplibre-gl-style-spec-26.8.0/LICENSE.txt.txt) |
+| [@maplibre/mlt](https://www.npmjs.com/package/@maplibre/mlt/v/1.3.0) | 1.3.0 | (MIT OR Apache-2.0) | UI runtime | [LICENSE.txt](../licenses/npm/maplibre-mlt-1.3.0/LICENSE.txt.txt) |
+| [@maplibre/vt-pbf](https://www.npmjs.com/package/@maplibre/vt-pbf/v/4.3.3) | 4.3.3 | MIT | UI runtime | [LICENSE](../licenses/npm/maplibre-vt-pbf-4.3.3/LICENSE.txt) |
 | [@oxc-project/types](https://www.npmjs.com/package/@oxc-project/types/v/0.156.0) | 0.156.0 | MIT | build/test | [LICENSE](../licenses/npm/oxc-project-types-0.156.0/LICENSE.txt) |
 | [@playwright/test](https://www.npmjs.com/package/@playwright/test/v/1.65.0) | 1.65.0 | Apache-2.0 | build/test | [LICENSE](../licenses/npm/playwright-test-1.65.0/LICENSE.txt), [NOTICE](../licenses/npm/playwright-test-1.65.0/NOTICE.txt) |
 | [@rolldown/binding-android-arm-eabi](https://www.npmjs.com/package/@rolldown/binding-android-arm-eabi/v/1.2.18) | 1.2.18 | MIT | build/test | [LICENSE](../licenses/npm/rolldown-binding-android-arm-eabi-1.2.18/LICENSE.txt), [THIRD-PARTY-LICENSE](../licenses/npm/rolldown-binding-android-arm-eabi-1.2.18/THIRD-PARTY-LICENSE.txt) |
@@ -25,8 +34,7 @@
 | [@rolldown/binding-win32-arm64-msvc](https://www.npmjs.com/package/@rolldown/binding-win32-arm64-msvc/v/1.2.18) | 1.2.18 | MIT | build/test | [LICENSE](../licenses/npm/rolldown-binding-win32-arm64-msvc-1.2.18/LICENSE.txt), [THIRD-PARTY-LICENSE](../licenses/npm/rolldown-binding-win32-arm64-msvc-1.2.18/THIRD-PARTY-LICENSE.txt) |
 | [@rolldown/binding-win32-x64-msvc](https://www.npmjs.com/package/@rolldown/binding-win32-x64-msvc/v/1.2.18) | 1.2.18 | MIT | build/test | [LICENSE](../licenses/npm/rolldown-binding-win32-x64-msvc-1.2.18/LICENSE.txt), [THIRD-PARTY-LICENSE](../licenses/npm/rolldown-binding-win32-x64-msvc-1.2.18/THIRD-PARTY-LICENSE.txt) |
 | [@rolldown/pluginutils](https://www.npmjs.com/package/@rolldown/pluginutils/v/1.1.0) | 1.1.0 | MIT | build/test | [LICENSE](../licenses/npm/rolldown-pluginutils-1.1.0/LICENSE.txt) |
-| [@types/geojson](https://www.npmjs.com/package/@types/geojson/v/7946.0.16) | 7946.0.16 | MIT | build/test | [LICENSE](../licenses/npm/types-geojson-7946.0.16/LICENSE.txt) |
-| [@types/leaflet](https://www.npmjs.com/package/@types/leaflet/v/1.9.22) | 1.9.22 | MIT | build/test | [LICENSE](../licenses/npm/types-leaflet-1.9.22/LICENSE.txt) |
+| [@types/geojson](https://www.npmjs.com/package/@types/geojson/v/7946.0.16) | 7946.0.16 | MIT | UI runtime | [LICENSE](../licenses/npm/types-geojson-7946.0.16/LICENSE.txt) |
 | [@types/node](https://www.npmjs.com/package/@types/node/v/26.6.6) | 26.6.6 | MIT | build/test | [LICENSE](../licenses/npm/types-node-26.6.6/LICENSE.txt) |
 | [@vitejs/plugin-vue](https://www.npmjs.com/package/@vitejs/plugin-vue/v/6.0.10) | 6.0.10 | MIT | build/test | [LICENSE](../licenses/npm/vitejs-plugin-vue-6.0.10/LICENSE.txt) |
 | [@volar/language-core](https://www.npmjs.com/package/@volar/language-core/v/2.4.30) | 2.4.30 | MIT | build/test | [LICENSE](../licenses/npm/volar-language-core-2.4.30/LICENSE.txt) |
@@ -44,13 +52,17 @@
 | [@vue/server-renderer](https://www.npmjs.com/package/@vue/server-renderer/v/3.5.45) | 3.5.45 | MIT | UI runtime | [LICENSE](../licenses/npm/vue-server-renderer-3.5.45/LICENSE.txt) |
 | [@vue/shared](https://www.npmjs.com/package/@vue/shared/v/3.5.45) | 3.5.45 | MIT | UI runtime | [LICENSE](../licenses/npm/vue-shared-3.5.45/LICENSE.txt) |
 | [alien-signals](https://www.npmjs.com/package/alien-signals/v/3.2.1) | 3.2.1 | MIT | build/test | [LICENSE](../licenses/npm/alien-signals-3.2.1/LICENSE.txt) |
+| [bidi-js](https://www.npmjs.com/package/bidi-js/v/1.1.0) | 1.1.0 | MIT | UI runtime | [LICENSE.txt](../licenses/npm/bidi-js-1.1.0/LICENSE.txt.txt) |
 | [csstype](https://www.npmjs.com/package/csstype/v/3.2.3) | 3.2.3 | MIT | UI runtime | [LICENSE](../licenses/npm/csstype-3.2.3/LICENSE.txt) |
 | [detect-libc](https://www.npmjs.com/package/detect-libc/v/2.1.2) | 2.1.2 | Apache-2.0 | build/test | [LICENSE](../licenses/npm/detect-libc-2.1.2/LICENSE.txt) |
+| [earcut](https://www.npmjs.com/package/earcut/v/3.2.4) | 3.2.4 | ISC | UI runtime | [LICENSE](../licenses/npm/earcut-3.2.4/LICENSE.txt) |
 | [entities](https://www.npmjs.com/package/entities/v/7.0.1) | 7.0.1 | BSD-2-Clause | UI runtime | [LICENSE](../licenses/npm/entities-7.0.1/LICENSE.txt) |
 | [estree-walker](https://www.npmjs.com/package/estree-walker/v/2.0.2) | 2.0.2 | MIT | UI runtime | [LICENSE](../licenses/npm/estree-walker-2.0.2/LICENSE.txt) |
 | [fdir](https://www.npmjs.com/package/fdir/v/6.5.0) | 6.5.0 | MIT | build/test | [LICENSE](../licenses/npm/fdir-6.5.0/LICENSE.txt) |
 | [fsevents](https://www.npmjs.com/package/fsevents/v/2.3.3) | 2.3.3 | MIT | build/test | [LICENSE](../licenses/npm/fsevents-2.3.3/LICENSE.txt) |
-| [leaflet](https://www.npmjs.com/package/leaflet/v/1.9.4) | 1.9.4 | BSD-2-Clause | UI runtime | [LICENSE](../licenses/npm/leaflet-1.9.4/LICENSE.txt) |
+| [gl-matrix](https://www.npmjs.com/package/gl-matrix/v/3.4.4) | 3.4.4 | MIT | UI runtime | [LICENSE.md](../licenses/npm/gl-matrix-3.4.4/LICENSE.md.txt) |
+| [json-stringify-pretty-compact](https://www.npmjs.com/package/json-stringify-pretty-compact/v/4.0.0) | 4.0.0 | MIT | UI runtime | [LICENSE](../licenses/npm/json-stringify-pretty-compact-4.0.0/LICENSE.txt) |
+| [kdbush](https://www.npmjs.com/package/kdbush/v/4.1.0) | 4.1.0 | ISC | UI runtime | [LICENSE](../licenses/npm/kdbush-4.1.0/LICENSE.txt) |
 | [lightningcss](https://www.npmjs.com/package/lightningcss/v/1.33.0) | 1.33.0 | MPL-2.0 | build/test | [LICENSE](../licenses/npm/lightningcss-1.33.0/LICENSE.txt) |
 | [lightningcss-android-arm64](https://www.npmjs.com/package/lightningcss-android-arm64/v/1.33.0) | 1.33.0 | MPL-2.0 | build/test | [LICENSE](../licenses/npm/lightningcss-android-arm64-1.33.0/LICENSE.txt) |
 | [lightningcss-darwin-arm64](https://www.npmjs.com/package/lightningcss-darwin-arm64/v/1.33.0) | 1.33.0 | MPL-2.0 | build/test | [LICENSE](../licenses/npm/lightningcss-darwin-arm64-1.33.0/LICENSE.txt) |
@@ -64,17 +76,27 @@
 | [lightningcss-win32-arm64-msvc](https://www.npmjs.com/package/lightningcss-win32-arm64-msvc/v/1.33.0) | 1.33.0 | MPL-2.0 | build/test | [LICENSE](../licenses/npm/lightningcss-win32-arm64-msvc-1.33.0/LICENSE.txt) |
 | [lightningcss-win32-x64-msvc](https://www.npmjs.com/package/lightningcss-win32-x64-msvc/v/1.33.0) | 1.33.0 | MPL-2.0 | build/test | [LICENSE](../licenses/npm/lightningcss-win32-x64-msvc-1.33.0/LICENSE.txt) |
 | [magic-string](https://www.npmjs.com/package/magic-string/v/0.30.21) | 0.30.21 | MIT | UI runtime | [LICENSE](../licenses/npm/magic-string-0.30.21/LICENSE.txt) |
+| [maplibre-gl](https://www.npmjs.com/package/maplibre-gl/v/6.18.0) | 6.18.0 | BSD-3-Clause | UI runtime | [LICENSE.txt](../licenses/npm/maplibre-gl-6.18.0/LICENSE.txt.txt) |
+| [minimist](https://www.npmjs.com/package/minimist/v/1.2.8) | 1.2.8 | MIT | UI runtime | [LICENSE](../licenses/npm/minimist-1.2.8/LICENSE.txt) |
 | [muggle-string](https://www.npmjs.com/package/muggle-string/v/0.4.1) | 0.4.1 | MIT | build/test | [LICENSE](../licenses/npm/muggle-string-0.4.1/LICENSE.txt) |
+| [murmurhash-js](https://www.npmjs.com/package/murmurhash-js/v/1.0.0) | 1.0.0 | MIT | UI runtime | [README-LICENSE](../licenses/npm/murmurhash-js-1.0.0/README-LICENSE.txt) |
 | [nanoid](https://www.npmjs.com/package/nanoid/v/3.3.20) | 3.3.20 | MIT | UI runtime | [LICENSE](../licenses/npm/nanoid-3.3.20/LICENSE.txt) |
 | [path-browserify](https://www.npmjs.com/package/path-browserify/v/1.0.1) | 1.0.1 | MIT | build/test | [LICENSE](../licenses/npm/path-browserify-1.0.1/LICENSE.txt) |
+| [pbf](https://www.npmjs.com/package/pbf/v/5.1.2) | 5.1.2 | BSD-3-Clause | UI runtime | [LICENSE](../licenses/npm/pbf-5.1.2/LICENSE.txt) |
 | [picocolors](https://www.npmjs.com/package/picocolors/v/1.1.1) | 1.1.1 | ISC | UI runtime | [LICENSE](../licenses/npm/picocolors-1.1.1/LICENSE.txt) |
 | [picomatch](https://www.npmjs.com/package/picomatch/v/4.0.7) | 4.0.7 | MIT | build/test | [LICENSE](../licenses/npm/picomatch-4.0.7/LICENSE.txt) |
 | [playwright](https://www.npmjs.com/package/playwright/v/1.65.0) | 1.65.0 | Apache-2.0 | build/test | [LICENSE](../licenses/npm/playwright-1.65.0/LICENSE.txt), [NOTICE](../licenses/npm/playwright-1.65.0/NOTICE.txt), [ThirdPartyNotices.txt](../licenses/npm/playwright-1.65.0/ThirdPartyNotices.txt.txt) |
 | [playwright-core](https://www.npmjs.com/package/playwright-core/v/1.65.0) | 1.65.0 | Apache-2.0 | build/test | [LICENSE](../licenses/npm/playwright-core-1.65.0/LICENSE.txt), [NOTICE](../licenses/npm/playwright-core-1.65.0/NOTICE.txt), [ThirdPartyNotices.txt](../licenses/npm/playwright-core-1.65.0/ThirdPartyNotices.txt.txt) |
 | [postcss](https://www.npmjs.com/package/postcss/v/8.5.32) | 8.5.32 | MIT | UI runtime | [LICENSE](../licenses/npm/postcss-8.5.32/LICENSE.txt) |
+| [potpack](https://www.npmjs.com/package/potpack/v/2.1.0) | 2.1.0 | ISC | UI runtime | [LICENSE](../licenses/npm/potpack-2.1.0/LICENSE.txt) |
+| [protocol-buffers-schema](https://www.npmjs.com/package/protocol-buffers-schema/v/3.6.1) | 3.6.1 | MIT | UI runtime | [LICENSE](../licenses/npm/protocol-buffers-schema-3.6.1/LICENSE.txt) |
+| [quickselect](https://www.npmjs.com/package/quickselect/v/3.0.0) | 3.0.0 | ISC | UI runtime | [LICENSE](../licenses/npm/quickselect-3.0.0/LICENSE.txt) |
+| [require-from-string](https://www.npmjs.com/package/require-from-string/v/2.0.2) | 2.0.2 | MIT | UI runtime | [license](../licenses/npm/require-from-string-2.0.2/license.txt) |
+| [resolve-protobuf-schema](https://www.npmjs.com/package/resolve-protobuf-schema/v/2.1.0) | 2.1.0 | MIT | UI runtime | [LICENSE](../licenses/npm/resolve-protobuf-schema-2.1.0/LICENSE.txt) |
 | [rolldown](https://www.npmjs.com/package/rolldown/v/1.2.18) | 1.2.18 | MIT | build/test | [LICENSE](../licenses/npm/rolldown-1.2.18/LICENSE.txt), [THIRD-PARTY-LICENSE](../licenses/npm/rolldown-1.2.18/THIRD-PARTY-LICENSE.txt) |
 | [source-map-js](https://www.npmjs.com/package/source-map-js/v/1.2.2) | 1.2.2 | BSD-3-Clause | UI runtime | [LICENSE](../licenses/npm/source-map-js-1.2.2/LICENSE.txt) |
 | [tinyglobby](https://www.npmjs.com/package/tinyglobby/v/0.2.17) | 0.2.17 | MIT | build/test | [LICENSE](../licenses/npm/tinyglobby-0.2.17/LICENSE.txt) |
+| [tinyqueue](https://www.npmjs.com/package/tinyqueue/v/3.0.0) | 3.0.0 | ISC | UI runtime | [LICENSE](../licenses/npm/tinyqueue-3.0.0/LICENSE.txt) |
 | [typescript](https://www.npmjs.com/package/typescript/v/6.0.3) | 6.0.3 | Apache-2.0 | UI runtime | [LICENSE.txt](../licenses/npm/typescript-6.0.3/LICENSE.txt.txt), [ThirdPartyNoticeText.txt](../licenses/npm/typescript-6.0.3/ThirdPartyNoticeText.txt.txt) |
 | [undici-types](https://www.npmjs.com/package/undici-types/v/8.9.0) | 8.9.0 | MIT | build/test | [LICENSE](../licenses/npm/undici-types-8.9.0/LICENSE.txt) |
 | [vite](https://www.npmjs.com/package/vite/v/8.3.8) | 8.3.8 | MIT | build/test | [LICENSE.md](../licenses/npm/vite-8.3.8/LICENSE.md.txt) |
@@ -99,7 +121,7 @@
 | [golang.org/x/term](https://pkg.go.dev/golang.org/x/term@v0.47.0) | v0.47.0 | BSD-3-Clause | Go module graph (includes transitive/test modules) | [LICENSE](../licenses/go/golang.org-x-term-v0.47.0/LICENSE.txt), [PATENTS](../licenses/go/golang.org-x-term-v0.47.0/PATENTS.txt) |
 | [golang.org/x/text](https://pkg.go.dev/golang.org/x/text@v0.43.0) | v0.43.0 | BSD-3-Clause | Go module graph (includes transitive/test modules) | [LICENSE](../licenses/go/golang.org-x-text-v0.43.0/LICENSE.txt), [PATENTS](../licenses/go/golang.org-x-text-v0.43.0/PATENTS.txt) |
 | [gopkg.in/yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3@v3.0.1) | v3.0.1 | MIT AND Apache-2.0 | Go module graph (includes transitive/test modules) | [LICENSE](../licenses/go/gopkg.in-yaml.v3-v3.0.1/LICENSE.txt), [NOTICE](../licenses/go/gopkg.in-yaml.v3-v3.0.1/NOTICE.txt) |
-| [Go standard library/runtime](https://go.googlesource.com/go/+/refs/tags/go1.27.4/LICENSE) | go1.27.4 | BSD-3-Clause | linked Go runtime and standard library | [LICENSE](../licenses/toolchain/go-go1.27.4/LICENSE.txt), [PATENTS](../licenses/toolchain/go-go1.27.4/PATENTS.txt) |
+| [Go standard library/runtime](https://go.googlesource.com/go/+/refs/tags/go1.27.3/LICENSE) | go1.27.3 | BSD-3-Clause | linked Go runtime and standard library | [LICENSE](../licenses/toolchain/go-go1.27.3/LICENSE.txt), [PATENTS](../licenses/toolchain/go-go1.27.3/PATENTS.txt) |
 | [paramiko](https://pypi.org/project/paramiko/5.0.0/) | 5.0.0 | LGPL-2.1-or-later | optional host analysis/SSH tooling; not bundled | [LICENSE](../licenses/python/paramiko-5.0.0/LICENSE.txt), [UPSTREAM-NOTICE](../licenses/python/paramiko-5.0.0/UPSTREAM-NOTICE.txt) |
 | [bcrypt](https://pypi.org/project/bcrypt/5.0.0/) | 5.0.0 | Apache-2.0 | optional host analysis/SSH tooling; not bundled | [LICENSE](../licenses/python/bcrypt-5.0.0/LICENSE.txt) |
 | [cryptography](https://pypi.org/project/cryptography/48.0.1/) | 48.0.1 | Apache-2.0 OR BSD-3-Clause | optional host analysis/SSH tooling; not bundled | [LICENSE](../licenses/python/cryptography-48.0.1/LICENSE.txt), [LICENSE.APACHE](../licenses/python/cryptography-48.0.1/LICENSE.APACHE.txt), [LICENSE.BSD](../licenses/python/cryptography-48.0.1/LICENSE.BSD.txt) |
