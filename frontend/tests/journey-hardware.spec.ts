@@ -1,7 +1,33 @@
 import {test,expect} from '@playwright/test'
+import {readFileSync} from 'node:fs'
 
 test.describe('journey map on the installed device',()=>{
  test.skip(process.env.NCC_JOURNEY_HARDWARE!=='1','Explicit installed-device check required')
+
+ test('restored detailed track retains its source points and renders lines',async({page,request},info)=>{
+  const file=process.env.NCC_JOURNEY_REFERENCE_TRACK
+  test.skip(!file,'A private measured reference export is required')
+  const reference=JSON.parse(readFileSync(file!,'utf8')).data
+  expect(reference.points.length).toBeGreaterThan(1000)
+  const latitudes=reference.points.map((point:any)=>point.lat),longitudes=reference.points.map((point:any)=>point.lon)
+  expect(Math.max(...latitudes)-Math.min(...latitudes)+Math.max(...longitudes)-Math.min(...longitudes),'Use an actual driving route; stationary GPS drift does not verify route recovery').toBeGreaterThan(.01)
+  const response=await request.get('/api/v1/recordings/track?date='+reference.date)
+  expect(response.ok()).toBe(true)
+  const actual=(await response.json()).data
+  const lookup=new Map<string,any>(actual.points.map((point:any)=>[point.at,point]))
+  for(let i=0;i<reference.points.length;i++){
+   const point=reference.points[i],restored=lookup.get(point.at)
+   expect(restored?.lat).toBe(point.lat);expect(restored?.lon).toBe(point.lon)
+   if(i&&reference.points[i-1].segment===point.segment)expect(restored.segment).toBe(lookup.get(reference.points[i-1].at)?.segment)
+  }
+  await page.goto('/#trips')
+  await page.getByLabel('地図に表示する日付').fill(reference.date)
+  // Circle markers also use SVG paths. Requiring L commands verifies actual
+  // polylines instead of considering a handful of isolated dots a success.
+  await expect.poll(()=>page.locator('.journey-route').evaluateAll(nodes=>nodes.reduce((count,node)=>count+(node.getAttribute('d')?.match(/L/g)?.length||0),0))).toBeGreaterThan(100)
+  await expect(page.locator('.journey-map-status')).toContainText(actual.points.length.toLocaleString())
+  await page.locator('.dh-radio').screenshot({path:info.outputPath('restored-detailed-route.private.png')})
+ })
 
  test('November 13 and 14 show saved driving totals and measured GPS on their maps',async({page,request},info)=>{
   const history=await request.get('/api/v1/trips?period=custom&from=2026-11-13&to=2026-11-14')

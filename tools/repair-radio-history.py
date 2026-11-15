@@ -37,7 +37,18 @@ def main():
     readback=subprocess.check_output(adb+['shell','sha256sum',target],timeout=15)
     if readback.split()[0].decode()!=hashlib.sha256(raw).hexdigest():
         raise RuntimeError('Measured track transfer read-back mismatch')
-    command='/bin/sh /tmp/ncc-stage/tools/repair-radio-history.sh apply /tmp/ncc-radio-measured-track.json; result=$?; printf "\\nNCC_RADIO_REPAIR_EXIT=%s\\n" "$result"; exit "$result"'
+    # /tmp is cleared at reboot. Stage the current, reproducible repair script
+    # independently of the last software deployment's temporary bundle.
+    script=root/'tools/device/repair-radio-history.sh'
+    script_raw=script.read_bytes().replace(b'\r\n',b'\n')
+    staged=directory/'repair-radio-history.sh'
+    staged.write_bytes(script_raw)
+    remote='/tmp/ncc-radio-repair.sh'
+    subprocess.run(adb+['push',str(staged),remote],capture_output=True,timeout=30,check=True)
+    readback=subprocess.check_output(adb+['shell','sha256sum',remote],timeout=15)
+    if readback.split()[0].decode()!=hashlib.sha256(script_raw).hexdigest():
+        raise RuntimeError('Repair script transfer read-back mismatch')
+    command='/bin/sh '+remote+' apply /tmp/ncc-radio-measured-track.json; result=$?; printf "\\nNCC_RADIO_REPAIR_EXIT=%s\\n" "$result"; exit "$result"'
     result=subprocess.run(adb+['shell',command],capture_output=True,timeout=180)
     (directory/'result.private.txt').write_bytes(result.stdout+result.stderr)
     output=result.stdout.decode('utf8',errors='replace').replace('\r','')
