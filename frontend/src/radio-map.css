@@ -46,8 +46,8 @@
 .journey-map-toolbar { margin-bottom: 16px; align-items: center; }
 .journey-map-toolbar label.radio-check { display: flex; min-width: 0; font-weight: 500; }
 .journey-map-status { padding: 16px 0 0; align-items: baseline; }
-.current-location-resume { position: absolute; right: 12px; bottom: 64px; z-index: 500; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 1px 6px #00000018; }
-.hero .current-location-resume { right: calc(var(--hero-pad-right,0px) + 12px); bottom: calc(var(--dh-foot,calc(4px + var(--hero-credit-lift,0)*(var(--hero-pad-bottom,0px) + 2px))) + 26px); }
+.current-location-resume { position: absolute; right: 12px; bottom: 64px; z-index: 500; display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; color: var(--accent); background: var(--paper); box-shadow: 0 2px 8px #00000018; }
+.hero .current-location-resume { bottom: calc(var(--dh-foot,calc(4px + var(--hero-credit-lift,0)*(var(--hero-pad-bottom,0px) + 2px))) + 26px); }
 [data-theme=dark] :is(.radio-survey,.plate-page) { --radio-tile-filter: invert(.93) hue-rotate(180deg) brightness(.88) saturate(.7); }
 @media(prefers-color-scheme:dark) { :root:not([data-theme=light]):not([data-theme=dark]) :is(.radio-survey,.plate-page) { --radio-tile-filter: invert(.93) hue-rotate(180deg) brightness(.88) saturate(.7); } }
 @media(max-width:700px) {

@@ -96,6 +96,16 @@ func (s *Server) recordedTrack(w http.ResponseWriter, r *http.Request) {
 			Data trips.TrackReport `json:"data"`
 		}
 		if response.StatusCode == 200 && json.NewDecoder(io.LimitReader(response.Body, 32*1024*1024+1)).Decode(&value) == nil && value.Data.Points != nil {
+			// A route displayed today must still be available after the recorder
+			// overwrites these clips or the process restarts. Save every measured
+			// point before serving it; the periodic scan alone leaves a gap.
+			if _, e := s.tracks.Ingest(value.Data, now); e != nil {
+				s.loggerMu.Lock()
+				s.logger.TrackRetentionError = "track-retention-unavailable"
+				s.loggerMu.Unlock()
+				fail(w, 503, "TRACK_RETENTION_UNAVAILABLE", "GPS経路の保存に失敗しました")
+				return
+			}
 			samples = append(samples, trips.TrackSamples(value.Data)...)
 			partial = partial || value.Data.SourceTruncated
 			liveOK = true

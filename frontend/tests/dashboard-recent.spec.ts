@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test'
+import {rollingHourTicks} from '../src/services/journey'
 const now=Date.parse('2026-11-15T00:30:00Z'),since=now-86400000
 const observation=(data:unknown)=>({status:'available',data,source:'synthetic-recent-dashboard',verified:false})
 async function seed(page:Page){
@@ -25,11 +26,15 @@ async function seed(page:Page){
  return requests
 }
 
-for(const width of [1000,1200])test(`${width}px dashboard has rolling 24 hours and six panels at the bottom`,async({page},info)=>{
+for(const width of [1000,1200])test(`${width}px dashboard defaults to seven days and keeps six panels at the bottom`,async({page},info)=>{
  await page.setViewportSize({width,height:1800});const requests=await seed(page);await page.goto('/#dashboard')
+ await expect(page.getByTestId('trip-distance')).toHaveText('74.2km')
+ expect(requests[0]).toBe('?period=7')
+ await expect(page.getByRole('button',{name:'7日',exact:true})).toHaveAttribute('aria-pressed','true')
+ await page.getByRole('button',{name:'24時間',exact:true}).click()
  await expect(page.getByTestId('trip-distance')).toHaveText('12km')
- expect(requests[0]).toBe('?period=24h')
  await expect(page.locator('.jc-bucket')).toHaveCount(24)
+ await expect(page.locator('.jc-hour-tick')).toHaveText(['12','15','18','21','0','3','6','9'])
  await expect(page.getByText('過去24時間',{exact:true})).toBeVisible()
  await page.clock.runFor(500)
  const geometry=await page.locator('.dash-home').evaluate(root=>{const rect=(selector:string)=>root.querySelector(selector)!.getBoundingClientRect();const parent=root.getBoundingClientRect();return {bottomGap:parent.bottom-Math.max(rect('.device-status').bottom,rect('.resource-monitor').bottom),journeyTop:rect('.dh-journey').top,mapBottom:rect('.dh-window').bottom}})
@@ -43,6 +48,14 @@ for(const width of [1000,1200])test(`${width}px dashboard has rolling 24 hours a
  await page.screenshot({path:info.outputPath('recent-'+width+'.png')})
 })
 
+test('24-hour ticks use whole JST hours every three hours, including day endpoints',()=>{
+ const ticks=rollingHourTicks('2026-11-14T15:00:00Z','2026-11-15T15:00:00Z')
+ expect(ticks.map(tick=>tick.label)).toEqual(['0','3','6','9','12','15','18','21','24'])
+ expect(ticks[0].position).toBe(0);expect(ticks.at(-1)!.position).toBe(1)
+ const shifted=rollingHourTicks('2026-11-14T20:17:00Z','2026-11-15T20:17:00Z')
+ expect(shifted.map(tick=>tick.label)).toEqual(['6','9','12','15','18','21','0','3'])
+})
+
 test('past recorded days remain selectable and retain their measured totals',async({page})=>{
  await seed(page);await page.goto('/#trips')
  for(const date of ['2026-11-13','2026-11-14']){
@@ -51,4 +64,32 @@ test('past recorded days remain selectable and retain their measured totals',asy
   await expect(page.locator('.journey-route')).toHaveCount(1)
   await expect(page.locator('.dh-day-values')).toContainText(date.endsWith('13')?'16.6':'57.6')
  }
+})
+
+test('dashboard draws a detailed rolling route across midnight as a line',async({page})=>{
+ await page.setViewportSize({width:1200,height:1800});await seed(page)
+ const start=Date.parse('2026-11-14T14:50:00Z')
+ const points=Array.from({length:1200},(_,i)=>({at:new Date(start+i*1000).toISOString(),lat:35+i*.000001+Math.sin(i/10)*.0001,lon:139+i*.000004,segment:0}))
+ await page.route('**/api/v1/recordings/track?*',async route=>{
+  const q=new URL(route.request().url()).searchParams
+  expect(Date.parse(q.get('to')!)-Date.parse(q.get('from')!)).toBe(86400000)
+  await route.fulfill({json:observation({points,segments:[{id:0}],source:'synthetic-detailed-track'})})
+ })
+ await page.goto('/#dashboard')
+ // Dots are SVG paths too; require actual line commands and a single route
+ // through JST midnight instead of accepting any path as a recovered line.
+ await expect(page.locator('.current-location-trail')).toHaveCount(1)
+ await expect.poll(()=>page.locator('.current-location-trail').getAttribute('d').then(value=>value?.match(/L/g)?.length||0)).toBeGreaterThan(30)
+})
+
+for(const viewport of [{width:1440,height:900},{width:2618,height:1886}])test(`map credit and modern locate button align to the actual right edge at ${viewport.width}px`,async({page},info)=>{
+ await page.setViewportSize(viewport);await seed(page);await page.goto('/#dashboard');await page.clock.runFor(600)
+ const button=page.getByRole('button',{name:'現在地に戻る',exact:true}),credit=page.locator('.current-location-credit'),frame=page.locator('.current-location-frame')
+ await expect(button).toBeVisible();await expect(button.locator('svg')).toHaveAttribute('fill','currentColor')
+ const b=(await button.boundingBox())!,c=(await credit.boundingBox())!,f=(await frame.boundingBox())!
+ expect(f.x+f.width-b.x-b.width).toBeCloseTo(12,0)
+ expect(f.x+f.width-c.x-c.width).toBeCloseTo(12,0)
+ expect(c.y-b.y-b.height).toBeGreaterThanOrEqual(3);expect(c.y-b.y-b.height).toBeLessThan(25)
+ await button.click()
+ await page.screenshot({path:info.outputPath('map-right-edge-'+viewport.width+'.png')})
 })

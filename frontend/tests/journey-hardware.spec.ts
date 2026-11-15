@@ -85,7 +85,13 @@ test.describe('journey map on the installed device',()=>{
   const tracks:URLSearchParams[]=[]
   page.on('request',request=>{const url=new URL(request.url());if(url.pathname.endsWith('/recordings/track'))tracks.push(url.searchParams)})
   await page.goto('/#dashboard')
+  await expect(page.getByRole('button',{name:'7日',exact:true})).toHaveAttribute('aria-pressed','true')
+  await page.getByRole('button',{name:'24時間',exact:true}).click()
   await expect(page.getByRole('button',{name:'24時間',exact:true})).toHaveAttribute('aria-pressed','true')
+  await expect.poll(()=>page.locator('.jc-hour-tick').count()).toBeGreaterThanOrEqual(8)
+  const tickLabels=await page.locator('.jc-hour-tick').allTextContents()
+  expect(tickLabels.length).toBeLessThanOrEqual(9)
+  expect(tickLabels.every(label=>/^\d+$/.test(label)&&Number(label)%3===0)).toBe(true)
   const period=await page.request.get('/api/v1/trips?period=24h');expect(period.ok()).toBe(true)
   const report=(await period.json()).data;expect(report.hours).toHaveLength(24)
   expect(Date.parse(report.range.toAt)-Date.parse(report.range.fromAt)).toBe(86400000)
@@ -101,6 +107,9 @@ test.describe('journey map on the installed device',()=>{
   await expect(resume).toBeVisible();expect(await pane.getAttribute('style')).not.toBe(before)
   expect(await resume.textContent()).toBe('')
   const buttonRect=(await resume.boundingBox())!,credit=(await page.locator('.current-location-credit').boundingBox())!
+  const mapFrame=(await page.locator('.current-location-frame').boundingBox())!
+  expect(mapFrame.x+mapFrame.width-buttonRect.x-buttonRect.width).toBeCloseTo(12,0)
+  expect(mapFrame.x+mapFrame.width-credit.x-credit.width).toBeCloseTo(12,0)
   expect(Math.abs(buttonRect.x+buttonRect.width-credit.x-credit.width)).toBeLessThan(2)
   expect(credit.y-buttonRect.y-buttonRect.height).toBeGreaterThanOrEqual(3)
   expect(credit.y-buttonRect.y-buttonRect.height).toBeLessThan(25)
@@ -115,12 +124,28 @@ test.describe('journey map on the installed device',()=>{
   await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');localStorage.setItem('ncc.nav','float')})
   for(const width of [1000,1200]){
    await page.setViewportSize({width,height:1800});await page.goto('/#dashboard')
-   await expect(page.locator('.jc-window-label')).toHaveText('過去24時間')
-   await expect(page.locator('.jc-bucket')).toHaveCount(24)
+   await expect(page.getByRole('button',{name:'7日',exact:true})).toHaveAttribute('aria-pressed','true')
+   await expect(page.locator('.jc-bucket')).toHaveCount(7)
    await expect.poll(()=>page.locator('.dash-home').evaluate(root=>{const end=Math.max(...[...root.querySelectorAll('.dh-tiles>.panel')].map(node=>node.getBoundingClientRect().bottom));return Math.round(root.getBoundingClientRect().bottom-end)})).toBeLessThanOrEqual(18)
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
    await page.screenshot({path:info.outputPath('medium-'+width+'.private.png')})
   }
+ })
+
+ for(const width of [1440,2618])test(`map attribution and navigation button stay at the right edge on the device at ${width}px`,async({page},info)=>{
+  await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');localStorage.setItem('ncc.nav','float')})
+  await page.setViewportSize({width,height:width===2618?1886:900})
+  await page.goto('/#dashboard')
+  const button=page.getByRole('button',{name:/現在地に戻る|最後の位置に戻る/}),credit=page.locator('.current-location-credit')
+  await expect(button).toBeVisible();await expect(button.locator('svg')).toHaveAttribute('fill','currentColor')
+  await expect.poll(async()=>{
+   const b=await button.boundingBox(),c=await credit.boundingBox(),f=await page.locator('.current-location-frame').boundingBox()
+   return b&&c&&f?Math.max(Math.abs(f.x+f.width-b.x-b.width-12),Math.abs(f.x+f.width-c.x-c.width-12)):1000
+  }).toBeLessThan(2)
+  await button.click()
+  const b=(await button.boundingBox())!,c=(await credit.boundingBox())!
+  expect(c.y-b.y-b.height).toBeGreaterThanOrEqual(3);expect(c.y-b.y-b.height).toBeLessThan(25)
+  await page.screenshot({path:info.outputPath('right-edge-'+width+'.private.png')})
  })
 
  test.describe('phone touch',()=>{

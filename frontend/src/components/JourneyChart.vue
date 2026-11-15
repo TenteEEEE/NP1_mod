@@ -2,13 +2,13 @@
 import {computed,onMounted,onUnmounted,ref,useId,watch} from 'vue'
 import {ExternalLink,Route} from '@lucide/vue'
 import {api,type Observation,type Summary} from '../services/api'
-import {calendar,duration,finite,groupJourney,jstDate,niceMaximum,rollingJourney,shortDate,valueText,type JourneyBucket,type JourneyDay,type JourneyGrouping,type JourneyHistory,type JourneyPeriod} from '../services/journey'
+import {calendar,duration,finite,groupJourney,jstDate,niceMaximum,rollingHourTicks,rollingJourney,shortDate,valueText,type JourneyBucket,type JourneyDay,type JourneyGrouping,type JourneyHistory,type JourneyPeriod} from '../services/journey'
 import '../journey-chart.css'
 const props=defineProps<{summary?:Summary;details?:boolean;showLink?:boolean;chartHeight?:number}>()
 // Plot geometry: `base` is the zero line; the overview dashboard shortens the chart to fit the window.
 const chartH=computed(()=>Math.max(110,Math.round(props.chartHeight??220))),base=computed(()=>chartH.value-30)
 const emit=defineEmits<{loaded:[history:JourneyHistory|undefined];loading:[value:boolean];navigate:[page:string]}>()
-const heading=useId(),period=ref(props.details?'7':'24h'),grouping=ref<JourneyGrouping>('day'),customFrom=ref(''),customTo=ref(jstDate()),appliedFrom=ref(''),appliedTo=ref(''),selected=ref<string>(),history=ref<JourneyHistory>(),loading=ref(false),error=ref(''),refreshError=ref(''),validation=ref(''),chartScroll=ref<HTMLElement>(),viewportWidth=ref(300),calendarToday=ref(jstDate())
+const heading=useId(),period=ref('7'),grouping=ref<JourneyGrouping>('day'),customFrom=ref(''),customTo=ref(jstDate()),appliedFrom=ref(''),appliedTo=ref(''),selected=ref<string>(),history=ref<JourneyHistory>(),loading=ref(false),error=ref(''),refreshError=ref(''),validation=ref(''),chartScroll=ref<HTMLElement>(),viewportWidth=ref(300),calendarToday=ref(jstDate())
 let sequence=0
 let resize:ResizeObserver|undefined
 let active=true,controller:AbortController|undefined,inFlightScope='',loadedScope='',poll:ReturnType<typeof setInterval>|undefined
@@ -27,6 +27,7 @@ const days=computed(()=>calendar(range.value.from,range.value.to,entries.value))
 const rolling=computed(()=>period.value==='24h')
 const clock=(at:string)=>new Date(at).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit'})
 const buckets=computed(()=>rolling.value?rollingJourney(history.value?.hours||[]):groupJourney(days.value,grouping.value))
+const hourTicks=computed(()=>rolling.value?rollingHourTicks(history.value?.range.fromAt||buckets.value[0]?.from||'',history.value?.range.toAt||buckets.value.at(-1)?.to||''):[])
 const populated=computed(()=>buckets.value.some(bucket=>bucket.distance!==null||bucket.hours!==null))
 const distanceMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.distance))),hoursMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.hours))),cumulativeDistanceMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.cumulativeDistance))),cumulativeHoursMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.cumulativeHours)))
 const width=computed(()=>Math.max(viewportWidth.value,buckets.value.length*(rolling.value?8:34))),step=computed(()=>width.value/Math.max(1,buckets.value.length))
@@ -86,8 +87,9 @@ onUnmounted(()=>{active=false;sequence++;controller?.abort();clearInterval(poll)
       <rect v-if="bucket.hours!==null&&bucket.hours>0" :x="x(index)+(rolling?.5:2)" :y="y(bucket.hours,hoursMax)" :width="rolling?Math.min(4,step/3):10" :height="Math.max(1,base-y(bucket.hours,hoursMax))" class="jc-time-bar" :class="{partial:bucket.timeDays<bucket.dayCount}"/>
       <circle v-else-if="bucket.hours===0" :cx="x(index)+7" :cy="base" r="3" class="jc-time-dot"/>
       <path v-else :d="`M${x(index)+3} ${base-4} l8 8 m-8 0 l8 -8`" class="jc-missing"/>
-      <text v-if="buckets.length<16||index%Math.ceil(buckets.length/12)===0||index===buckets.length-1" :x="x(index)" :y="base+23" text-anchor="middle" class="jc-date" aria-hidden="true">{{rolling?clock(bucket.from):grouping==='month'?Number(bucket.from.slice(5,7))+'月':shortDate(bucket.from)}}</text>
+      <text v-if="!rolling&&(buckets.length<16||index%Math.ceil(buckets.length/12)===0||index===buckets.length-1)" :x="x(index)" :y="base+23" text-anchor="middle" class="jc-date" aria-hidden="true">{{grouping==='month'?Number(bucket.from.slice(5,7))+'月':shortDate(bucket.from)}}</text>
      </g>
+     <text v-for="tick in hourTicks" :key="tick.at" :x="tick.position*width" :y="base+23" :text-anchor="tick.position*width<12?'start':(1-tick.position)*width<12?'end':'middle'" class="jc-date jc-hour-tick" aria-hidden="true">{{tick.label}}</text>
      <path :d="line('distance')" class="jc-distance-line" aria-hidden="true"/><path :d="line('hours')" class="jc-time-line" aria-hidden="true"/>
      <template v-for="(bucket,index) in buckets" :key="bucket.key"><circle v-if="bucket.cumulativeDistance!==null" :cx="x(index)" :cy="y(bucket.cumulativeDistance,cumulativeDistanceMax)" r="3" class="jc-distance-point" aria-hidden="true"/><circle v-if="bucket.cumulativeHours!==null" :cx="x(index)" :cy="y(bucket.cumulativeHours,cumulativeHoursMax)" r="3" class="jc-time-point" aria-hidden="true"/></template>
     </svg></div>

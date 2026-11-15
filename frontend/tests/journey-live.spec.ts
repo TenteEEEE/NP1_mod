@@ -40,7 +40,7 @@ async function setup(page:Page){
 async function visibility(page:Page,hidden:boolean){await page.evaluate(value=>{Object.defineProperty(document,'hidden',{configurable:true,get:()=>value});Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>value?'hidden':'visible'});document.dispatchEvent(new Event('visibilitychange'))},hidden)}
 
 test('dashboard reads retained API and updates in place without following every summary poll',async({page})=>{
- const state=await setup(page);await page.goto('/#dashboard');await expect(page.getByTestId('trip-distance')).toHaveText('7km');state.queries.length=0;await page.getByRole('button',{name:'7日',exact:true}).click()
+ const state=await setup(page);await page.goto('/#dashboard');await expect(page.getByTestId('trip-distance')).toHaveText('7km')
  await expect(page.getByTestId('trip-distance')).toHaveText('7km')
  expect(state.queries).toHaveLength(1)
  await page.locator('.jc-bucket').first().click();const selected=await page.locator('.jc-bucket.selected').getAttribute('aria-label')
