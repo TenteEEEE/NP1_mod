@@ -23,7 +23,7 @@ onMounted(load)
   <div class="settings-body">
    <p v-if="loading" class="hint" role="status">本体の設定を取得しています…</p>
    <template v-if="valid(state)">
-    <div class="native-volume"><div><span class="native-audio-label">本体の音量</span><strong data-testid="native-master-volume">{{state?.data.masterVolume}}</strong></div><p class="hint">音量は本体のボタンで調整してください。</p></div>
+    <div class="native-volume"><div><span class="native-audio-label">本体の音量</span><strong data-testid="native-master-volume">{{state?.data.masterVolume}}</strong></div><p class="hint">音量の変更は「本体の音量」カードから行えます。</p></div>
     <p v-if="!writable" class="hint">{{state?.data.reason||'現在は設定を変更できません。'}}</p>
     <div class="native-audio-grid">
      <div class="native-audio-option">

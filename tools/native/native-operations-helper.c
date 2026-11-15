@@ -2,6 +2,7 @@
  * Never write vendor storage or invoke mkfs. SD format requires --format ERASE_SD. */
 #include "native-alexa-runtime.h"
 #include "operations-frame.h"
+#include "operations-actions.h"
 static char private_path[160];
 static unsigned short private_map_name[96];
 static int private_enabled,private_created,private_fd=-1;
@@ -36,22 +37,26 @@ typedef int(*queue_receive_fn)(void*,u8*,unsigned,unsigned*,unsigned);
 static u8 response[8192];
 static unsigned request_nonce,owner_pid;
 static const char*current_owner;
+static const char*current_path;
 static unsigned long long owner_starttime;
 static unsigned parse_pid(const char*s){unsigned v=0;if(!s||!s[0])return 0;for(size_t i=0;s[i];i++){if(i>=10||s[i]<'0'||s[i]>'9'||v>214748364u)return 0;v=v*10+(unsigned)(s[i]-'0');if(v>2147483647u)return 0;}return v;}
 int ops_starttime(const unsigned char*b,unsigned long size,unsigned long long*out){if(!b||!out||size<4||size>1023)return 0;unsigned long position=0;int closed=0;for(unsigned long i=0;i<size;i++)if(b[i]==')'){position=i+1;closed=1;}if(!closed)return 0;for(unsigned field=3;field<=22;field++){while(position<size&&b[position]==' ')position++;unsigned long start=position;while(position<size&&b[position]!=' '&&b[position]!='\n')position++;if(start==position)return 0;if(field==22){unsigned long long value=0;if(position-start>20)return 0;for(unsigned long i=start;i<position;i++){unsigned digit=b[i]-'0';if(digit>9||value>(0xffffffffffffffffULL-digit)/10)return 0;value=value*10+digit;}if(!value)return 0;*out=value;return 1;}}return 0;}
 
-static void owner_live(void){char path[64],digits[16],executable[128];const char*prefix="/proc/";size_t n=0;while(prefix[n]){path[n]=prefix[n];n++;}unsigned pid=owner_pid;size_t k=0;do{digits[k++]=(char)('0'+pid%10);pid/=10;}while(pid);while(k)path[n++]=digits[--k];size_t suffix=n;const char*exe="/exe";for(size_t i=0;i<5;i++)path[n++]=exe[i];long count=syscall(78,-100,path,executable,sizeof(executable)-1);if(count<=0||count>=(long)sizeof(executable)-1)fail("Setting PID is not live",75);executable[count]=0;const char*expected_path=same(current_owner,"DriveRec")?"/usr/local/bin/DriveRec":"/usr/local/bin/Setting";if(!same(executable,expected_path))fail("Setting PID executable mismatch",75);const char*stat="/stat";for(size_t i=0;i<6;i++)path[suffix+i]=stat[i];u8 data[1024];int size=read_file(path,data,sizeof(data)-1);unsigned long long start=0;if(size<=0||!ops_starttime(data,(size_t)size,&start))fail("Setting process lifetime unavailable",75);if(owner_starttime&&owner_starttime!=start)fail("Setting process restarted; no blind retry",75);owner_starttime=start;}
+static void owner_live(void){char path[64],digits[16],executable[128];const char*prefix="/proc/";size_t n=0;while(prefix[n]){path[n]=prefix[n];n++;}unsigned pid=owner_pid;size_t k=0;do{digits[k++]=(char)('0'+pid%10);pid/=10;}while(pid);while(k)path[n++]=digits[--k];size_t suffix=n;const char*exe="/exe";for(size_t i=0;i<5;i++)path[n++]=exe[i];long count=syscall(78,-100,path,executable,sizeof(executable)-1);if(count<=0||count>=(long)sizeof(executable)-1)fail("Setting PID is not live",75);executable[count]=0;const char*expected_path=current_path;if(!same(executable,expected_path))fail("Setting PID executable mismatch",75);const char*stat="/stat";for(size_t i=0;i<6;i++)path[suffix+i]=stat[i];u8 data[1024];int size=read_file(path,data,sizeof(data)-1);unsigned long long start=0;if(size<=0||!ops_starttime(data,(size_t)size,&start))fail("Setting process lifetime unavailable",75);if(owner_starttime&&owner_starttime!=start)fail("Setting process restarted; no blind retry",75);owner_starttime=start;}
 
 struct operation_spec{const char*id;const char*owner;unsigned function,get,set,field,min,max;};
 static const struct operation_spec specs[]={
  {"recorder","Setting",0x600,1,0,0,0,0},{"parking","Setting",0x600,6,0,0,0,0},
- {"installation","Setting",0x700,1,0,0,0,0},{"vehicle","Setting",0xa00,1,0,0,0,0},
+ {"installation","Setting",0x700,1,0,0,0,0},{"vehicle","Setting",0x401,1,0,0,0,0},
+ {"volume","Setting",0x400,1,0,0,0,0},{"account","Setting",0x302,1,0,0,0,0},{"initial-setup","Setting",0x200,1,0,0,0,0},
  {"storage","DriveRec",0x601,2,0,0,0,0},{"alignment","DriveRec",0x701,1,0,0,0,0},
  {"recorder-front","Setting",0x600,1,2,1,1,2},{"recorder-cabin","Setting",0x600,1,3,2,1,2},
  {"recorder-audio","Setting",0x600,1,4,3,1,2},{"recorder-overlay","Setting",0x600,1,10,5,1,2},
  {"parking-security","Setting",0x600,6,8,2,1,2},{"parking-upload","Setting",0x600,6,9,3,1,3},
  {"recorder-impact","Setting",0x600,1,5,4,1,5},{"parking-impact","Setting",0x600,6,7,1,1,5},
- {"vehicle-type","Setting",0xa00,1,2,1,1,6},{"collection-area","Setting",0xa00,1,3,2,1,2}
+ {"vehicle-type","Setting",0x401,1,2,1,1,6},{"collection-area","Setting",0x401,1,3,2,1,2},
+ {"collection-direction","Setting",0x401,1,4,3,1,3},{"installation-direction","Setting",0x700,1,2,1,1,2},
+ {"master-volume","Setting",0x400,1,2,1,0,10}
 };
 static const struct operation_spec*find_spec(const char*id){for(unsigned i=0;i<sizeof(specs)/sizeof(specs[0]);i++)if(same(id,specs[i].id))return &specs[i];return 0;}
 static int number(const char*s,unsigned*value){if(!s||!s[0]||(s[0]=='0'&&s[1]))return 0;unsigned v=0;for(unsigned i=0;s[i];i++){if(i>=5||s[i]<'0'||s[i]>'9')return 0;v=v*10+(unsigned)(s[i]-'0');if(v>10000)return 0;}*value=v;return 1;}
@@ -75,16 +80,35 @@ static unsigned exchange(common_send_fn send,queue_check_fn check,queue_receive_
  fail("correlated owner response timed out; no retry",78);return 0;
 }
 static void emit(const char*key,unsigned value){output(key);char digits[24];unsigned n=0;do{digits[n++]=(char)('0'+value%10);value/=10;}while(value);while(n)syscall(64,1,digits+--n,1);output("\n");}
+static void action_exchange(const struct action_spec*a,common_send_fn send,queue_check_fn check,queue_receive_fn receive,void*destination,void*receiver){
+ u8 input[2049];unsigned long count=0;for(;;){long n=syscall(63,0,input+count,sizeof(input)-count);if(n<0)fail("action input unavailable",64);if(!n)break;count+=(unsigned long)n;if(count==sizeof(input))fail("action input too large",64);}
+ if(!action_input(a,input,count))fail("fixed action input invalid",64);
+ struct small_string payload;payload.pointer=(char*)input;payload.size=count;struct ncc_time deadline;if(clock_gettime(1,&deadline))fail("monotonic clock unavailable",78);deadline.seconds+=a->seconds;
+ owner_live();unsigned nonce=++request_nonce;send(destination,0x4e43434f,nonce,(unsigned short)a->function,(unsigned short)a->command,&payload);
+ if(a->notify){output("sent=1\n");return;}
+ while(before_deadline(&deadline)){if(check(receiver)){unsigned size=0;int rc=receive(receiver,response,sizeof(response),&size,0);if(rc==0){unsigned long start;if(ops_payload(response,size,owner_pid,current_owner,nonce,a->function,a->command|0x8000,&start)){
+   output("payload=");const char*hex="0123456789abcdef";for(unsigned long i=start;i<size;i++){char pair[2]={hex[response[i]>>4],hex[response[i]&15]};syscall(64,1,pair,2);}output("\n");owner_live();return;
+  }}else if(rc!=3)fail("own receiver read failed",78);}usleep(10000);}
+ fail("correlated action response timed out; no retry",78);
+}
 int main(int argc,char**argv){
  (void)print_value;
  int get=argc==4&&same(argv[1],"--get"),set=argc==6&&same(argv[1],"--set"),format=argc==5&&same(argv[1],"--format")&&same(argv[3],"ERASE_SD");
  int card=argc==4&&same(argv[1],"--check-card");
- const struct operation_spec*spec=(get||set)?find_spec(argv[3]):(format||card)?find_spec("storage"):0;
- unsigned expected=0,next=0;if(!spec||(!get&&!set&&!format&&!card)||(set&&(!spec->set||!number(argv[4],&expected)||!number(argv[5],&next)||next<spec->min||next>spec->max)))fail("fixed operation and valid values required",64);
+ const struct action_spec*action=argc==4&&same(argv[1],"--action")?find_action(argv[3]):0;
+ struct operation_spec action_owner={"action",action?action->owner:"",0,0,0,0,0,0};
+ const struct operation_spec*spec=action?&action_owner:(get||set)?find_spec(argv[3]):(format||card)?find_spec("storage"):0;
+ unsigned expected=0,next=0;if(!spec||(!get&&!set&&!format&&!card&&!action)||(set&&(!spec->set||!number(argv[4],&expected)||!number(argv[5],&next)||next<spec->min||next>spec->max)))fail("fixed operation and valid values required",64);
  current_owner=spec->owner;owner_pid=parse_pid(argv[2]);if(!owner_pid)fail("known owner PID required",64);
- preflight();const char*owner_path=same(current_owner,"DriveRec")?"/usr/local/bin/DriveRec":"/usr/local/bin/Setting";
- const char*owner_hash=same(current_owner,"DriveRec")?"000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0":"d5b876fd8e5a3c18037b25812f5d989351045ecd024b40a99c551c4d00f7e0ac";
- if(!digest_file(owner_path,owner_hash))fail("owner firmware mismatch",78);owner_live();
+ preflight();const char*owner_hash=0;
+ if(same(current_owner,"Setting")){current_path="/usr/local/bin/Setting";owner_hash="d5b876fd8e5a3c18037b25812f5d989351045ecd024b40a99c551c4d00f7e0ac";}
+ else if(same(current_owner,"DriveRec")){current_path="/usr/local/bin/DriveRec";owner_hash="000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0";}
+ else if(same(current_owner,"System")){current_path="/usr/local/bin/System";owner_hash="6ff52824c541d187d1d6234c1f49eae32bf6eed3cb9d4e4744741810152e853a";}
+ else if(same(current_owner,"Navigation")){current_path="/usr/local/bin/Navigation";owner_hash="692f35e7097ec07947a3a8e264a5275696ada5b2224ab36f5a440fe8befbcc21";}
+ else if(same(current_owner,"ImageRecog")){current_path="/usr/local/bin/ImageRecog";owner_hash="02a37de0a0a246bd90612e8f4fea77d20aa9556b18259ffc1f9babd9805b4f47";}
+ else if(same(current_owner,"SitAwrEng")){current_path="/usr/local/bin/SitAwrEng";owner_hash="9e126f737e274b36c6f3b558ef27b635082d30d701e9a8c176ad8b0aa465d206";}
+ else if(same(current_owner,"Communication")){current_path="/usr/local/bin/Communication";owner_hash="aaa0d09d406a2b762e24b303bc138665d3da97523a07dcc338ce0ec4bec49c8b";}
+ if(!owner_hash||!digest_file(current_path,owner_hash))fail("owner firmware mismatch",78);owner_live();
  if(card&&!card_matches(argv[3]))fail("card identity check failed",75);
  const char*enabled=getenv("NCC_NATIVE_OPERATIONS");if(!enabled||!same(enabled,"1"))fail("explicit operations launcher required",78);prepare_private_name();
  stage="pthread-bootstrap";prepare_vendor_phase();stage="NStandard-constructors";void*std=dlopen("/usr/local/lib/libNStandardLib.so",0x102);if(!std)loader_fail("NStandard load failed");
@@ -101,6 +125,7 @@ int main(int argc,char**argv){
 
 
  struct ncc_time now;if(clock_gettime(1,&now))fail("monotonic clock unavailable",78);request_nonce=(unsigned)now.nanoseconds^(unsigned)getpid();
+ if(action){action_exchange(action,send,check,receive,destination,(u8*)external.object+0x98);}else{
  unsigned values[8],seen=exchange(send,check,receive,destination,(u8*)external.object+0x98,spec->function,spec->get,0,0,values);
  if(set){if(values[spec->field]!=expected)fail("expected value conflict; no write attempted",75);unsigned original[8];for(unsigned i=0;i<8;i++)original[i]=values[i];unsigned result[8];exchange(send,check,receive,destination,(u8*)external.object+0x98,spec->function,spec->set,1,next,result);if(result[1]!=1)fail("owner rejected operation",78);
   seen=exchange(send,check,receive,destination,(u8*)external.object+0x98,spec->function,spec->get,0,0,values);if(values[spec->field]!=next)fail("setting read-back mismatch",78);for(unsigned i=1;i<8;i++)if(i!=spec->field&&original[i]!=values[i])fail("untargeted setting changed; no blind restore",75);
@@ -110,5 +135,6 @@ int main(int argc,char**argv){
   emit("inserted=",insertion);emit("formatStatus=",status);exchange(send,check,receive,destination,(u8*)external.object+0x98,0x601,3,0,0,values);emit("optionalCable=",values[1]);
  }else if(same(spec->id,"alignment")){emit("active=",values[1]);exchange(send,check,receive,destination,(u8*)external.object+0x98,0x701,10,0,0,values);emit("direction=",values[1]);exchange(send,check,receive,destination,(u8*)external.object+0x98,0x701,5,0,0,values);emit("angleOK=",values[1]);}
  else{emit("seen=",seen);for(unsigned i=1;i<8;i++){char key[8]={'f','i','e','l','d',(char)('0'+i),'=',0};emit(key,values[i]);}}
+ }
  stage="own-receiver-peer-release";sole_receiver_reference();stage="own-receiver-destruction";name_dtor(destination);ext_dtor(external.object);release_owned_memories();if(ncc_owned_count||ncc_memory_count||!memory_refs_match())fail("audio cleanup reference mismatch",78);private_cleanup();if(private_created||external.canary!=0x4e43435641554431UL)fail("own receiver cleanup unconfirmed",78);owner_live();output("cleanup=matched; own-receiver-removed\n");syscall(94,0);for(;;){}
 }

@@ -17,7 +17,7 @@ args = parser.parse_args()
 common = [args.clang, '-O2', '-Wall', '-Wextra', '-Werror', '-ffreestanding', '-fno-builtin', '-fno-stack-protector', '-fuse-ld=lld']
 wasm = ROOT / 'tmp/native-operations-frame.wasm'
 subprocess.run(common + ['--target=wasm32', '-nostdlib', str(ROOT / 'tools/native/test-native-operations.c'),
-    '-Wl,--no-entry', '-Wl,--export-memory'] + ['-Wl,--export=ncc_ops_' + name for name in ['buffer', 'parse', 'value', 'seen']] + ['-o', str(wasm)], check=True)
+    '-Wl,--no-entry', '-Wl,--export-memory'] + ['-Wl,--export=ncc_ops_' + name for name in ['buffer', 'parse', 'value', 'seen', 'raw', 'action_count', 'action']] + ['-o', str(wasm)], check=True)
 subprocess.run(['node', str(ROOT / 'tools/native/test-native-operations.cjs'), str(wasm)], check=True)
 if args.test_only:
     sys.exit(0)
@@ -49,7 +49,7 @@ with binary.open('rb') as stream:
             raise SystemExit('Required process-local guard missing: ' + name)
     if image['e_machine'] != 'EM_AARCH64':
         raise SystemExit('Incorrect architecture')
-sources = [ROOT / 'tools/native' / name for name in ('native-operations-helper.c', 'operations-frame.h',
+sources = [ROOT / 'tools/native' / name for name in ('native-operations-helper.c', 'operations-frame.h', 'operations-actions.h',
     'native-alexa-runtime.h', 'native-core.h', 'vendor-fingerprints.h', 'vendor-fingerprints.json', 'vendor-slots.h', 'start-aarch64.S')]
 info = {'architecture': 'aarch64-linux-gnu', 'sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
         'needed': needed, 'sources': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},

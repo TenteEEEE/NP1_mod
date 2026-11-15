@@ -13,12 +13,11 @@ export const nativeAppFeatures=[
   {name:'Wi-Fiの接続・保存・削除',description:'本体が接続するWi-Fiを管理します。',href:'#wifi'},
   {name:'クルマWi-Fi',description:'ホットスポットの状態と接続端末を確認します。',href:'#wifi'},
   {name:'Bluetoothの本体連携・登録解除',description:'スマートフォンのBluetoothとMy NP1で連携します。',href:guide+'DF00E87DC78822401BC97A91F16258A2.php',app:true},
-  {name:'チェックイン・ログイン・サブドライバー',description:'My Pioneerのアカウントで操作します。',href:guide,app:true},
+  {name:'認証情報の取得・サブドライバーの登録',description:'My Pioneerで管理します。有効なトークンとユーザーキーがある場合は、上のカードから本体へのログインとチェックインができます。',href:guide,app:true},
   {name:'クルマWi-Fiの契約・チャージ',description:'契約者のアカウントで利用登録や課金を行います。',href:guide,app:true},
  ]},
  {group:'ナビ・音声サービス',items:[
   {name:'目的地検索・ルート設定・予約',description:'My NP1の地図・検索サービスを使用します。',href:guide+'EFA94573B9C47AE2BC43389CFA565039.php',app:true},
-  {name:'案内開始・終了・ルート編集',description:'My NP1と本体のルート情報の同期が必要です。',href:guide+'EFA94573B9C47AE2BC43389CFA565039.php',app:true},
   {name:'自宅・勤務地・よく行く場所',description:'My NP1のアカウントに登録します。',href:guide,app:true},
   {name:'渋滞・規制・オービス・ナビ表示',description:'交通情報の取得やスマートフォンの表示を操作します。',href:guide,app:true},
   {name:'CarPlay・Android Auto',description:'対応するスマートフォンと車載画面で操作します。',href:guide,app:true},
@@ -26,9 +25,7 @@ export const nativeAppFeatures=[
   {name:'ドライブトピック・ドライブコール・ガイド',description:'My NP1のアカウントと対応サービスが必要です。',href:guide,app:true},
  ]},
  {group:'本体の管理',items:[
-  {name:'本体の音量・消音・音量補正',description:'音声設定と現在の音量を確認します。',href:'#system/led'},
   {name:'本体情報・バージョン',description:'本体・ストレージ・サービスの状態を確認します。',href:'#system'},
-  {name:'取付の再調整・カメラ切替・リアウインドウ学習',description:'My NP1の取付手順に従って、実際の映像を見ながら調整します。',href:guide+'F2EBE99775A465EB962299ADFC845A47.php',app:true},
-  {name:'利用規約・ライセンス・本体の初期化',description:'利用規約やライセンスの確認、純正アカウントの管理はMy NP1で行います。初期化するとNP1modの設定も失われることがあります。',href:guide,app:true},
+  {name:'利用規約・取付手順',description:'純正の利用規約と取付手順を確認します。',href:guide,app:true},
  ]},
 ]

@@ -315,6 +315,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/v1/device/native-operations/settings/{id}", func(w http.ResponseWriter, r *http.Request) {
 		s.forwardControlLimit(w, r, "/native-operations/settings/"+url.PathEscape(r.PathValue("id")), "native.operation.setting", 2048)
 	})
+	s.mux.HandleFunc("GET /api/v1/device/native-operations/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.proxy(w, r, "/native-operations/actions/"+url.PathEscape(r.PathValue("id")))
+	})
+	s.mux.HandleFunc("POST /api/v1/device/native-operations/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.forwardControlLimit(w, r, "/native-operations/actions/"+url.PathEscape(r.PathValue("id")), "native.operation.action", 8192)
+	})
 	for _, action := range []string{"prepare", "execute"} {
 		s.mux.HandleFunc("POST /api/v1/device/native-operations/sd-format/"+action, func(w http.ResponseWriter, r *http.Request) {
 			if action == "execute" {

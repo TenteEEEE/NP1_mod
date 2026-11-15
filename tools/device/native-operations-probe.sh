@@ -13,7 +13,7 @@ flock -n 9 || exit 75
 BASE=$(mktemp -d /run/np1-native-operations-probe.XXXXXXXX)
 cp bin/ncc-native-operations-helper "$BASE/helper"
 chmod 0700 "$BASE/helper"
-UNITS='app-@Communication.service app-@DriveRec.service app-@ImageRecog.service app-@Voice.service qmmf-server.service app-@Setting.service app-@Navigation.service'
+UNITS='app-@Communication.service app-@DriveRec.service app-@ImageRecog.service app-@Voice.service qmmf-server.service app-@Setting.service app-@Navigation.service app-@System.service app-@SitAwrEng.service'
 capture(){ systemctl show $UNITS -p Id -p MainPID -p InvocationID -p ActiveState -p SubState; }
 capture > "$BASE/services-before.txt"
 cp /pio_data/SYSTEM/SETTING/Setting.DAT "$BASE/settings-before.dat"
@@ -21,7 +21,15 @@ finish(){
  result=$?; trap - 0
  capture > "$BASE/services-after.txt"
  cmp "$BASE/services-before.txt" "$BASE/services-after.txt" || result=1
- cmp /pio_data/SYSTEM/SETTING/Setting.DAT "$BASE/settings-before.dat" || result=1
+ # Setting persists asynchronously. Observe a settled read-back; never write
+ # the backup over an owner's current file or replay a setter to restore it.
+ matched=0
+ for attempt in 1 2 3; do
+  sleep 1
+  cp /pio_data/SYSTEM/SETTING/Setting.DAT "$BASE/settings-after.dat"
+  if cmp -s "$BASE/settings-after.dat" "$BASE/settings-before.dat"; then matched=1; break; fi
+ done
+ test "$matched" = 1 || result=1
  rm -f "$BASE/helper"
  printf 'Private evidence: %s\n' "$BASE"
  printf 'NCC_EXIT_STATUS=%s\n' "$result"
@@ -29,7 +37,7 @@ finish(){
 }
 trap finish 0
 FAILED=0
-for group in recorder parking installation vehicle storage alignment; do
+for group in recorder parking installation vehicle storage alignment volume account initial-setup; do
  case "$group" in storage|alignment) owner=DriveRec;; *) owner=Setting;; esac
  pid=$(systemctl show "app-@$owner.service" -p MainPID --value)
  if ! LD_LIBRARY_PATH=/usr/local/lib NCC_NATIVE_OPERATIONS=1 "$BASE/helper" --get "$pid" "$group" > "$BASE/$group.txt" 2> "$BASE/$group-error.txt"; then
@@ -39,6 +47,27 @@ for group in recorder parking installation vehicle storage alignment; do
  fi
  grep -q '^cleanup=matched; own-receiver-removed$' "$BASE/$group.txt"
  printf '%s: correlated owner response and cleanup verified\n' "$group"
+done
+for action in wifi-saved; do
+ pid=$(systemctl show app-@Communication.service -p MainPID --value)
+ if ! printf '\010\001' | LD_LIBRARY_PATH=/usr/local/lib NCC_NATIVE_OPERATIONS=1 "$BASE/helper" --action "$pid" "$action" > "$BASE/$action.txt" 2> "$BASE/$action-error.txt"; then
+  printf '%s: unavailable; private error retained\n' "$action"
+  FAILED=1
+  continue
+ fi
+ grep -q '^cleanup=matched; own-receiver-removed$' "$BASE/$action.txt"
+ printf '%s: correlated paged response and cleanup verified\n' "$action"
+done
+for pair in gnss-info:SitAwrEng rear-window-status:ImageRecog maintenance-status:System vehicle-setup-status:Setting wifi-status:Communication wifi-connecting:Communication local-ap-status:Communication local-ap-vehicle:Communication local-ap-support:Communication serial-status:System; do
+ action=${pair%:*}; owner=${pair#*:}
+ pid=$(systemctl show "app-@$owner.service" -p MainPID --value)
+ if ! LD_LIBRARY_PATH=/usr/local/lib NCC_NATIVE_OPERATIONS=1 "$BASE/helper" --action "$pid" "$action" </dev/null > "$BASE/$action.txt" 2> "$BASE/$action-error.txt"; then
+  printf '%s: unavailable; private error retained\n' "$action"
+  FAILED=1
+  continue
+ fi
+ grep -q '^cleanup=matched; own-receiver-removed$' "$BASE/$action.txt"
+ printf '%s: correlated owner response and cleanup verified\n' "$action"
 done
 card=$(python3 - <<'PY'
 import hashlib, pathlib

@@ -22,7 +22,7 @@ import (
 const operationsHelper = "/run/np1-control-native/operations-helper"
 
 // Updated by the reproducible helper build, before packaging the Go binary.
-const operationsHelperHash = "dbfbb9c20cbe2d9526219d0b48901ebb2b74236e56312c3229d3011227e9b01d"
+const operationsHelperHash = "4fce73cf37e2e939ac722a06b952cfb1ff94fbd3dde0b999ec1f674f681130fe"
 
 type NativeOperationOption struct {
 	Value uint32 `json:"value"`
@@ -55,8 +55,11 @@ func nativeOperationGroups() []NativeOperationGroup {
 	return []NativeOperationGroup{
 		{"recorder", "ドライブレコーダー", []NativeOperationItem{{"recorder-front", "前方カメラの録画品質", "field1", quality, true}, {"recorder-cabin", "車内・後方カメラの録画品質", "field2", quality, true}, {"recorder-audio", "録画に車内の音声を含める", "field3", onOff, true}, {"recorder-impact", "イベント録画する衝撃の感度", "field4", impact, true}, {"recorder-overlay", "録画に日時・速度・位置情報を含める", "field5", onOff, true}}},
 		{"parking", "駐車中の録画", []NativeOperationItem{{"parking-impact", "駐車中に録画する衝撃の感度", "field1", impact, true}, {"parking-security", "駐車監視", "field2", onOff, true}, {"parking-upload", "駐車監視の録画時間", "field3", operationOptions("30秒", "1分", "3分"), true}}},
-		{"vehicle", "車両・マイク", []NativeOperationItem{{"vehicle-type", "車種", "field1", operationOptions("セダン", "コンパクトカー", "SUV", "ミニバン", "軽自動車", "2シーター"), true}, {"collection-area", "車内の広さ", "field2", operationOptions("狭い", "広い"), true}}},
-		{"installation", "取付情報", []NativeOperationItem{{"installation-direction", "取付方向", "field1", operationOptions("左側", "右側"), false}, {"installation-height", "取付高さ", "field2", nil, false}, {"installation-position", "取付位置", "field3", nil, false}}},
+		{"vehicle", "車両・マイク", []NativeOperationItem{{"vehicle-type", "車種", "field1", operationOptions("セダン", "コンパクトカー", "SUV", "ミニバン", "軽自動車", "2シーター"), true}, {"collection-area", "車内の広さ", "field2", operationOptions("狭い", "広い"), true}, {"collection-direction", "マイクの集音方向", "field3", operationOptions("左", "前方", "右"), true}}},
+		{"installation", "取付情報", []NativeOperationItem{{"installation-direction", "取付方向", "field1", operationOptions("左側", "右側"), true}, {"installation-height", "取付高さ", "field2", nil, false}, {"installation-position", "取付位置", "field3", nil, false}}},
+		{"volume", "本体の音量", []NativeOperationItem{{"master-volume", "音量", "field1", []NativeOperationOption{{0, "0"}, {1, "1"}, {2, "2"}, {3, "3"}, {4, "4"}, {5, "5"}, {6, "6"}, {7, "7"}, {8, "8"}, {9, "9"}, {10, "10"}}, true}}},
+		{"account", "アカウントの状態", []NativeOperationItem{{"login-state", "ログイン", "field1", operationOptions("ログイン済み", "未ログイン", "起動時の認証更新中"), false}}},
+		{"initial-setup", "初期設定の状態", []NativeOperationItem{{"initial-setup-state", "初期設定", "field1", operationOptions("完了", "通信設定以外は完了", "未完了"), false}}},
 		{"alignment", "取付チェック", []NativeOperationItem{{"installation-check", "取付設定の完了確認", "active", []NativeOperationOption{{0, "未完了"}, {1, "完了"}}, false}, {"installation-angle", "取付角度の判定", "angleOK", []NativeOperationOption{{0, "調整が必要"}, {1, "適正"}}, false}}},
 	}
 }
@@ -83,7 +86,8 @@ func nativeOperationGroupKnown(id string) bool {
 }
 
 func HandleNativeOperationsCatalog(w http.ResponseWriter, r *http.Request) {
-	recordingJSON(w, 200, map[string]any{"groups": nativeOperationGroups(), "available": nativeFirmwareMatches(operationsHelper, operationsHelperHash)})
+	w.Header().Set("Cache-Control", "no-store")
+	recordingJSON(w, 200, map[string]any{"groups": nativeOperationGroups(), "actions": nativeActionCatalog(), "available": nativeFirmwareMatches(operationsHelper, operationsHelperHash)})
 }
 
 // Root broker only proxies fixed paths to the separate native worker.
@@ -94,7 +98,7 @@ func HandleNativeOperationsRemote(w http.ResponseWriter, r *http.Request) {
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 25 * time.Second}
-	req, e := http.NewRequest(r.Method, "http://native/operations"+path, io.LimitReader(r.Body, 2049))
+	req, e := http.NewRequest(r.Method, "http://native/operations"+path, io.LimitReader(r.Body, 8193))
 	if e != nil {
 		nativeError(w, 400, "INVALID_OPERATION", "操作を確認してください")
 		return
@@ -106,6 +110,7 @@ func HandleNativeOperationsRemote(w http.ResponseWriter, r *http.Request) {
 	}
 	defer response.Body.Close()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(response.StatusCode)
 	io.Copy(w, io.LimitReader(response.Body, 65536))
 }
@@ -116,6 +121,9 @@ func operationsOwner(group string) (string, nativeSettingIdentity, error) {
 	owner := "Setting"
 	if group == "storage" || group == "alignment" {
 		owner = "DriveRec"
+	}
+	if action, ok := nativeActionSpec(group); ok {
+		owner = action.Owner
 	}
 	text, e := command("systemctl", "show", "app-@"+owner+".service", "-p", "MainPID", "-p", "InvocationID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
 	if e != nil {
@@ -253,6 +261,7 @@ type formatTicket struct {
 }
 type nativeOperationsController struct {
 	run     operationsRunner
+	action  actionRunner
 	card    func() (formatCard, error)
 	now     func() time.Time
 	mu      sync.Mutex
@@ -262,7 +271,7 @@ type nativeOperationsController struct {
 var nativeOperations = &nativeOperationsController{run: runOperations, card: func() (formatCard, error) { return sdFormatCardAt("/sys/class/block") }, now: time.Now, tickets: map[string]formatTicket{}}
 
 func decodeOperation(w http.ResponseWriter, r *http.Request, out any) bool {
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192))
 	d.DisallowUnknownFields()
 	if d.Decode(out) != nil || d.Decode(&struct{}{}) != io.EOF {
 		nativeError(w, 400, "INVALID_OPERATION", "操作内容を確認してください")
@@ -277,6 +286,11 @@ func (c *nativeOperationsController) handle(w http.ResponseWriter, r *http.Reque
 	}
 	defer c.mu.Unlock()
 	path := strings.TrimPrefix(r.URL.Path, "/operations/")
+	w.Header().Set("Cache-Control", "no-store")
+	if strings.HasPrefix(path, "actions/") {
+		c.handleAction(w, r, strings.TrimPrefix(path, "actions/"))
+		return
+	}
 	failure := func() {
 		nativeError(w, 503, "OPERATION_UNCONFIRMED", "本体の応答を確認できません。状態を更新してください。操作を自動で再送しません。")
 	}

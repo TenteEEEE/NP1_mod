@@ -19,6 +19,16 @@ test('installed native page identifies the SD and opens confirmation without for
  await expect(dialog).toHaveCount(0)
  expect(writes).toEqual(['/api/v1/device/native-operations/sd-format/prepare'])
  for(const label of ['前方カメラの録画品質','駐車監視','車種'])await expect(page.getByRole('combobox',{name:label,exact:true})).toBeEnabled()
+ for(const pair of [{button:'GNSSの受信状態を取得',region:'GNSS・センサーの操作',value:'受信衛星数'},{button:'リアウインドウの学習状態',region:'取付の調整の操作',value:'学習状態'},{button:'保守モードを取得',region:'保守・シリアルの操作',value:'保守モード'},{button:'純正Wi-Fiの状態を取得',region:'純正Wi-Fi接続の操作',value:'本体の応答を確認しました。'},{button:'純正APの状態を取得',region:'純正ローカルAPの操作',value:'本体の応答を確認しました。'}]){
+  await page.getByRole('button',{name:pair.button,exact:true}).click()
+  await expect(page.getByRole('region',{name:pair.region}).getByRole('status')).toContainText(pair.value,{timeout:15000})
+ }
+ await expect(page.getByRole('button',{name:'センサートリップを取得',exact:true})).toBeDisabled()
+ await expect(page.getByRole('button',{name:'純正ファームウェアを確認',exact:true})).toBeDisabled()
+ expect(writes).toEqual(['/api/v1/device/native-operations/sd-format/prepare'])
+ const grid=page.locator('.native-operation-grid')
+ expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBeGreaterThan(1)
+ await grid.screenshot({path:info.outputPath('operation-grid-desktop.private.png')})
  await page.setViewportSize({width:390,height:844})
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.getByRole('heading',{name:'本体の操作',exact:true}).scrollIntoViewIfNeeded()

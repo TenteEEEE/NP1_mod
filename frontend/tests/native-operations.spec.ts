@@ -1,6 +1,13 @@
 import {test,expect,type Page} from '@playwright/test'
 const url=process.env.NCC_UI_REVIEW_URL
 const group={id:'recorder',label:'ドライブレコーダー',items:[{id:'recorder-front',label:'前方カメラの録画品質',field:'field1',options:[{value:1,label:'高画質 1080p'},{value:2,label:'長時間 720p'}],writable:true}]}
+const actions=[
+ {id:'gnss-info',group:'GNSS・センサー',label:'GNSSの受信状態を取得',description:'受信状態を取得します。',readOnly:true,inputs:[]},
+ {id:'account-login',group:'本体アカウントの操作',label:'本体にログイン',confirmation:'本体にログイン',description:'有効な認証情報が必要です。',readOnly:false,inputs:[{id:'refreshToken',label:'リフレッシュトークン',kind:'secret',max:1024},{id:'userKey',label:'ユーザーキー',kind:'secret',max:256}]},
+ {id:'factory-reset',group:'セットアップ',label:'本体を初期化',confirmation:'本体を初期化',description:'設定が失われます。',readOnly:false,inputs:[]},
+ {id:'sensor-trip',group:'GNSS・センサー',label:'センサートリップを取得',description:'トリップを読み取ります。',readOnly:true,unavailableReason:'FW7ではこの要求を処理しません。',inputs:[]},
+ {id:'wifi-saved',group:'純正Wi-Fi接続',label:'純正の保存済みWi-Fi一覧を取得',description:'ページを指定します。',readOnly:true,inputs:[{id:'page',label:'ページ',kind:'number',min:1,max:100}]},
+]
 async function open(page:Page,failWrite=false){
  const writes:any[]=[],errors:string[]=[];let quality=1,processing=false
  page.on('pageerror',error=>errors.push(error.message))
@@ -13,7 +20,10 @@ async function open(page:Page,failWrite=false){
   else if(path.endsWith('/device/alexa'))value={status:'available',data:{wakeWord:{value:0,enabled:true,fixed:false},writable:true,linkage:{status:'not-fixed',source:'fixture'}}}
   else if(path.endsWith('/device/native-settings'))value={status:'available',data:{items:[]}}
   else if(path.endsWith('/device/native-audio'))value={status:'available',data:{masterVolume:18,mute:{value:1,enabled:false},correction:{value:2,label:'高'},writable:true}}
-  else if(path.endsWith('/device/native-operations'))value={available:true,groups:[group]}
+  else if(path.endsWith('/device/native-operations'))value={available:true,groups:[group],actions}
+  else if(path.endsWith('/actions/gnss-info'))value={sent:true,acknowledged:true,completionConfirmed:true,values:{satellites:12,usedSatellites:8},message:'本体の応答を確認しました。'}
+  else if(path.endsWith('/actions/wifi-saved'))value={sent:true,acknowledged:true,completionConfirmed:true,values:{networks:[]},message:'一覧を取得しました。'}
+  else if(path.endsWith('/actions/account-login'))return route.fulfill({status:503,json:{reason:'本体の応答を確認できません'}})
   else if(path.endsWith('/state/storage'))value={values:{inserted:1,formatStatus:processing?1:2},observedAt:new Date().toISOString()}
   else if(path.endsWith('/state/recorder'))value={values:{field1:quality},observedAt:new Date().toISOString()}
   else if(path.endsWith('/sd-format/prepare'))value={token:'synthetic-confirmation',expiresAt:new Date(await page.evaluate(()=>Date.now())+60000).toISOString(),capacityBytes:64*1024**3}
@@ -75,5 +85,32 @@ test.describe('native app operations',()=>{
   const erase=dialog.getByRole('button',{name:'SDカードの全データを消去してフォーマット'});await expect(erase).toBeEnabled()
   await page.clock.fastForward(61000);await expect(erase).toBeDisabled()
   expect(state.writes.some(request=>request.path.endsWith('/execute'))).toBe(false)
+ })
+ for(const width of [320,1440])test(`${width}px: operation cards form a responsive grid and never send writes on load`,async({page},info)=>{
+  await page.setViewportSize({width,height:950});const state=await open(page)
+  const grid=page.locator('.native-operation-grid'),columns=await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length)
+  expect(columns).toBe(width===320?1:2)
+  expect(state.writes).toEqual([])
+  await page.getByRole('button',{name:'GNSSの受信状態を取得',exact:true}).click()
+  await expect(page.getByRole('region',{name:'GNSS・センサーの操作'})).toContainText('12')
+  await expect(page.getByRole('button',{name:'センサートリップを取得',exact:true})).toBeDisabled()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await grid.screenshot({path:info.outputPath('operation-grid-'+width+'.png')})
+ })
+ test('credentials use a confirmed POST, failure is not retried, and factory reset requires a typed phrase',async({page})=>{
+  const state=await open(page);await page.getByRole('button',{name:'本体にログイン',exact:true}).click();const dialog=page.getByRole('dialog')
+  await dialog.getByLabel('リフレッシュトークン').fill('synthetic-only');await dialog.getByLabel('ユーザーキー').fill('fixture-only')
+  await expect(dialog.getByRole('button',{name:'本体にログイン',exact:true})).toBeDisabled();await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'本体にログイン',exact:true}).click()
+  await expect(page.getByRole('region',{name:'本体アカウントの操作の操作'}).getByRole('alert')).toContainText('自動で再送しません')
+  expect(state.writes.filter(w=>w.path.endsWith('/account-login'))).toHaveLength(1)
+  await page.getByRole('button',{name:'本体を初期化',exact:true}).click();await dialog.getByRole('checkbox').check();await expect(dialog.getByRole('button',{name:'本体を初期化',exact:true})).toBeDisabled()
+  await dialog.getByRole('textbox').fill('本体を初期化');await expect(dialog.getByRole('button',{name:'本体を初期化',exact:true})).toBeEnabled();await dialog.getByRole('button',{name:'キャンセル'}).click()
+  expect(state.writes.some(w=>w.path.endsWith('/factory-reset'))).toBe(false)
+ })
+ test('parameterized reads accept a page without a mutation confirmation',async({page})=>{
+  const state=await open(page);await page.getByRole('button',{name:'純正の保存済みWi-Fi一覧を取得',exact:true}).click();const dialog=page.getByRole('dialog')
+  await expect(dialog.getByRole('checkbox')).toHaveCount(0);await dialog.getByLabel('ページ').fill('2');await dialog.getByRole('button',{name:'純正の保存済みWi-Fi一覧を取得',exact:true}).click()
+  await expect(page.getByRole('region',{name:'純正Wi-Fi接続の操作'}).getByRole('status')).toContainText('一覧を取得しました。')
+  expect(state.writes.at(-1).body).toEqual({values:{page:2}})
  })
 })
