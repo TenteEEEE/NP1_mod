@@ -1,0 +1,23 @@
+import {test,expect} from '@playwright/test'
+
+test.skip(process.env.NCC_PLATE_HARDWARE!=='1','Explicit read-only device UI verification')
+
+test('installed NumberShare tab exposes write-only credentials and an idle queue without writes',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
+ await page.setViewportSize({width:390,height:900})
+ await page.goto('/#plates')
+ await page.getByRole('tab',{name:'共有',exact:true}).click()
+ await expect(page.getByRole('heading',{name:'NumberShare API',exact:true})).toBeVisible()
+ await expect(page.getByLabel('APIエンドポイント',{exact:true})).toBeVisible()
+ await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','password')
+ await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('')
+ await expect(page.getByText('送信対象はまだありません。',{exact:true})).toBeVisible()
+ const response=await page.request.get('/api/v1/plate/share/status')
+ expect(response.status()).toBe(200)
+ const body=await response.json()
+ expect(body.config).toMatchObject({revision:1,enabled:false,endpoint:'',keyConfigured:false})
+ expect(JSON.stringify(body)).not.toContain('apiKey')
+ expect(body).toMatchObject({pending:0,sent:0,blocked:0})
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ expect(errors).toEqual([])
+})
