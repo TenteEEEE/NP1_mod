@@ -14,6 +14,14 @@ export type PlateSettings={revision:number;enabled:boolean;rules:PlateRule[];ret
 export type SpeechStyle={id:number;speaker:string;name:string}
 export type PlateSpeech={available:boolean;reason:string;styles:SpeechStyle[];status:{keyConfigured:boolean;player?:string;job:{state:string;total:number;ready:number;error?:string};rules:Record<string,{ready:boolean;error?:string}>;style?:SpeechStyle;credit:string}}
 export type VoicevoxConfig={endpoint:string;defaultEndpoint:string;keyConfigured:boolean}
+export type NumberSharePlate={serial_number:string;region?:string;classification_number?:string;hiragana?:string}
+export type NumberShareLocation={latitude:number;longitude:number;accuracy_m?:number;observed_at?:string}
+export type NumberShareQueueItem={eventId:string;recordId:string;payload:{event_id:string;observed_at:string;plate:NumberSharePlate;location?:NumberShareLocation};state:'pending'|'sent'|'blocked';attempts:number;queuedAt:string;lastAttemptAt?:string;nextAttemptAt?:string;sentAt?:string;httpStatus?:number;lastError?:string;matchStatus?:string}
+export type NumberShareStatus={config:{revision:number;enabled:boolean;endpoint:string;keyConfigured:boolean};pending:number;sent:number;blocked:number;items:NumberShareQueueItem[]}
+export type NumberShareSighting={id:number;event_id:string;observed_at:string;received_at:string;plate_id?:number;match_status:'exact'|'candidate'|'none';recognition_revision:number;plate:NumberSharePlate;location?:NumberShareLocation;mine:boolean}
+export type NumberShareSightings={items:NumberShareSighting[];truncated:boolean}
+export type NumberShareVehicle={id:number;serial_number:string;region:string;classification_number:string;hiragana:string;category:string;comment:string;sightings:number;last_seen?:string;last_location?:NumberShareLocation}
+export type NumberShareVehicles={items:NumberShareVehicle[];total:number;categories:string[]}
 
 // The spoken form of a rule, for the editor preview (mirrors platespeech.Plan).
 export function speechPreview(rule:PlateRule,voice:PlateVoice){

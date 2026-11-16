@@ -22,6 +22,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/auth"
 	"github.com/np1-control-center/ncc/internal/broker"
 	"github.com/np1-control-center/ncc/internal/config"
+	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/store"
 	"github.com/np1-control-center/ncc/internal/trips"
@@ -58,23 +59,24 @@ type cameraSession struct {
 	Active               int
 }
 type Server struct {
-	cfg        config.Config
-	auth       *auth.Manager
-	client     *http.Client
-	mux        *http.ServeMux
-	mu         sync.Mutex
-	settings   Settings
-	cameras    map[string]cameraSession
-	auditMu    sync.Mutex
-	traffic    *store.Traffic
-	wan        string
-	radioStore *radio.History
-	loggerMu   sync.Mutex
-	logger     LoggerState
-	journeys   *journeyArchiveCollector
-	tracks     *trips.TrackStore
-	plates     *plateService
-	tailnet    tailnetHosts
+	cfg         config.Config
+	auth        *auth.Manager
+	client      *http.Client
+	mux         *http.ServeMux
+	mu          sync.Mutex
+	settings    Settings
+	cameras     map[string]cameraSession
+	auditMu     sync.Mutex
+	traffic     *store.Traffic
+	wan         string
+	radioStore  *radio.History
+	loggerMu    sync.Mutex
+	logger      LoggerState
+	journeys    *journeyArchiveCollector
+	tracks      *trips.TrackStore
+	plates      *plateService
+	numberShare *numbershare.Service
+	tailnet     tailnetHosts
 }
 
 func New(c config.Config) *Server {
@@ -85,6 +87,8 @@ func New(c config.Config) *Server {
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
 	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
+	s.numberShare = numbershare.New(c.StateDir, &http.Client{Timeout: 30 * time.Second})
+	s.plates.share = s.numberShare
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
 	s.plates.positions = plateBrokerPositions(s.client)
 	if b, e := os.ReadFile(filepath.Join(c.StateDir, "settings.json")); e == nil {
@@ -354,6 +358,7 @@ func (s *Server) routes() {
 	s.registerScreenLEDRoutes()
 	s.registerLEDTestRoutes()
 	s.registerPlate()
+	s.registerNumberShare()
 	s.mux.HandleFunc("PUT /api/v1/device/led", func(w http.ResponseWriter, r *http.Request) { s.forwardControl(w, r, "/led", "led.update") })
 	s.mux.HandleFunc("POST /api/v1/vpn/tailscale/login", func(w http.ResponseWriter, r *http.Request) {
 		v, _ := s.auth.Get(r)

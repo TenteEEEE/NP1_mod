@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/config"
+	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/plate"
 	"github.com/np1-control-center/ncc/internal/platespeech"
 )
@@ -77,6 +78,7 @@ type plateService struct {
 	sensor  *http.Client
 	speaker plateSpeaker
 	voice   *platespeech.Manager
+	share   *numbershare.Service
 	clock   func() time.Time
 
 	mu        sync.Mutex
@@ -225,6 +227,11 @@ func (p *plateService) poll(ctx context.Context) int {
 		outcome, e := p.store.Ingest(d, settings, p.frame(ctx))
 		if e != nil {
 			code = "storage-unavailable"
+		}
+		if e == nil && outcome.Skipped == "" && outcome.Record.ID != "" && p.share != nil {
+			if shareErr := p.share.Enqueue(outcome.Record); shareErr != nil {
+				code = "storage-unavailable"
+			}
 		}
 		if outcome.Skipped == "" {
 			count++

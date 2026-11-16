@@ -17,6 +17,7 @@ func (s *Server) Collect(ctx context.Context) {
 	go s.collectTracks(ctx)
 	go s.journeys.collect(ctx, s.client)
 	go s.plates.collect(ctx)
+	go s.numberShare.Run(ctx)
 	go s.collectTailnetHosts(ctx)
 	timer := time.NewTicker(2 * time.Second)
 	defer timer.Stop()
