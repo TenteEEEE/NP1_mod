@@ -3,8 +3,8 @@
   "inputHashes": {
     "backend/go.mod": "ade70b61d08bd0044d6613a6799adac5a2003ffcf792879223f969eb3547d09d",
     "backend/go.sum": "5c0bc83cf103e3b8abd6626acbb02cbcf42be1097c7770a98a6d1b2836f42cc4",
-    "frontend/package.json": "d71cf419069d5e5e7b3995b15bbeb13f0aa34a11e8c6af3a4ffe1109eb4326f0",
-    "frontend/package-lock.json": "49ce083ce57087f28fb1f42f40adced2808dd77fab6769f52477e45b2ba00402"
+    "frontend/package.json": "e7da4d6f17ad271e92cfb037bce3a11d7cd2d3dee7a7e3e092af48b3a5a4f299",
+    "frontend/package-lock.json": "032ba440770a826aaade11113a6c973b65a7f9d8da8c0f7b0c504cc64694c69e"
   },
   "packages": [
     {
