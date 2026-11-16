@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
-import L from 'leaflet'
-import {mapTiles} from '../services/map-tiles'
+import {VectorMap,Marker,collection,routeFeatures,routeLayers,locationElement} from '../services/vector-map'
 import {LocateFixed,MapPin,Maximize,Play} from '@lucide/vue'
-import 'leaflet/dist/leaflet.css'
 import '../radio-map.css'
 import {api,type Observation} from '../services/api'
 import {hasRecording,nearestPoint,pointAt,type PlaybackTrack,type RecordedRange,type TrackPoint,type TrackSegment} from '../services/playbackTrack'
 
 const props=defineProps<{date:string;cursor:number;ranges:RecordedRange[];refresh?:string}>(),emit=defineEmits<{seek:[at:number]}>()
 const container=ref<HTMLElement>(),data=ref<PlaybackTrack>(),loading=ref(false),error=ref(''),notice=ref(''),follow=ref(true),background=ref(true),tileFailed=ref(false),shown=ref(8)
-let map:L.Map|undefined,layers:L.LayerGroup|undefined,marker:L.CircleMarker|undefined,tiles:L.TileLayer|undefined,resize:ResizeObserver|undefined,request:AbortController|undefined,sequence=0,fittedDate=''
+let map:VectorMap|undefined,marker:Marker|undefined,request:AbortController|undefined,sequence=0,fittedDate=''
 const current=computed(()=>pointAt(data.value?.points||[],props.cursor)),segments=computed(()=>data.value?.segments||[])
 const clock=(at:string)=>new Date(at).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',second:'2-digit'})
 function elapsed(seconds:number){const minutes=Math.floor(seconds/60);return minutes>=60?`${Math.floor(minutes/60)}時間${minutes%60}分`:`${minutes}分${Math.floor(seconds%60)}秒`}
@@ -18,30 +16,22 @@ function distance(km:number){return km<1?Math.round(km*1000)+' m':km.toFixed(1)+
 function playable(segment:TrackSegment){return data.value?.points.find(point=>point.segment===segment.id&&hasRecording(props.ranges,Date.parse(point.at)))}
 function seek(point?:TrackPoint){if(!point)return;const at=Date.parse(point.at);if(hasRecording(props.ranges,at)){notice.value='';emit('seek',at)}else notice.value='この地点の時刻に再生できる録画はありません。'}
 async function load(){const id=++sequence;request?.abort();request=new AbortController();loading.value=true;error.value='';notice.value=''
- if(data.value?.date!==props.date){data.value=undefined;layers?.clearLayers();marker?.remove();marker=undefined;shown.value=8}
+ if(data.value?.date!==props.date){data.value=undefined;map?.setOverlay('playback',collection(),routeLayers('playback'));marker?.remove();marker=undefined;shown.value=8}
  try{const result=await api<Observation<PlaybackTrack>>('/recordings/track?'+new URLSearchParams({date:props.date}),'GET',undefined,true,request.signal);if(id!==sequence)return;if(!result.data||!Array.isArray(result.data.points)||!Array.isArray(result.data.segments))throw new Error('位置記録の形式を確認できません');data.value=result.data;render()}
- catch(e){if(id===sequence&&!request?.signal.aborted){error.value=e instanceof Error?e.message:'位置記録を取得できません';data.value=undefined;layers?.clearLayers();marker?.remove();marker=undefined}}
+ catch(e){if(id===sequence&&!request?.signal.aborted){error.value=e instanceof Error?e.message:'位置記録を取得できません';data.value=undefined;map?.setOverlay('playback',collection(),routeLayers('playback'));marker?.remove();marker=undefined}}
  finally{if(id===sequence){loading.value=false;backgroundLayer()}}
 }
-function render(){if(!map||!layers)return;layers.clearLayers();const groups=new Map<number,TrackPoint[]>();for(const point of data.value?.points||[]){const group=groups.get(point.segment)||[];group.push(point);groups.set(point.segment,group)}
- for(const [segment,points] of groups){const path=points.length>1?L.polyline(points.map(point=>[point.lat,point.lon]),{color:'#4f91df',weight:5,opacity:.85,className:'playback-route'}):L.circleMarker([points[0].lat,points[0].lon],{color:'#4f91df',radius:4,className:'playback-route'})
-  path.on('click',(event:L.LeafletMouseEvent)=>seek(nearestPoint(points,event.latlng.lat,event.latlng.lng,props.cursor,segment)));path.addTo(layers)
- }
- if(data.value?.points.length&&fittedDate!==props.date){fit();fittedDate=props.date}
- position();backgroundLayer()
-}
-function fit(){if(!map||!data.value?.points.length)return;map.fitBounds(L.latLngBounds(data.value.points.map(point=>[point.lat,point.lon])),{padding:[28,28],maxZoom:17,animate:false})}
+function render(){if(!map)return;map.setOverlay('playback',routeFeatures(data.value?.points||[]),routeLayers('playback','#4f91df',5));if(data.value?.points.length&&fittedDate!==props.date){fit();fittedDate=props.date}position();backgroundLayer()}
+function fit(){if(map&&data.value?.points.length)map.fit(data.value.points.map(point=>[point.lat,point.lon]))}
 function position(){if(!map)return;const point=current.value;if(!point){marker?.remove();marker=undefined;return}
- const location:L.LatLngTuple=[point.lat,point.lon]
- if(!marker)marker=L.circleMarker(location,{radius:8,color:'#fff',weight:3,fillColor:'#da755a',fillOpacity:1,className:'playback-location'}).addTo(map)
- else marker.setLatLng(location)
- const label=document.createElement('span');label.textContent=clock(point.at);marker.unbindTooltip().bindTooltip(label)
- if(follow.value)map.panInside(location,{padding:[35,35],animate:false})
+ if(!marker){const element=locationElement('playback-location');element.style.setProperty('--marker-color','#da755a');marker=new Marker({element}).setLngLat([point.lon,point.lat]).addTo(map.map)}else marker.setLngLat([point.lon,point.lat])
+ marker.getElement().title=clock(point.at)
+ if(follow.value){const p=map.map.project([point.lon,point.lat]),el=map.map.getContainer();if(p.x<35||p.y<35||p.x>el.clientWidth-35||p.y>el.clientHeight-35)map.centre([point.lat,point.lon])}
 }
-function backgroundLayer(){if(!map)return;if(background.value&&data.value?.points.length&&!tiles){tileFailed.value=false;tiles=mapTiles(()=>tileFailed.value=true).addTo(map)}else if(!background.value||!data.value?.points.length){tiles?.remove();tiles=undefined;tileFailed.value=false}}
+function backgroundLayer(){if(map){map.background(background.value&&!!data.value?.points.length);if(!background.value||!data.value?.points.length)tileFailed.value=false}}
 watch(()=>[props.date,props.refresh],load,{immediate:true});watch(()=>props.cursor,position);watch(follow,position);watch(background,backgroundLayer)
-onMounted(()=>{if(!container.value)return;map=L.map(container.value,{scrollWheelZoom:false}).setView([36.2,138.2],5);map.attributionControl.setPrefix(false);map.on('dragstart',()=>follow.value=false);layers=L.layerGroup().addTo(map);resize=new ResizeObserver(()=>map?.invalidateSize());resize.observe(container.value);render()})
-onUnmounted(()=>{sequence++;request?.abort();resize?.disconnect();map?.remove()})
+onMounted(()=>{if(!container.value)return;try{map=new VectorMap({view:'playback',container:container.value,scrollZoom:false,failed:()=>tileFailed.value=true});map.map.on('dragstart',()=>follow.value=false);map.map.on('click',event=>{const hit=map?.features(event,['playback-line','playback-points'])[0];if(hit)seek(nearestPoint(data.value?.points||[],event.lngLat.lat,event.lngLat.lng,props.cursor,Number(hit.properties.segment)))});render()}catch{tileFailed.value=true}})
+onUnmounted(()=>{sequence++;request?.abort();map?.destroy()})
 </script>
 <template>
  <section class="panel playback-track radio-survey" aria-label="録画と走行履歴の地図">

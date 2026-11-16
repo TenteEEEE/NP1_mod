@@ -1,9 +1,20 @@
 export type JourneyDay={date:string;distanceKm:number|null;drivingSeconds:number|null;observed:boolean;sampleCount:number;observedSeconds?:number}
 export type JourneyPeriod={distanceKm:number|null;drivingSeconds:number|null;hasData:boolean;validObservedDays:number;sampleCount:number;days:JourneyDay[]}
 export type JourneyTrip={id:string;start:string;end:string;distanceKm:number;drivingSeconds:number;observedSeconds:number;sampleCount:number}
-export type JourneyHistory={range:{period:string;from:string;to:string;sourceFrom?:string;sourceTo?:string};days:JourneyDay[];period:JourneyPeriod;trips:JourneyTrip[];totalTrips:number;detailsTruncated:boolean;sourceTruncated:boolean;sourceFiles:number;unreadableFiles:number;noFixSentences:number;badChecksums:number;indexedAt:string;source:string;status:string;reason?:string}
+export type JourneyHistory={range:{period:string;from:string;to:string;fromAt?:string;toAt?:string;sourceFrom?:string;sourceTo?:string};hours?:{from:string;to:string;distanceKm:number|null;drivingSeconds:number|null;observed:boolean}[];boundaryEstimated?:boolean;days:JourneyDay[];period:JourneyPeriod;trips:JourneyTrip[];totalTrips:number;detailsTruncated:boolean;sourceTruncated:boolean;sourceFiles:number;unreadableFiles:number;noFixSentences:number;badChecksums:number;indexedAt:string;source:string;status:string;reason?:string}
 export type JourneyBucket={key:string;from:string;to:string;distance:number|null;hours:number|null;observedDays:number;dayCount:number;distanceDays:number;timeDays:number;cumulativeDistance:number|null;cumulativeHours:number|null}
 export type JourneyGrouping='day'|'week'|'month'
+export function rollingHourTicks(from:string,to:string):{at:number;position:number;label:string}[]{
+ const start=Date.parse(from),end=Date.parse(to),hour=3600000,jst=9*hour,step=3*hour
+ if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end-start>24*hour)return []
+ const ticks=[]
+ for(let at=Math.ceil((start+jst)/step)*step-jst;at<=end;at+=step){const h=new Date(at+jst).getUTCHours();ticks.push({at,position:(at-start)/(end-start),label:String(h===0&&at===end?24:h)})}
+ return ticks
+}
+export function rollingJourney(hours:NonNullable<JourneyHistory['hours']>):JourneyBucket[]{
+ let distance=0,time=0
+ return hours.map(hour=>{const d=hour.observed&&finite(hour.distanceKm)?hour.distanceKm:null,h=hour.observed&&finite(hour.drivingSeconds)?hour.drivingSeconds/3600:null;if(d!==null)distance+=d;if(h!==null)time+=h;return {key:hour.from,from:hour.from,to:hour.to,distance:d,hours:h,observedDays:hour.observed?1:0,dayCount:1,distanceDays:d===null?0:1,timeDays:h===null?0:1,cumulativeDistance:d===null?null:distance,cumulativeHours:h===null?null:time}})
+}
 export const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=0
 export const jstDate=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo'}).format(new Date())
 export const shortDate=(value:string)=>Number(value.slice(5,7))+'/'+Number(value.slice(8,10))

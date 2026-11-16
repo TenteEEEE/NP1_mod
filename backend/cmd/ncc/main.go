@@ -13,6 +13,8 @@ import (
 	"github.com/np1-control-center/ncc/internal/modem"
 	"github.com/np1-control-center/ncc/internal/otaguard"
 	"github.com/np1-control-center/ncc/internal/otapolicy"
+	"github.com/np1-control-center/ncc/internal/radio"
+	"github.com/np1-control-center/ncc/internal/trips"
 	"log"
 	"net"
 	"os"
@@ -31,8 +33,69 @@ func main() {
 	otaAction := flag.String("ota-action", "status", "fixed OTA policy action")
 	apnRevision := flag.Int("apn-revision", 0, "private APN editor revision for fixed worker child")
 	trialSeconds := flag.Int("trial-seconds", 90, "sta-outage-trial: seconds without Wi-Fi")
+	radioRepairApply := flag.Bool("radio-repair-apply", false, "apply measured GPS associations; stop the NCC logger and back up history first")
+	radioRepairStateDir := flag.Bool("radio-repair-state-dir", false, "print the configured radio history directory without reading GPS or writing files")
+	radioRepairCheck := flag.Bool("radio-repair-check", false, "fail if any GPS associations remain to be applied")
+	radioRepairTrack := flag.String("radio-repair-track", "", "private measured recording-track export to supplement retained SD fixes")
 	flag.Parse()
 	switch *mode {
+	case "radio-history-repair":
+		c, err := config.Load(*conf)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if *radioRepairStateDir {
+			fmt.Println(c.StateDir)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		positions, truncated, err := adapters.RadioHistoryPositions(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		importedCount := 0
+		var importedTrack trips.TrackReport
+		if *radioRepairTrack != "" {
+			file, openErr := os.Open(*radioRepairTrack)
+			if openErr != nil {
+				log.Fatal(openErr)
+			}
+			imported, partial, readErr := radio.ReadRecordedPositions(file, time.Now())
+			file.Close()
+			if readErr != nil {
+				log.Fatal(readErr)
+			}
+			raw, readErr := os.ReadFile(*radioRepairTrack)
+			var export struct {
+				Data trips.TrackReport `json:"data"`
+			}
+			if readErr != nil || json.Unmarshal(raw, &export) != nil {
+				log.Fatal("invalid measured track export")
+			}
+			importedTrack = export.Data
+			positions = append(positions, imported...)
+			importedCount = len(imported)
+			truncated = truncated || partial
+		}
+		report, err := radio.NewHistory(c.StateDir).RepairPositions(positions, *radioRepairApply)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if *radioRepairApply && importedCount > 0 {
+			if _, err = trips.NewTrackStore(c.StateDir).Ingest(importedTrack, time.Now()); err != nil {
+				log.Fatal(err)
+			}
+		}
+		report.PositionCount, report.SourceTruncated = len(positions), truncated
+		report.ImportedPositions = importedCount
+		if *radioRepairCheck && report.Matched != 0 {
+			log.Fatal("radio GPS associations still pending")
+		}
+		if err = json.NewEncoder(os.Stdout).Encode(report); err != nil {
+			log.Fatal(err)
+		}
+		return
 	case "owned-cellular-session-probe":
 		if e := runOwnedCellularSessionProbe(); e != nil {
 			log.Fatal(e)

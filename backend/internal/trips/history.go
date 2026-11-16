@@ -21,24 +21,35 @@ type HistoryRange struct {
 	To         string `json:"to"`
 	SourceFrom string `json:"sourceFrom,omitempty"`
 	SourceTo   string `json:"sourceTo,omitempty"`
+	FromAt     string `json:"fromAt,omitempty"`
+	ToAt       string `json:"toAt,omitempty"`
+}
+type HistoryHour struct {
+	From           time.Time `json:"from"`
+	To             time.Time `json:"to"`
+	DistanceKM     *float64  `json:"distanceKm"`
+	DrivingSeconds *float64  `json:"drivingSeconds"`
+	Observed       bool      `json:"observed"`
 }
 type HistoryReport struct {
-	Range            HistoryRange `json:"range"`
-	Days             []Day        `json:"days"`
-	Period           Period       `json:"period"`
-	Trips            []Trip       `json:"trips"`
-	TotalTrips       int          `json:"totalTrips"`
-	DetailsTruncated bool         `json:"detailsTruncated"`
-	SourceTruncated  bool         `json:"sourceTruncated"`
-	SourceFiles      int          `json:"sourceFiles"`
-	UnreadableFiles  int          `json:"unreadableFiles"`
-	NoFixSentences   int          `json:"noFixSentences"`
-	BadChecksums     int          `json:"badChecksums"`
-	Malformed        int          `json:"malformed"`
-	IndexedAt        time.Time    `json:"indexedAt"`
-	Source           string       `json:"source"`
-	Status           string       `json:"status"`
-	Reason           string       `json:"reason,omitempty"`
+	Range             HistoryRange  `json:"range"`
+	Days              []Day         `json:"days"`
+	Period            Period        `json:"period"`
+	Trips             []Trip        `json:"trips"`
+	TotalTrips        int           `json:"totalTrips"`
+	DetailsTruncated  bool          `json:"detailsTruncated"`
+	SourceTruncated   bool          `json:"sourceTruncated"`
+	SourceFiles       int           `json:"sourceFiles"`
+	UnreadableFiles   int           `json:"unreadableFiles"`
+	NoFixSentences    int           `json:"noFixSentences"`
+	BadChecksums      int           `json:"badChecksums"`
+	Malformed         int           `json:"malformed"`
+	IndexedAt         time.Time     `json:"indexedAt"`
+	Source            string        `json:"source"`
+	Status            string        `json:"status"`
+	Reason            string        `json:"reason,omitempty"`
+	Hours             []HistoryHour `json:"hours,omitempty"`
+	BoundaryEstimated bool          `json:"boundaryEstimated,omitempty"`
 }
 
 func parseHistoryDate(value string) (time.Time, error) {
@@ -79,6 +90,11 @@ func History(snapshot Snapshot, options HistoryOptions, now time.Time) (HistoryR
 	}
 	from, to := today, today
 	switch period {
+	case "24h":
+		if options.From != "" || options.To != "" {
+			return HistoryReport{}, errors.New("24h does not accept calendar dates")
+		}
+		from, _ = parseHistoryDate(now.Add(-24 * time.Hour).In(Japan).Format("2006-01-02"))
 	case "7", "30", "90", "365":
 		if options.From != "" || options.To != "" {
 			return HistoryReport{}, errors.New("from/to require custom period")
@@ -113,6 +129,10 @@ func History(snapshot Snapshot, options HistoryOptions, now time.Time) (HistoryR
 		return HistoryReport{}, errors.New("invalid or excessive history date range")
 	}
 	end := to.AddDate(0, 0, 1)
+	lower := from
+	if period == "24h" {
+		lower = now.Add(-24 * time.Hour)
+	}
 	if now.Before(end) {
 		end = now
 	}
@@ -123,6 +143,10 @@ func History(snapshot Snapshot, options HistoryOptions, now time.Time) (HistoryR
 		NoFixSentences: snapshot.NoFix, BadChecksums: snapshot.BadChecksum,
 		Malformed: snapshot.Malformed, IndexedAt: snapshot.IndexedAt,
 		SourceTruncated: snapshot.Truncated, Reason: "この期間に有効な連続測位データがありません",
+	}
+	if period == "24h" {
+		out.Range.FromAt = lower.UTC().Format(time.RFC3339Nano)
+		out.Range.ToAt = now.UTC().Format(time.RFC3339Nano)
 	}
 	if !sourceFrom.IsZero() {
 		out.Range.SourceFrom = sourceFrom.In(Japan).Format("2006-01-02")
@@ -135,7 +159,7 @@ func History(snapshot Snapshot, options HistoryOptions, now time.Time) (HistoryR
 		out.Days = append(out.Days, Day{Date: key, Reason: "no-position"})
 	}
 	for _, sample := range samples {
-		if Usable(sample) && !sample.At.Before(from) && !sample.At.After(end) {
+		if Usable(sample) && !sample.At.Before(lower) && !sample.At.After(end) {
 			if i, ok := dayIndexes[sample.At.In(Japan).Format("2006-01-02")]; ok {
 				out.Days[i].SampleCount++
 				out.Days[i].Reason = "no-continuous-position"
@@ -148,8 +172,8 @@ func History(snapshot Snapshot, options HistoryOptions, now time.Time) (HistoryR
 		for i := 1; i < len(trip.Samples); i++ {
 			a, b := trip.Samples[i-1], trip.Samples[i]
 			start, finish := a.At, b.At
-			if start.Before(from) {
-				start = from
+			if start.Before(lower) {
+				start = lower
 			}
 			if finish.After(end) {
 				finish = end

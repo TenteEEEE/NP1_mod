@@ -1,5 +1,3 @@
-@import url('./leaflet-overrides.css');
-
 /* ── Design tokens ─────────────────────────────────────────────────────────
    Neutral surfaces; colour is reserved for actions and measured status. */
 :root{

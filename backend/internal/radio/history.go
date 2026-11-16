@@ -48,6 +48,10 @@ func NewHistory(directory string) *History { return &History{directory: director
 
 const maximumHistoryBytes = 16 * 1024 * 1024
 
+// Adding delayed GPS fields may enlarge an existing rotation. Keep it readable
+// without dropping any radio records; new appends still rotate at 16 MiB.
+const maximumHistoryReadBytes = 64 * 1024 * 1024
+
 // Append records measured observations from the continuous local logger.
 // NewHistory/Query never create files.
 func (h *History) Append(o Observation) error {
@@ -199,7 +203,7 @@ func (h *History) Query(q Query) (Result, error) {
 		if e != nil {
 			return out, e
 		}
-		scanner := bufio.NewScanner(io.LimitReader(f, maximumHistoryBytes+1))
+		scanner := bufio.NewScanner(io.LimitReader(f, maximumHistoryReadBytes+1))
 		scanner.Buffer(make([]byte, 4096), 64*1024)
 		for scanner.Scan() {
 			var o Observation
@@ -210,6 +214,11 @@ func (h *History) Query(q Query) (Result, error) {
 				continue
 			}
 			observations = append(observations, o)
+			if len(observations) >= 40000 {
+				sort.SliceStable(observations, func(a, b int) bool { return observations[a].At.Before(observations[b].At) })
+				observations = append([]Observation(nil), observations[len(observations)-20000:]...)
+				out.Truncated = true
+			}
 		}
 		e = scanner.Err()
 		f.Close()

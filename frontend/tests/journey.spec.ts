@@ -7,7 +7,7 @@ function entries(from='2026-11-05',to='2026-11-11'){
 }
 function period(days:JourneyDay[]){const observed=days.filter(day=>day.observed);return {distanceKm:observed.length?observed.reduce((sum,day)=>sum+day.distanceKm!,0):null,drivingSeconds:observed.length?observed.reduce((sum,day)=>sum+day.drivingSeconds!,0):null,hasData:observed.length>0,validObservedDays:observed.length,sampleCount:observed.length*8,days}}
 function report(query:URLSearchParams,empty=false):JourneyHistory{
- const preset=query.get('period')||'7',to=query.get('to')||'2026-11-11',from=preset==='all'?'2026-10-31':query.get('from')||new Date(Date.parse(to)-(Number(preset)-1)*86400000).toISOString().slice(0,10),days=empty?calendar(from,to,[]):entries(from,to)
+ const preset=query.get('period')==='24h'?'7':query.get('period')||'7',to=query.get('to')||'2026-11-11',from=preset==='all'?'2026-10-31':query.get('from')||new Date(Date.parse(to)-(Number(preset)-1)*86400000).toISOString().slice(0,10),days=empty?calendar(from,to,[]):entries(from,to)
  return {range:{period:preset,from,to,sourceFrom:empty?undefined:'2026-11-05',sourceTo:empty?undefined:'2026-11-11'},days,period:period(days),trips:empty?[]:[{id:'synthetic-one',start:'2026-11-11T00:00:00Z',end:'2026-11-11T00:15:00Z',distanceKm:14.65,drivingSeconds:900,observedSeconds:900,sampleCount:8}],totalTrips:empty?0:1,detailsTruncated:false,sourceTruncated:false,sourceFiles:2,unreadableFiles:0,noFixSentences:empty?180:4,badChecksums:0,indexedAt:now,source:'stock-recording-nmea',status:empty?'unknown':'available',reason:empty?'有効な連続測位データがありません':undefined}
 }
 async function fixture(page:Page,theme='light',empty=false){
@@ -38,7 +38,7 @@ test('calendar grouping preserves missing values, actual zero and partial totals
 })
 for(const width of [1440,320])for(const theme of ['light','dark','system'])test(`paired journey chart remains usable at ${width}px in ${theme}`,async({page},testInfo)=>{
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
- await page.setViewportSize({width,height:width===320?780:1100});await page.emulateMedia({colorScheme:'dark'});const queries=await fixture(page,theme);await page.goto('/#dashboard')
+ await page.setViewportSize({width,height:width===320?780:1100});await page.emulateMedia({colorScheme:'dark'});const queries=await fixture(page,theme);await page.goto('/#dashboard');await page.getByRole('button',{name:'7日',exact:true}).click()
  await expect(page.getByTestId('trip-distance')).toHaveText('58.6km');await expect(page.getByTestId('trip-time')).toHaveText('1時間 0分')
  await expect(page.locator('.jc-bucket')).toHaveCount(7);await expect(page.locator('.jc-bucket.zero')).toHaveCount(1);await expect(page.locator('.jc-bucket.missing')).toHaveCount(2)
  await expect(page.locator('.jc-distance-bar')).toHaveCount(4);await expect(page.locator('.jc-time-bar')).toHaveCount(4)
@@ -68,6 +68,6 @@ for(const empty of [false,true])test(`drive history shows ${empty?'no-fix eviden
  await expect(page.getByRole('heading',{name:'日別の詳細',exact:true})).toBeVisible()
  if(empty){await expect(page.getByTestId('trip-distance')).toHaveText('—km');await expect(page.getByText('距離・走行時間は未計測です')).toBeVisible();await expect(page.getByText('未測位 180 件',{exact:false})).toBeVisible();await expect(page.locator('.dh-trip-list')).toHaveCount(0)}
  else {await expect(page.locator('.dh-trip-list>li')).toHaveCount(1);await expect(page.locator('.dh-trip-list')).toContainText('09:00:00');await expect(page.locator('.dh-trip-list')).toContainText('0時間 15分');await page.getByLabel('詳細を表示する日付').fill('2026-11-06');await expect(page.getByText('この日に有効な連続測位の記録はありません。')).toBeVisible()}
- await expect(page.getByRole('heading',{name:'電波マップ',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await expect(page.getByRole('heading',{name:'走行履歴マップ',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:testInfo.outputPath(`drive-history-${empty?'empty':'populated'}-320.png`),fullPage:true})
 })

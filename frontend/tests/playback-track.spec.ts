@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test'
+import {vectorTiles,vectorState,overlayCount,clickVectorFeature} from './fixtures/vector-tiles'
 import {readFileSync} from 'node:fs'
 import {pointAt,nearestPoint,type TrackPoint} from '../src/services/playbackTrack'
 const url=process.env.NCC_UI_REVIEW_URL,at=Date.parse('2026-11-11T03:00:00Z'),stamp=(second:number)=>new Date(at+second*1000).toISOString()
@@ -8,7 +9,7 @@ const obs=(data:unknown)=>({status:'available',data,source:'synthetic-playback-t
 async function open(page:Page,empty=false,theme='light',linked=false){
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
  const media=readFileSync('../tmp/drive-test-fixture.mp4'),png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64')
- await page.route('https://tile.openstreetmap.org/**',route=>route.fulfill({contentType:'image/png',body:png}))
+ await vectorTiles(page)
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname
   if(path.endsWith('/stream'))return route.fulfill({contentType:'video/mp4',headers:{'accept-ranges':'bytes'},body:media})
@@ -32,13 +33,13 @@ test.describe('recordings, journey and map synchronization',()=>{
  test.skip(!url,'Set NCC_UI_REVIEW_URL to isolated Vite')
  for(const width of [390,1440])test(`${width}px video position, map seek and GPS gaps`,async({page},info)=>{
   await page.setViewportSize({width,height:900});const errors=await open(page,false,width===390?'dark':'light')
-  await expect(page.locator('.playback-route')).toHaveCount(2)
+  await expect.poll(()=>overlayCount(page,'.playback-map','playback')).toBe(2)
   const video=await page.locator('.drive-player-panel').boundingBox(),timeline=await page.locator('.drive-timeline-panel').boundingBox(),map=await page.locator('.playback-track').boundingBox()
   expect(map!.y).toBeGreaterThanOrEqual(timeline!.y+timeline!.height)
   expect(Math.abs(map!.x-video!.x)).toBeLessThanOrEqual(1);expect(Math.abs(map!.width-video!.width)).toBeLessThanOrEqual(1)
   await setTime(page,11);await expect(page.getByTestId('playback-position-time')).toHaveText('12:00:11')
   await expect(page.locator('.playback-location')).toHaveCount(1)
-  await page.locator('.playback-route').first().click({force:true})
+  await clickVectorFeature(page,'.playback-map','playback',{key:'segment',value:0})
   await expect.poll(()=>page.locator('.drive-videos video').evaluate(element=>(element as HTMLVideoElement).currentTime)).toBeLessThan(4)
   await setTime(page,6);await expect(page.locator('.playback-location')).toHaveCount(0)
   await expect(page.getByText('この時刻の位置記録はありません',{exact:true})).toBeVisible()
@@ -51,7 +52,7 @@ test.describe('recordings, journey and map synchronization',()=>{
  test('no fix stays empty and an initial journey link selects its exact recording time',async({page})=>{
   await open(page,true,'dark',true)
   await expect(page.locator('.playback-map-empty')).toContainText('この日の位置記録はありません')
-  await expect(page.locator('.playback-location,.playback-route')).toHaveCount(0)
+  await expect(page.locator('.playback-location')).toHaveCount(0);await expect.poll(()=>overlayCount(page,'.playback-map','playback')).toBe(0)
   await expect.poll(()=>page.locator('.drive-videos video').evaluate(element=>(element as HTMLVideoElement).currentTime)).toBeCloseTo(11,0)
  })
 })

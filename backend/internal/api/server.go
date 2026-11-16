@@ -24,15 +24,33 @@ import (
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/store"
+	"github.com/np1-control-center/ncc/internal/trips"
 	"github.com/np1-control-center/ncc/internal/webui"
 )
 
+type MapThemes struct {
+	Dashboard string `json:"dashboard"`
+	Journey   string `json:"journey"`
+	Playback  string `json:"playback"`
+	Plates    string `json:"plates"`
+}
+
+func normalizeMapThemes(v MapThemes) MapThemes {
+	for _, p := range []*string{&v.Dashboard, &v.Journey, &v.Playback, &v.Plates} {
+		if *p == "" {
+			*p = "auto"
+		}
+	}
+	return v
+}
+
 type Settings struct {
-	Revision           int      `json:"revision"`
-	Theme              string   `json:"theme"`
-	Locale             string   `json:"locale"`
-	Favorites          []string `json:"favorites"`
-	CellularLimitBytes string   `json:"cellularLimitBytes"`
+	Revision           int       `json:"revision"`
+	Theme              string    `json:"theme"`
+	Locale             string    `json:"locale"`
+	Favorites          []string  `json:"favorites"`
+	CellularLimitBytes string    `json:"cellularLimitBytes"`
+	MapThemes          MapThemes `json:"mapThemes"`
 }
 type cameraSession struct {
 	Source, Owner, Color string
@@ -54,16 +72,18 @@ type Server struct {
 	loggerMu   sync.Mutex
 	logger     LoggerState
 	journeys   *journeyArchiveCollector
+	tracks     *trips.TrackStore
 	plates     *plateService
 	tailnet    tailnetHosts
 }
 
 func New(c config.Config) *Server {
-	s := &Server{cfg: c, auth: auth.New(c), client: broker.Client(c.Broker), mux: http.NewServeMux(), settings: Settings{1, "system", "ja", []string{"system", "network", "storage"}, "0"}, cameras: map[string]cameraSession{}}
+	s := &Server{cfg: c, auth: auth.New(c), client: broker.Client(c.Broker), mux: http.NewServeMux(), settings: Settings{Revision: 1, Theme: "system", Locale: "ja", Favorites: []string{"system", "network", "storage"}, CellularLimitBytes: "0"}, cameras: map[string]cameraSession{}}
 	s.traffic = store.NewTraffic(c.StateDir)
 	s.radioStore = radio.NewHistory(c.StateDir)
 	s.loadLogger()
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
+	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
 	s.plates.positions = plateBrokerPositions(s.client)
@@ -73,6 +93,7 @@ func New(c config.Config) *Server {
 	if s.settings.CellularLimitBytes == "" {
 		s.settings.CellularLimitBytes = "0"
 	}
+	s.settings.MapThemes = normalizeMapThemes(s.settings.MapThemes)
 	s.routes()
 	return s
 }
@@ -139,7 +160,7 @@ func (s *Server) Handler() http.Handler {
 		} else {
 			w.Header().Set("Cache-Control", "no-store")
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: data: https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self'; connect-src 'self' https://tiles.openfreemap.org; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 				fail(w, 403, "ORIGIN_DENIED", "外部サイトからは操作できません")
@@ -287,6 +308,27 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/trips", s.journeys.history)
 	s.mux.HandleFunc("GET /api/v1/trips/archive", s.journeys.status)
 	s.mux.HandleFunc("GET /api/v1/device/native-settings", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-settings") })
+	s.mux.HandleFunc("GET /api/v1/device/native-operations", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-operations") })
+	s.mux.HandleFunc("GET /api/v1/device/native-operations/state/{group}", func(w http.ResponseWriter, r *http.Request) {
+		s.proxy(w, r, "/native-operations/state/"+url.PathEscape(r.PathValue("group")))
+	})
+	s.mux.HandleFunc("PUT /api/v1/device/native-operations/settings/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.forwardControlLimit(w, r, "/native-operations/settings/"+url.PathEscape(r.PathValue("id")), "native.operation.setting", 2048)
+	})
+	s.mux.HandleFunc("GET /api/v1/device/native-operations/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.proxy(w, r, "/native-operations/actions/"+url.PathEscape(r.PathValue("id")))
+	})
+	s.mux.HandleFunc("POST /api/v1/device/native-operations/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		s.forwardControlLimit(w, r, "/native-operations/actions/"+url.PathEscape(r.PathValue("id")), "native.operation.action", 8192)
+	})
+	for _, action := range []string{"prepare", "execute"} {
+		s.mux.HandleFunc("POST /api/v1/device/native-operations/sd-format/"+action, func(w http.ResponseWriter, r *http.Request) {
+			if action == "execute" {
+				s.audit("native.operation.sd-format.execute", "requested")
+			}
+			s.forwardControlLimit(w, r, "/native-operations/sd-format/"+action, "native.operation.sd-format."+action, 2048)
+		})
+	}
 	s.mux.HandleFunc("GET /api/v1/device/native-audio", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-audio") })
 	s.mux.HandleFunc("PUT /api/v1/device/native-audio/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -340,7 +382,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/recordings", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/recordings?"+r.URL.Query().Encode()) })
 	s.mux.HandleFunc("GET /api/v1/recordings/days", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/recordings/days") })
 	s.mux.HandleFunc("GET /api/v1/recordings/track", func(w http.ResponseWriter, r *http.Request) {
-		s.proxy(w, r, "/recordings/track?"+r.URL.Query().Encode())
+		s.recordedTrack(w, r)
 	})
 	s.mux.HandleFunc("GET /api/v1/recordings/{id}/stream", func(w http.ResponseWriter, r *http.Request) {
 		s.proxy(w, r, "/recordings/"+url.PathEscape(r.PathValue("id"))+"/stream")
@@ -475,6 +517,11 @@ func (s *Server) routes() {
 	s.mux.Handle("/", http.FileServer(http.FS(files)))
 }
 func validateSettings(v Settings) bool {
+	for _, theme := range []string{v.MapThemes.Dashboard, v.MapThemes.Journey, v.MapThemes.Playback, v.MapThemes.Plates} {
+		if theme != "" && theme != "auto" && theme != "mist" && theme != "night" && theme != "sage" && theme != "colorful" {
+			return false
+		}
+	}
 	if v.CellularLimitBytes != "" {
 		limit, e := strconv.ParseUint(v.CellularLimitBytes, 10, 64)
 		if e != nil || limit > 100_000_000_000_000 || strconv.FormatUint(limit, 10) != v.CellularLimitBytes {
@@ -498,6 +545,7 @@ func validateSettings(v Settings) bool {
 	return true
 }
 func (s *Server) commit(w http.ResponseWriter, v Settings, expected int) {
+	v.MapThemes = normalizeMapThemes(v.MapThemes)
 	if v.CellularLimitBytes == "" {
 		v.CellularLimitBytes = "0"
 	}

@@ -91,7 +91,7 @@ func TestAuthenticationBoundary(t *testing.T) {
 func TestCSRFOriginAndRevision(t *testing.T) {
 	s, c, _ := fixture(t)
 	csrf := login(t, c, s)
-	body := map[string]any{"expectedRevision": 1, "settings": Settings{1, "dark", "ja", []string{}, "0"}}
+	body := map[string]any{"expectedRevision": 1, "settings": Settings{1, "dark", "ja", []string{}, "0", MapThemes{}}}
 	r := request(t, c, s, "PUT", "/settings", "", body)
 	r.Body.Close()
 	if r.StatusCode != 403 {
@@ -118,7 +118,7 @@ func TestCSRFOriginAndRevision(t *testing.T) {
 	if r.StatusCode != 409 {
 		t.Fatal("stale revision accepted")
 	}
-	r = request(t, c, s, "POST", "/backup/restore", csrf, map[string]any{"schemaVersion": 1, "expectedRevision": 2, "dryRun": true, "settings": Settings{1, "light", "ja", []string{}, "0"}})
+	r = request(t, c, s, "POST", "/backup/restore", csrf, map[string]any{"schemaVersion": 1, "expectedRevision": 2, "dryRun": true, "settings": Settings{1, "light", "ja", []string{}, "0", MapThemes{}}})
 	r.Body.Close()
 	if r.StatusCode != 200 {
 		t.Fatal("dryrun failed")
@@ -150,11 +150,11 @@ func TestBackupRoundTripRestoresEveryField(t *testing.T) {
 			t.Fatalf("save status %d", r.StatusCode)
 		}
 	}
-	saved := Settings{0, "dark", "en", []string{"camera", "trips"}, "30000000000"}
+	saved := Settings{0, "dark", "en", []string{"camera", "trips"}, "30000000000", MapThemes{Dashboard: "sage", Journey: "night", Playback: "mist", Plates: "colorful"}}
 	save(saved)
 	// Files written by earlier versions (schema 1, display settings only) still restore.
 	backup := struct{ Settings Settings }{read()}
-	save(Settings{0, "light", "ja", []string{}, "0"})
+	save(Settings{0, "light", "ja", []string{}, "0", MapThemes{}})
 	current := read()
 	r := request(t, c, s, "POST", "/backup/restore", csrf, map[string]any{"schemaVersion": 1, "expectedRevision": current.Revision, "dryRun": false, "settings": backup.Settings})
 	r.Body.Close()
@@ -162,7 +162,7 @@ func TestBackupRoundTripRestoresEveryField(t *testing.T) {
 		t.Fatalf("restore status %d", r.StatusCode)
 	}
 	restored := read()
-	if restored.Theme != saved.Theme || restored.Locale != saved.Locale || strings.Join(restored.Favorites, ",") != "camera,trips" || restored.CellularLimitBytes != saved.CellularLimitBytes {
+	if restored.MapThemes != saved.MapThemes || restored.Theme != saved.Theme || restored.Locale != saved.Locale || strings.Join(restored.Favorites, ",") != "camera,trips" || restored.CellularLimitBytes != saved.CellularLimitBytes {
 		t.Fatalf("restore lost a field: %+v", restored)
 	}
 	if restored.Revision != current.Revision+1 {
@@ -171,12 +171,12 @@ func TestBackupRoundTripRestoresEveryField(t *testing.T) {
 }
 func TestCellularLimitValidation(t *testing.T) {
 	for _, value := range []string{"0", "30000000000", "100000000000000", ""} {
-		if !validateSettings(Settings{1, "system", "ja", nil, value}) {
+		if !validateSettings(Settings{1, "system", "ja", nil, value, MapThemes{}}) {
 			t.Errorf("valid limit rejected: %q", value)
 		}
 	}
 	for _, value := range []string{"-1", "1.5", "030000000000", "100000000000001", "18446744073709551616", "NaN"} {
-		if validateSettings(Settings{1, "system", "ja", nil, value}) {
+		if validateSettings(Settings{1, "system", "ja", nil, value, MapThemes{}}) {
 			t.Errorf("invalid limit accepted: %q", value)
 		}
 	}
@@ -240,7 +240,7 @@ func TestNetworkTrustHTTPRequiresNoPasswordButKeepsCSRF(t *testing.T) {
 	if len(cookies) != 1 || cookies[0].Name != "ncc_http_session" {
 		t.Fatal("HTTP session cookie missing")
 	}
-	body := map[string]any{"expectedRevision": 1, "settings": Settings{1, "dark", "ja", []string{}, "0"}}
+	body := map[string]any{"expectedRevision": 1, "settings": Settings{1, "dark", "ja", []string{}, "0", MapThemes{}}}
 	r = request(t, c, s, "PUT", "/settings", "", body)
 	r.Body.Close()
 	if r.StatusCode != 403 {

@@ -70,4 +70,23 @@ git diff --check
 
 変更をstageした後に `python tools/verify-public-build.py --go PATH_TO_GO` を実行すると、Git indexだけを隔離ディレクトリへ展開し、端末由来のファイルや非公開資料なしで通常ビルドできることを確認します。公開スクリーンショットは `frontend/tests/readme-screenshot.spec.ts` の架空データから生成しています。
 
+READMEの画面例はv0.4.0のダーク／ライト表示へ更新済みです。生成には実機と異なるポートのローカルViteを使用し、全APIをサンプルデータへ置き換えます。経路は [公開道路のfixture](../frontend/tests/fixtures/public-tokyo-route.json) を使用します。東京駅周辺のOpenStreetMap道路データを [OSRM Route API](https://project-osrm.org/docs/v5.24.0/api/#route-service) の `overview=full` で取得した120頂点を保持し、時刻は架空です。出典・取得URL・[OpenStreetMapの帰属表示](https://www.openstreetmap.org/copyright) はfixtureにも記録しています。
+
+撮影時は地図をzoom 14へ1段階引き、移動後のidleとタイル描画完了を待ちます。MapLibreのベクトル地図・全経路頂点・7日選択・縮尺を検査してから撮影します。ナイト配色は道路・建物・文字の明るさと彩度を抑え、走行軌跡が前景として見えるよう調整しています。カメラ枠も既存の合成JPEGで、実機の映像や走行位置は使いません。
+
+撮り直す場合は `frontend` で `npm run dev -- --port 5177` を起動し、別のPowerShellで次を実行します。ChromiumはPlaywrightで事前にインストールしてください。
+
+```powershell
+cd frontend
+$env:NCC_PUBLIC_SCREENSHOTS='1'
+$env:NCC_UI_REVIEW_URL='http://127.0.0.1:5177'
+foreach ($theme in 'dark','light') {
+    $env:NCC_PUBLIC_THEME=$theme
+    npx playwright test readme-screenshot.spec.ts --output "../tmp/readme-screenshots-$theme"
+    if ($LASTEXITCODE -ne 0) { throw 'Screenshot verification failed' }
+}
+```
+
+`tmp/readme-screenshots-{dark,light}` 内の `dashboard-{dark,light}.png` を目視確認してから、同名の `docs/images/` の画像へコピーします。今回の両テーマは1440×1000で検証済みです。
+
 依存関係の変更時には [サードパーティライセンス](../THIRD_PARTY_LICENSES.md) の手順で一覧と原文を更新してください。純正ファームウェア、ライブラリ、SDKヘッダー、逆コンパイル結果、実機録画・位置、資格情報は追加しません。Issueには再現手順・ビルド識別子・公開可能なエラーの要約を記載してください。

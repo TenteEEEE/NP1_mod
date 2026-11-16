@@ -2,7 +2,7 @@
 import {computed,onMounted,onUnmounted,ref,useId,watch} from 'vue'
 import {ExternalLink,Route} from '@lucide/vue'
 import {api,type Observation,type Summary} from '../services/api'
-import {calendar,duration,finite,groupJourney,jstDate,niceMaximum,shortDate,valueText,type JourneyBucket,type JourneyDay,type JourneyGrouping,type JourneyHistory,type JourneyPeriod} from '../services/journey'
+import {calendar,duration,finite,groupJourney,jstDate,niceMaximum,rollingHourTicks,rollingJourney,shortDate,valueText,type JourneyBucket,type JourneyDay,type JourneyGrouping,type JourneyHistory,type JourneyPeriod} from '../services/journey'
 import '../journey-chart.css'
 const props=defineProps<{summary?:Summary;details?:boolean;showLink?:boolean;chartHeight?:number}>()
 // Plot geometry: `base` is the zero line; the overview dashboard shortens the chart to fit the window.
@@ -24,15 +24,18 @@ const range=computed(()=>{
 })
 const entries=computed<JourneyDay[]>(()=>Array.isArray(history.value?.days)?history.value!.days:Array.isArray(periodData.value?.days)?periodData.value!.days:[])
 const days=computed(()=>calendar(range.value.from,range.value.to,entries.value))
-const buckets=computed(()=>groupJourney(days.value,grouping.value))
+const rolling=computed(()=>period.value==='24h')
+const clock=(at:string)=>new Date(at).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit'})
+const buckets=computed(()=>rolling.value?rollingJourney(history.value?.hours||[]):groupJourney(days.value,grouping.value))
+const hourTicks=computed(()=>rolling.value?rollingHourTicks(history.value?.range.fromAt||buckets.value[0]?.from||'',history.value?.range.toAt||buckets.value.at(-1)?.to||''):[])
 const populated=computed(()=>buckets.value.some(bucket=>bucket.distance!==null||bucket.hours!==null))
 const distanceMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.distance))),hoursMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.hours))),cumulativeDistanceMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.cumulativeDistance))),cumulativeHoursMax=computed(()=>niceMaximum(buckets.value.map(bucket=>bucket.cumulativeHours)))
-const width=computed(()=>Math.max(viewportWidth.value,buckets.value.length*34)),step=computed(()=>width.value/Math.max(1,buckets.value.length))
+const width=computed(()=>Math.max(viewportWidth.value,buckets.value.length*(rolling.value?8:34))),step=computed(()=>width.value/Math.max(1,buckets.value.length))
 const detail=computed(()=>buckets.value.find(bucket=>bucket.key===selected.value))
-const groupLabel=computed(()=>({day:'日',week:'週',month:'月'}[grouping.value]))
+const groupLabel=computed(()=>rolling.value?'時間':({day:'日',week:'週',month:'月'}[grouping.value]))
 const y=(value:number,max:number)=>base.value-value/max*(base.value-10)
 const x=(index:number)=>(index+.5)*step.value
-function label(bucket:JourneyBucket){return bucket.from===bucket.to?shortDate(bucket.from):shortDate(bucket.from)+'〜'+shortDate(bucket.to)}
+function label(bucket:JourneyBucket){if(rolling.value)return clock(bucket.from)+'〜'+clock(bucket.to);return bucket.from===bucket.to?shortDate(bucket.from):shortDate(bucket.from)+'〜'+shortDate(bucket.to)}
 function description(bucket:JourneyBucket){return `${bucket.from}${bucket.from===bucket.to?'':'〜'+bucket.to}、距離 ${valueText(bucket.distance)} km、走行時間 ${duration(bucket.hours===null?null:bucket.hours*3600)}、計測 ${bucket.observedDays}/${bucket.dayCount}日`}
 function line(metric:'distance'|'hours'){
  const key=metric==='distance'?'cumulativeDistance':'cumulativeHours',count=metric==='distance'?'distanceDays':'timeDays',maximum=metric==='distance'?cumulativeDistanceMax.value:cumulativeHoursMax.value
@@ -62,9 +65,9 @@ onUnmounted(()=>{active=false;sequence++;controller?.abort();clearInterval(poll)
 </script>
 <template>
  <section class="panel journey-panel jc-panel" :aria-labelledby="heading">
-  <div class="jc-head"><h2 :id="heading"><Route :size="20"/>走行の記録</h2><button v-if="showLink" class="icon-button section-link" aria-label="走行履歴を開く" @click="emit('navigate','trips')"><ExternalLink :size="18"/></button></div>
-  <div class="jc-totals"><div><span>走行距離</span><strong data-testid="trip-distance">{{loading||error?'—':valueText(periodData?.distanceKm)}}<small>km</small></strong></div><div><span>走行時間</span><strong class="jc-duration" data-testid="trip-time">{{loading||error?'—':duration(periodData?.drivingSeconds)}}</strong></div></div>
-  <div class="jc-controls"><div class="jc-periods" role="group" aria-label="走行記録の期間"><button v-for="item in ['7','30','90','365','all','custom']" :key="item" :data-period="item" :class="{selected:period===item}" :aria-pressed="period===item" @click="choosePeriod(item)">{{item==='all'?'全期間':item==='custom'?'カスタム':item+'日'}}</button></div><label><select v-model="grouping" aria-label="走行グラフの集約" title="グラフの集約単位"><option value="day">日毎</option><option value="week">週毎</option><option value="month">月毎</option></select></label></div>
+  <div class="jc-head"><h2 :id="heading"><Route :size="20"/>走行の記録<span v-if="rolling" class="jc-window-label">過去24時間</span></h2><button v-if="showLink" class="icon-button section-link" aria-label="走行履歴を開く" @click="emit('navigate','trips')"><ExternalLink :size="18"/></button></div>
+  <div class="jc-totals"><div><span>走行距離</span><strong data-testid="trip-distance">{{history?.boundaryEstimated&&!loading&&!error?'約 ':''}}{{loading||error?'—':valueText(periodData?.distanceKm)}}<small>km</small></strong></div><div><span>走行時間</span><strong class="jc-duration" data-testid="trip-time">{{history?.boundaryEstimated&&!loading&&!error?'約 ':''}}{{loading||error?'—':duration(periodData?.drivingSeconds)}}</strong></div></div>
+  <div class="jc-controls"><div class="jc-periods" role="group" aria-label="走行記録の期間"><button v-for="item in ['24h','7','30','90','365','all','custom']" :key="item" :data-period="item" :class="{selected:period===item}" :aria-pressed="period===item" @click="choosePeriod(item)">{{item==='24h'?'24時間':item==='all'?'全期間':item==='custom'?'カスタム':item+'日'}}</button></div><label v-if="!rolling"><select v-model="grouping" aria-label="走行グラフの集約" title="グラフの集約単位"><option value="day">日毎</option><option value="week">週毎</option><option value="month">月毎</option></select></label></div>
   <form v-if="period==='custom'" class="jc-custom" @submit.prevent="applyCustom"><label>開始日<input v-model="customFrom" type="date" :max="customTo||today" required></label><label>終了日<input v-model="customTo" type="date" :min="customFrom" :max="today" required></label><button class="secondary" type="submit">表示</button><p v-if="validation" role="alert">{{validation}}</p></form>
   <div v-if="refreshError" class="jc-error" role="status">{{refreshError}}<button class="secondary" @click="load">再試行</button></div>
   <div v-if="error" class="jc-error" role="alert">{{error}}<button class="secondary" @click="load">再試行</button></div>
@@ -78,14 +81,15 @@ onUnmounted(()=>{active=false;sequence++;controller?.abort();clearInterval(poll)
      <path v-for="level in [10,(base+10)/2,base]" :key="level" :d="`M0 ${level} H${width}`" class="jc-grid" aria-hidden="true"/>
      <g v-for="(bucket,index) in buckets" :key="bucket.key" class="jc-bucket" :class="{selected:selected===bucket.key,missing:bucket.distance===null&&bucket.hours===null,zero:bucket.distance===0&&bucket.hours===0}" role="button" tabindex="0" :aria-label="description(bucket)" :aria-pressed="selected===bucket.key" @click="selected=bucket.key" @keydown.enter.prevent="selected=bucket.key" @keydown.space.prevent="selected=bucket.key" @keydown="focusBucket($event,index)">
       <title>{{description(bucket)}}</title><rect :x="index*step" y="0" :width="step" :height="base+4" class="jc-hit"/>
-      <rect v-if="bucket.distance!==null&&bucket.distance>0" :x="x(index)-12" :y="y(bucket.distance,distanceMax)" width="10" :height="Math.max(1,base-y(bucket.distance,distanceMax))" class="jc-distance-bar" :class="{partial:bucket.distanceDays<bucket.dayCount}"/>
+      <rect v-if="bucket.distance!==null&&bucket.distance>0" :x="x(index)-(rolling?Math.min(4,step/3)+.5:12)" :y="y(bucket.distance,distanceMax)" :width="rolling?Math.min(4,step/3):10" :height="Math.max(1,base-y(bucket.distance,distanceMax))" class="jc-distance-bar" :class="{partial:bucket.distanceDays<bucket.dayCount}"/>
       <circle v-else-if="bucket.distance===0" :cx="x(index)-7" :cy="base" r="3" class="jc-distance-dot"/>
       <path v-else :d="`M${x(index)-11} ${base-4} l8 8 m-8 0 l8 -8`" class="jc-missing"/>
-      <rect v-if="bucket.hours!==null&&bucket.hours>0" :x="x(index)+2" :y="y(bucket.hours,hoursMax)" width="10" :height="Math.max(1,base-y(bucket.hours,hoursMax))" class="jc-time-bar" :class="{partial:bucket.timeDays<bucket.dayCount}"/>
+      <rect v-if="bucket.hours!==null&&bucket.hours>0" :x="x(index)+(rolling?.5:2)" :y="y(bucket.hours,hoursMax)" :width="rolling?Math.min(4,step/3):10" :height="Math.max(1,base-y(bucket.hours,hoursMax))" class="jc-time-bar" :class="{partial:bucket.timeDays<bucket.dayCount}"/>
       <circle v-else-if="bucket.hours===0" :cx="x(index)+7" :cy="base" r="3" class="jc-time-dot"/>
       <path v-else :d="`M${x(index)+3} ${base-4} l8 8 m-8 0 l8 -8`" class="jc-missing"/>
-      <text v-if="buckets.length<16||index%Math.ceil(buckets.length/12)===0||index===buckets.length-1" :x="x(index)" :y="base+23" text-anchor="middle" class="jc-date" aria-hidden="true">{{grouping==='month'?Number(bucket.from.slice(5,7))+'月':shortDate(bucket.from)}}</text>
+      <text v-if="!rolling&&(buckets.length<16||index%Math.ceil(buckets.length/12)===0||index===buckets.length-1)" :x="x(index)" :y="base+23" text-anchor="middle" class="jc-date" aria-hidden="true">{{grouping==='month'?Number(bucket.from.slice(5,7))+'月':shortDate(bucket.from)}}</text>
      </g>
+     <text v-for="tick in hourTicks" :key="tick.at" :x="tick.position*width" :y="base+23" :text-anchor="tick.position*width<12?'start':(1-tick.position)*width<12?'end':'middle'" class="jc-date jc-hour-tick" aria-hidden="true">{{tick.label}}</text>
      <path :d="line('distance')" class="jc-distance-line" aria-hidden="true"/><path :d="line('hours')" class="jc-time-line" aria-hidden="true"/>
      <template v-for="(bucket,index) in buckets" :key="bucket.key"><circle v-if="bucket.cumulativeDistance!==null" :cx="x(index)" :cy="y(bucket.cumulativeDistance,cumulativeDistanceMax)" r="3" class="jc-distance-point" aria-hidden="true"/><circle v-if="bucket.cumulativeHours!==null" :cx="x(index)" :cy="y(bucket.cumulativeHours,cumulativeHoursMax)" r="3" class="jc-time-point" aria-hidden="true"/></template>
     </svg></div>
@@ -95,7 +99,7 @@ onUnmounted(()=>{active=false;sequence++;controller?.abort();clearInterval(poll)
    <div class="jc-detail chart-detail" role="status"><template v-if="detail"><strong>{{label(detail)}}</strong><span>距離 {{valueText(detail.distance)}} km / 時間 {{duration(detail.hours===null?null:detail.hours*3600)}}</span><span>累計 {{valueText(detail.cumulativeDistance)}} km / {{duration(detail.cumulativeHours===null?null:detail.cumulativeHours*3600)}}</span><small>計測 {{detail.observedDays}} / {{detail.dayCount}}日</small></template><template v-else>棒をタップすると、その{{groupLabel}}の値と累計を確認できます。</template></div>
   </template>
   <div v-else class="jc-empty"><Route :size="25"/><strong>この期間の走行記録はありません</strong><span>{{history?.reason||'距離と時間は、連続して測位できた記録から集計します。'}}</span></div>
-  <div class="jc-foot"><span>{{range.from}}〜{{range.to}} · JST</span><span>0 は計測済み · × は未計測</span></div>
+  <div class="jc-foot"><span>{{rolling&&history?.range.fromAt?new Date(history.range.fromAt).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'}):range.from}}〜{{rolling&&history?.range.toAt?clock(history.range.toAt):range.to}} · JST</span><span>{{rolling?'時間帯ごとの値は概算 · ':''}}0 は計測済み · × は未計測</span></div>
   <p v-if="history?.sourceTruncated||summary?.tripStats?.data?.sourceTruncated" class="jc-truncated">一部区間は集計に含まれていません。取得・保存の状態を確認してください。</p>
  </section>
 </template>

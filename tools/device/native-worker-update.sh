@@ -36,7 +36,7 @@ native_identity(){ systemctl show np1-control-native.service -p MainPID -p Invoc
 capture > "$BACKUP/preserved-before.txt"
 native_identity > "$BACKUP/native-before.txt"
 FILES='bin/ncc'
-for name in ncc-native-setting-helper ncc-native-setting-extended-helper ncc-native-setting-choice-helper ncc-native-setting-notification-helper ncc-native-alexa-helper ncc-native-audio-helper; do
+for name in ncc-native-setting-helper ncc-native-setting-extended-helper ncc-native-setting-choice-helper ncc-native-setting-notification-helper ncc-native-alexa-helper ncc-native-audio-helper ncc-native-operations-helper; do
  if test -e "experimental/$name"; then test -f "experimental/$name" && test ! -L "experimental/$name"; FILES="$FILES experimental/$name"; fi
 done
 printf '%s\n' "$FILES" > "$BACKUP/managed-files.txt"
@@ -130,7 +130,7 @@ wait_native
 native_identity > "$BACKUP/native-after.txt"
 if cmp -s "$BACKUP/native-before.txt" "$BACKUP/native-after.txt"; then echo 'Native worker identity did not change' >&2; exit 1; fi
 cmp -s bin/ncc "$RUN/ncc"
-for pair in 'ncc-native-setting-helper:helper' 'ncc-native-setting-extended-helper:extended-helper' 'ncc-native-setting-choice-helper:choice-helper' 'ncc-native-setting-notification-helper:notification-helper' 'ncc-native-alexa-helper:alexa-helper' 'ncc-native-audio-helper:audio-helper'; do
+for pair in 'ncc-native-setting-helper:helper' 'ncc-native-setting-extended-helper:extended-helper' 'ncc-native-setting-choice-helper:choice-helper' 'ncc-native-setting-notification-helper:notification-helper' 'ncc-native-alexa-helper:alexa-helper' 'ncc-native-audio-helper:audio-helper' 'ncc-native-operations-helper:operations-helper'; do
  source=${pair%:*};target=${pair#*:}
  if test -f "experimental/$source"; then cmp -s "experimental/$source" "$RUN/$target"; fi
 done

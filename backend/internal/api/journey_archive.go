@@ -168,7 +168,12 @@ func (c *journeyArchiveCollector) history(w http.ResponseWriter, r *http.Request
 		fail(w, 400, "INVALID_JOURNEY_PERIOD", "走行履歴の期間を確認してください")
 		return
 	}
-	report, e := c.archive.History(options, now)
+	var report trips.HistoryReport
+	if options.Period == "24h" {
+		report, e = c.archive.RollingHistory(now)
+	} else {
+		report, e = c.archive.History(options, now)
+	}
 	if e != nil {
 		fail(w, 503, "JOURNEY_ARCHIVE_UNAVAILABLE", "保存済みの走行履歴を読み取れません")
 		return

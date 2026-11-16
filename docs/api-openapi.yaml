@@ -606,6 +606,83 @@ paths:
       summary: 常時ロガーの稼働・保存件数・測位つき件数
       responses:
         '200': {description: 'Observation.dataにenabled/active/stored/located/lastObservedAt/lastStoredAt。個別同意ゲートなし。'}
+  /device/native-operations:
+    get:
+      summary: 純正の本体操作の項目・選択肢・利用可否
+      responses:
+        '200': {description: 'groups、actions、available。actionsは固定ID・入力型・確認文言・非対応理由を含む。実際の状態はstateで再照会する。'}
+  /device/native-operations/state/{group}:
+    get:
+      summary: 純正SettingまたはDriveRecへ固定の状態照会
+      parameters:
+        - {in: path, name: group, required: true, schema: {type: string, enum: [storage, recorder, parking, vehicle, installation, alignment, volume, account, initial-setup]}}
+      responses:
+        '200': {description: 'valuesとobservedAt。照合済みの純正応答。'}
+        '503': {description: '応答・cleanup未確認'}
+  /device/native-operations/settings/{id}:
+    put:
+      summary: 固定の録画・駐車監視・車両設定を変更して再照会
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [expectedValue, value], properties: {expectedValue: {type: integer, minimum: 0}, value: {type: integer, minimum: 0}}}
+      responses:
+        '200': {description: 'readback=trueと再照会値。永続保存完了とは別。'}
+        '503': {description: '結果未確認。自動再送しない。'}
+  /device/native-operations/sd-format/prepare:
+    post:
+      summary: SDの状態・カード識別を確認し1分の単回tokenを発行（消去なし）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '200': {description: 'token、expiresAt、capacityBytes。カード識別子は返さない。'}
+        '409': {description: '対象が不明・未挿入・処理中'}
+  /device/native-operations/actions/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}, description: 'catalogueで公開する固定action IDのみ。任意opcodeやownerは指定不可。'}
+    get:
+      summary: 引数なしの読取り専用操作
+      responses:
+        '200': {description: 'values、sent、acknowledged、completionConfirmed、observedAt。応答はno-store。'}
+        '409': {description: 'FW非対応または保守モード等の前提不足'}
+        '503': {description: '応答・所有プロセス・cleanupを確認できない'}
+    post:
+      summary: 固定の本体操作、または引数を伴う読取り
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [values]
+              properties:
+                confirmation: {type: string, description: '変更操作ではcatalogueの確認文言が必須。'}
+                expectedValue: {type: boolean, description: 'シリアルの変更では直前に取得した状態が必須。'}
+                values: {type: object, description: 'catalogueのinputsに一致する型・範囲・フィールドのみ。トークン等は保存しない。'}
+      responses:
+        '200': {description: '相関応答と必要に応じてreadback。notifyのみではacknowledged=false、completionConfirmed=false。'}
+        '400': {description: '確認・入力型・範囲・変更前値が不正'}
+        '409': {description: 'FW非対応、要求拒否、保守・SD・STA等の前提不足'}
+        '503': {description: '動作またはreadbackを確認できない。変更は自動再送しない。'}
+  /device/native-operations/sd-format/execute:
+    post:
+      summary: 同一カード・単回確認を照合し純正フォーマット要求を1回送信
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [token, confirmation, acknowledgeDataLoss], properties: {token: {type: string}, confirmation: {type: string, enum: [SDカードを消去]}, acknowledgeDataLoss: {type: boolean, enum: [true]}}}
+      responses:
+        '202': {description: 'accepted=true、completionConfirmed=false。受付のみで完了とはみなさない。'}
+        '409': {description: '期限切れ・カード交換・確認token再利用'}
+        '503': {description: '結果未確認。自動再送しない。'}
   /device/native-settings:
     get:
       summary: ファームウェア照合済みの純正設定と操作可能な選択肢

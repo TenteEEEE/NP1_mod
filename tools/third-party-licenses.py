@@ -21,6 +21,7 @@ OPEN_LICENSES = {
     'MPL-2.0', 'LGPL-2.1-or-later', 'Apache-2.0 OR BSD-3-Clause',
     'MIT AND Apache-2.0', 'BSD-2-Clause AND BSD-3-Clause',
     'Unlicense AND MIT', 'BSD-3-Clause AND NCSA',
+    '(MIT OR Apache-2.0)',
 }
 
 
@@ -99,6 +100,14 @@ def npm_entries(root):
             if installed['version'] != version:
                 raise ValueError('Installed version differs from lock: ' + name)
             notices = package_notices(directory)
+            if not notices and name == 'murmurhash-js' and version == '1.0.0':
+                # This npm distribution puts its complete, unmodified MIT
+                # notice in README instead of a standalone LICENSE file.
+                readme = (directory / 'README.md').read_bytes()
+                marker = b'## License (MIT)'
+                if marker in readme:
+                    notices = [('README-LICENSE', readme[readme.index(marker):])]
+                    source = 'npm distribution README License (MIT) section'
         else:
             notices = []
         if not notices and (name.startswith('@rolldown/binding-') or name.startswith('lightningcss-')):

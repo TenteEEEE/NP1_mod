@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {computed,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
-import L from 'leaflet'
-import {mapTiles} from '../services/map-tiles'
-import 'leaflet/dist/leaflet.css'
+import {VectorMap,collection,feature,type LatLon} from '../services/vector-map'
 import {AlertTriangle,Camera,Image as ImageIcon,MapPin,Play,Plus,RefreshCw,ScanLine,Trash2,Upload,Volume2,X} from '@lucide/vue'
 import {api,apiUpload,bytes} from '../services/api'
 import {plateDisplay,plateSerial,plateMissing,plateLocationLabel,plateLocationNote,sensorLabel,speechLabel,collectorLabel,newRuleId,jstDay,speechPreview,jobLabel,toClipWav,defaultPlateLED,type PlateRecord,type PlateRecordsResponse,type PlateRule,type PlateSettings,type PlateSpeech,type PlateStatus} from '../services/plate'
@@ -19,10 +17,20 @@ const selectedId=ref(''),imageFor=ref<PlateRecord>(),clipFor=ref<PlateRecord>()
 const speech=ref<PlateSpeech>(),uploading=ref(''),previewing=ref(''),listen=ref('')
 const tileFailed=ref(false)
 const mapEl=ref<HTMLElement>(),listEl=ref<HTMLElement>()
-let map:L.Map|undefined,layer:L.LayerGroup|undefined,tiles:L.TileLayer|undefined,resize:ResizeObserver|undefined,fitted=false,sequence=0,statusTimer:ReturnType<typeof setInterval>|undefined
-const markers=new Map<string,L.CircleMarker>()
+let map:VectorMap|undefined,fitted=false,sequence=0,statusTimer:ReturnType<typeof setInterval>|undefined
 
 const placed=computed(()=>records.value.filter(r=>r.record.location))
+const recordDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'})
+const recordDayLabel=new Intl.DateTimeFormat('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric',weekday:'short'})
+const recordGroups=computed(()=>{
+ const days=new Map<string,{day:string;label:string;items:PlateRecordsResponse['records']}>()
+ for(const item of records.value){
+  const date=new Date(item.record.firstSeen),day=recordDay.format(date)
+  if(!days.has(day))days.set(day,{day,label:recordDayLabel.format(date),items:[]})
+  days.get(day)!.items.push(item)
+ }
+ return [...days.values()].sort((a,b)=>b.day.localeCompare(a.day))
+})
 const matchedCount=computed(()=>records.value.filter(r=>r.record.matches.length).length)
 const dirty=computed(()=>JSON.stringify(draft.value)!==JSON.stringify(settings.value))
 const time=(v:string)=>new Date(v).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})
@@ -49,18 +57,16 @@ async function loadSettings(){const s=normalizeSettings(await api<PlateSettings>
 const rangeDays=()=>Math.round((Date.parse(to.value)-Date.parse(from.value))/86400000)
 async function loadRecords(){const id=++sequence;listReason.value='';if(!from.value||!to.value||rangeDays()<0||rangeDays()>366){listError.value='期間は366日以内で、開始日を終了日以前にしてください';return}loading.value=true;try{const q=new URLSearchParams({from:from.value,to:to.value});if(matchedOnly.value)q.set('matched','true');if(query.value.trim())q.set('q',query.value.trim());const r=await api<PlateRecordsResponse>('/plate/records?'+q);if(id!==sequence)return;records.value=r.records;truncated.value=r.truncated;listReason.value=r.reason;listError.value='';if(!r.records.some(x=>x.record.id===selectedId.value))selectedId.value='';fitted=false;render()}catch(e){if(id===sequence){records.value=[];listError.value=message(e);render()}}finally{if(id===sequence)loading.value=false}}
 
-// Colors come from CSS classes (theme tokens); the option colors are only fallbacks.
-function markerStyle(r:PlateRecord,selected:boolean):L.CircleMarkerOptions{const hit=r.matches.length>0;return{pane:hit?'plate-hit':'overlayPane',radius:hit?(selected?13:10):(selected?9:6),color:hit?'#8f2d14':'#2f4e5c',fillColor:hit?'#e8590c':'#5b7c8a',fillOpacity:hit?.95:r.location?.estimated?.35:.7,weight:selected?4:hit?3:1.5,dashArray:r.location?.estimated?'3 3':undefined,className:hit?'plate-marker-hit':'plate-marker'}}
 function popupNode(r:PlateRecord){const node=document.createElement('div');node.className='plate-popup';const b=document.createElement('strong');b.textContent=plateDisplay(r);node.appendChild(b);const t=document.createElement('div');t.textContent=time(r.firstSeen);node.appendChild(t);const note=plateLocationNote(r);if(note){const e=document.createElement('div');e.className='plate-popup-estimated';e.textContent=note;node.appendChild(e)}if(r.matches.length){const m=document.createElement('div');m.className='plate-popup-hit';m.textContent='条件: '+r.matches.map(x=>x.ruleName).join('、');node.appendChild(m)}return node}
-function render(){if(!map||!layer)return;layer.clearLayers();markers.clear();const bounds:L.LatLngExpression[]=[];
- // Normal points first so condition hits are drawn above them.
- const ordered=[...placed.value].sort((a,b)=>a.record.matches.length-b.record.matches.length)
- for(const {record} of ordered){const loc=record.location!;const position:L.LatLngExpression=[loc.lat,loc.lon];bounds.push(position);const m=L.circleMarker(position,markerStyle(record,record.id===selectedId.value)).bindPopup(popupNode(record));m.on('click',()=>select(record.id,false));m.addTo(layer);markers.set(record.id,m)}
- if(bounds.length&&!fitted){map.fitBounds(L.latLngBounds(bounds),{padding:[30,30],maxZoom:16});fitted=true}renderTiles()}
-async function select(id:string,fromList:boolean){const previous=selectedId.value;selectedId.value=id;for(const key of [previous,id]){const r=records.value.find(x=>x.record.id===key)?.record;const m=markers.get(key);if(r&&m)m.setStyle(markerStyle(r,key===id))}const m=markers.get(id);if(fromList&&m&&map){map.panTo(m.getLatLng());m.openPopup()}if(!fromList){await nextTick();listEl.value?.querySelector<HTMLElement>(`[data-record="${id}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'})}}
-function renderTiles(){if(!map)return;if(online.value&&placed.value.length&&!tiles){tileFailed.value=false;tiles=mapTiles(()=>tileFailed.value=true).addTo(map)}else if(!online.value||!placed.value.length){tiles?.remove();tiles=undefined;tileFailed.value=false}}
-function initMap(){if(map||!mapEl.value)return;map=L.map(mapEl.value).setView([36.2,138.2],5);map.attributionControl.setPrefix(false);map.createPane('plate-hit').style.zIndex='650';layer=L.layerGroup().addTo(map);resize=new ResizeObserver(()=>map?.invalidateSize());resize.observe(mapEl.value);render()}
-function destroyMap(){resize?.disconnect();resize=undefined;map?.remove();map=undefined;layer=undefined;tiles=undefined;markers.clear()}
+function render(){if(!map)return;const points=placed.value.map(({record})=>{const loc=record.location!;return feature({type:'Point',coordinates:[loc.lon,loc.lat]},{id:record.id,hit:record.matches.length>0,selected:record.id===selectedId.value,estimated:!!loc.estimated})})
+ const layer=(hit:boolean)=>({id:hit?'plate-hit':'plate-points',type:'circle' as const,source:'plates',filter:['==',['get','hit'],hit] as any,paint:{'circle-radius':['case',['get','selected'],hit?13:9,hit?9:5] as any,'circle-color':hit?'#e8590c':'#397fd7','circle-opacity':['case',['get','estimated'],.35,.85] as any,'circle-stroke-color':hit?'#8f2d14':'#f8fafc','circle-stroke-width':['case',['get','selected'],3,1.5] as any}})
+ map.setOverlay('plates',collection(points),[layer(false),layer(true)])
+ const bounds:LatLon[]=placed.value.map(({record})=>[record.location!.lat,record.location!.lon]);if(bounds.length&&!fitted){map.fit(bounds,16);fitted=true}renderTiles()
+}
+async function select(id:string,fromList:boolean){selectedId.value=id;render();const record=records.value.find(x=>x.record.id===id)?.record;if(record?.location&&map){const point:LatLon=[record.location.lat,record.location.lon];if(fromList)map.centre(point);map.popup(point,popupNode(record))}if(!fromList){await nextTick();listEl.value?.querySelector<HTMLElement>(`[data-record="${id}"]`)?.scrollIntoView({block:'nearest',behavior:'smooth'})}}
+function renderTiles(){if(map){map.background(online.value&&!!placed.value.length);if(!online.value||!placed.value.length)tileFailed.value=false}}
+function initMap(){if(map||!mapEl.value)return;try{map=new VectorMap({view:'plates',container:mapEl.value,failed:()=>tileFailed.value=true});map.map.on('click',event=>{const hit=map?.features(event,['plate-hit','plate-points'])[0];if(hit)void select(String(hit.properties.id),false)});render()}catch{tileFailed.value=true}}
+function destroyMap(){map?.destroy();map=undefined}
 
 function addRule(){draft.value?.rules.push({id:newRuleId(),name:'',enabled:true,region:'',class:'',kana:'',number:'',saveImage:true,speak:false,message:'',messageAudio:'',led:defaultPlateLED()})}
 function removeRule(rule:PlateRule){if(!draft.value)return;draft.value.rules=draft.value.rules.filter(r=>r!==rule)}
@@ -112,7 +118,9 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
     <div class="plate-map-wrap"><div class="plate-map-frame"><div ref="mapEl" class="plate-map" role="region" aria-label="記録した場所の地図"></div><div v-if="!loading&&!placed.length" class="plate-map-placeholder"><MapPin :size="24"/><strong>地図に表示できる記録はありません</strong><span>{{records.length?'測位できた記録がないため、地図には表示できません。':'位置のある記録を取得すると、ここに表示します。'}}</span></div></div><div class="plate-legend"><span><i class="dot"></i>記録</span><span><i class="dot hit"></i>条件に合致</span></div><p v-if="tileFailed" class="plate-map-empty" role="note">背景地図を読み込めませんでした。記録の位置は引き続き表示します。</p></div>
     <div ref="listEl" class="plate-list">
      <p v-if="!loading&&!records.length" class="plate-empty">この期間の記録はありません。</p>
-     <article v-for="{record,imageAvailable} in records" :key="record.id" :data-record="record.id" :class="['plate-item',{hit:record.matches.length,selected:record.id===selectedId}]">
+     <template v-for="group in recordGroups" :key="group.day">
+     <h3 class="plate-day-heading"><time :datetime="group.day">{{group.label}}</time><span>{{group.items.length.toLocaleString()}} 件</span></h3>
+     <article v-for="{record,imageAvailable} in group.items" :key="record.id" :data-record="record.id" :class="['plate-item',{hit:record.matches.length,selected:record.id===selectedId}]">
       <!-- The plate is drawn like a Japanese number plate; details and actions sit to its right. -->
       <button class="plate-item-main" :aria-pressed="record.id===selectedId" :aria-label="plateDisplay(record)" @click="select(record.id,true)">
        <span class="plate-badge" :class="{hit:record.matches.length}" :title="plateMissing(record)?'グレーの部分は読み取れなかった項目です':undefined" aria-hidden="true"><span class="plate-top"><span :class="{missing:!record.reading.region}">{{record.reading.region||'？？'}}</span> <span :class="{missing:!record.reading.class}">{{record.reading.class||'？？？'}}</span></span><span class="plate-kana" :class="{missing:!record.reading.kana}">{{record.reading.kana||'？'}}</span><span class="plate-serial">{{plateSerial(record.reading.number)}}</span></span>
@@ -129,6 +137,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
       </div>
       </div>
      </article>
+     </template>
     </div>
    </div>
   </section>

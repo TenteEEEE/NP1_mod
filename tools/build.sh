@@ -36,6 +36,10 @@ if test -f "$ROOT/artifacts/native-audio-helper/ncc-native-audio-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/native-audio-helper/ncc-native-audio-helper" "$ROOT/artifacts/ncc/experimental/"
 fi
+if test -f "$ROOT/artifacts/native-operations-helper/ncc-native-operations-helper"; then
+    mkdir -p "$ROOT/artifacts/ncc/experimental"
+    cp "$ROOT/artifacts/native-operations-helper/ncc-native-operations-helper" "$ROOT/artifacts/ncc/experimental/"
+fi
 if test -f "$ROOT/artifacts/ncc-native-wifi-sta/bin/ncc-native-wifi-sta-helper"; then mkdir -p "$ROOT/artifacts/ncc/experimental"; cp "$ROOT/artifacts/ncc-native-wifi-sta/bin/ncc-native-wifi-sta-helper" "$ROOT/artifacts/ncc/experimental/"; fi
 if test -f "$ROOT/artifacts/stock-start-helper/ncc-stock-start-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"

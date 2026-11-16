@@ -37,7 +37,7 @@ test('device plate LED editor and map surfaces follow the selected theme without
  await page.getByRole('tab',{name:'記録',exact:true}).click()
  for(const theme of ['dark','light'] as const){
   await page.evaluate(t=>document.documentElement.dataset.theme=t,theme)
-  await expect(page.locator('.plate-page .leaflet-control-zoom-in')).toHaveCSS('background-color',theme==='dark'?'rgb(27, 31, 38)':'rgb(255, 255, 255)')
+  await expect(page.locator('.plate-page .maplibregl-ctrl-zoom-in')).toHaveCSS('background-color',theme==='dark'?'rgb(27, 31, 38)':'rgb(255, 255, 255)')
  }
  expect(errors).toEqual([])
 })

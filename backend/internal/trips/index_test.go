@@ -5,10 +5,42 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestSDSourceReadsEventAndParkingGNSSAlongsideNormalVideo(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{Directory, "DRIVERECDATA/Event", "DRIVERECDATA/Parking"} {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(name)), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, body := range map[string]string{
+		"DRIVERECDATA/Video/FILEM_261113_100000_0000.NMEA":   "GPRMC,010000.00,A,3500.0000,N,13900.0000,E,10.0,90.0,131126,,,A",
+		"DRIVERECDATA/Event/EVENM_261114_100000_0000.NMEA":   "GPRMC,010000.00,A,3500.0000,N,13900.0000,E,10.0,90.0,141126,,,A",
+		"DRIVERECDATA/Parking/PARKM_261114_100100_0000.NMEA": "GPRMC,010100.00,A,3500.0000,N,13900.0000,E,10.0,90.0,141126,,,A",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(name)), []byte(Sentence(body)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source := SDSource{Root: dir, MountToken: func() (string, error) { return "fixture-card", nil }}
+	snapshot, err := NewIndex(source).Read(context.Background())
+	if err != nil || snapshot.Files != 3 || len(snapshot.Samples) != 3 {
+		t.Fatal(snapshot, err)
+	}
+	track, err := DayTrack(snapshot, "2026-11-14", time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(track.Points) != 2 {
+		t.Fatal(track, err)
+	}
+	if _, err := source.Open("DRIVERECDATA/Event/../../secret.NMEA"); err == nil {
+		t.Fatal("outside path accepted")
+	}
+}
 
 type fixtureSource struct {
 	token   string

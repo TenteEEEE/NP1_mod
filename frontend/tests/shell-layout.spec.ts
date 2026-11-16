@@ -1,4 +1,6 @@
 import {test,expect,type Page} from '@playwright/test'
+import {vectorTiles,vectorState} from './fixtures/vector-tiles'
+const zoom=async(page:Page)=>(await vectorState(page,'.current-location-canvas'))?.zoom??0
 const url=process.env.NCC_UI_REVIEW_URL?.replace(/\/$/,'')
 const stamp='2026-11-11T08:00:00Z'
 const obs=(data:unknown)=>({status:'available',data,source:'synthetic-shell-layout-fixture',observedAt:stamp,refreshSeconds:2,verified:false})
@@ -7,9 +9,7 @@ test.use({storageState:{cookies:[],origins:[]}})
 async function open(page:Page,route='dashboard',fix=false){
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
  let writes=0
- const zooms:number[]=[],tile=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8+/r1fwAJTgPdt1gXJgAAAABJRU5ErkJggg==','base64')
- // Map tiles are never fetched from the network; the handler only notes which zoom level was asked for.
- await page.route('https://tile.openstreetmap.org/**',request=>{zooms.push(Number(new URL(request.request().url()).pathname.split('/')[1]));return request.fulfill({contentType:'image/png',body:tile})})
+ await vectorTiles(page)
  await page.addInitScript(()=>{(window as any).EventSource=class extends EventTarget{onerror=null;close(){}}})
  await page.clock.install({time:new Date(stamp)})
  await page.route('**/api/v1/**',async request=>{
@@ -34,7 +34,7 @@ async function open(page:Page,route='dashboard',fix=false){
   await request.fulfill({json:data})
  })
  await page.goto(url+'/#'+route);await expect(page.locator('main')).toBeVisible()
- return {errors,zooms,get writes(){return writes}}
+ return {errors,get writes(){return writes}}
 }
 const fits=(page:Page)=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)
 test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=>{
@@ -51,7 +51,7 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   // Overview: the map is the background of the whole window and the panels sit along its edges.
   const stage=page.locator('.dash-home'),map=(await page.locator('.dh-map').boundingBox())!
   expect(map.x).toBe(0);expect(map.y).toBe(0);expect(map.width).toBe(1920);expect(map.height).toBeGreaterThanOrEqual(1000)
-  await expect(stage.getByRole('heading',{name:'走行の記録',exact:true})).toBeVisible()
+  await expect(stage.getByRole('heading',{name:/^走行の記録/})).toBeVisible()
   await expect(stage.locator('.dh-cams .dashboard-camera-pair figure')).toHaveCount(2)
   await expect(stage.locator('.dh-tile')).toHaveCount(4)
   const edge=async(selector:string)=>(await stage.locator(selector).boundingBox())!
@@ -187,7 +187,7 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   await expect(thumb.getByRole('button',{name:'前方のライブ映像を開く'})).toBeVisible()
   // Everything else is in a sheet pulled up from the bottom: half open at first, full on request, then a peek.
   const panels=page.locator('.dh-sheet'),grip=panels.getByRole('button',{name:/パネルを/}),top=async()=>Math.round((await panels.boundingBox())!.y)
-  await expect(panels.getByRole('heading',{name:'走行の記録',exact:true})).toBeVisible()
+  await expect(panels.getByRole('heading',{name:/^走行の記録/})).toBeVisible()
   const half=Math.round(menu.y)-Math.round(menu.y*.46);await expect.poll(top).toBe(half);expect(half).toBeGreaterThan(picture.y+picture.height)
   await grip.click();await expect(panels).toHaveClass(/full/);await expect.poll(top).toBeLessThan(title.y+title.height+30)
   await panels.locator('.device-status').scrollIntoViewIfNeeded();await expect(panels.locator('.device-status')).toBeInViewport()
@@ -233,14 +233,15 @@ test.describe('zooming the overview map (synthetic fixtures)',()=>{
   const open_=await middle(page,'.dh-window')
   await expect.poll(async()=>Math.abs((await middle(page,'.current-location-marker')).x-open_.x)+Math.abs((await middle(page,'.current-location-marker')).y-open_.y)).toBeLessThanOrEqual(6)
   await expect(page.locator('.current-location-credit')).toContainText('OpenStreetMap');await expect(page.locator('.current-location-credit')).toBeInViewport()
-  expect(Math.max(...state.zooms)).toBe(15)
+  await expect.poll(()=>zoom(page)).toBe(15)
   await page.mouse.move(open_.x,open_.y+50);await page.mouse.wheel(0,-300)
-  await expect.poll(()=>Math.max(...state.zooms)).toBeGreaterThan(15)
+  await expect.poll(()=>zoom(page)).toBeGreaterThan(15)
   await expect.poll(async()=>Math.abs((await middle(page,'.current-location-marker')).x-open_.x)+Math.abs((await middle(page,'.current-location-marker')).y-open_.y)).toBeLessThanOrEqual(6)
-  await page.mouse.wheel(0,900);await expect.poll(()=>Math.min(...state.zooms)).toBeLessThan(15)
+  await page.mouse.wheel(0,900);await expect.poll(()=>zoom(page)).toBeLessThan(15)
+  await expect.poll(async()=>(await vectorState(page,'.current-location-canvas'))?.moving).toBe(false)
   // Over a panel the wheel is left alone.
-  const seen=state.zooms.length,panel=await middle(page,'.dh-journey')
-  await page.mouse.move(panel.x,panel.y);await page.mouse.wheel(0,-300);await page.waitForTimeout(400);expect(state.zooms.length).toBe(seen)
+  const seen=await zoom(page),panel=await middle(page,'.dh-journey')
+  await page.mouse.move(panel.x,panel.y);await page.mouse.wheel(0,-300);await page.waitForTimeout(400);expect(await zoom(page)).toBe(seen)
   expect(state.errors).toEqual([]);expect(state.writes).toBe(0)
  })
  test.describe('touch',()=>{
@@ -255,7 +256,7 @@ test.describe('zooming the overview map (synthetic fixtures)',()=>{
    await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:fingers(30)})
    for(let step=1;step<=10;step++)await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:fingers(30+step*12)})
    await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
-   await expect.poll(()=>Math.max(...state.zooms)).toBeGreaterThan(15)
+   await expect.poll(()=>zoom(page)).toBeGreaterThan(15)
    await expect.poll(async()=>Math.abs((await middle(page,'.current-location-marker')).x-open_.x)+Math.abs((await middle(page,'.current-location-marker')).y-open_.y)).toBeLessThanOrEqual(6)
    expect(state.errors).toEqual([]);expect(state.writes).toBe(0)
   })

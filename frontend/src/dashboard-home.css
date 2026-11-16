@@ -8,7 +8,7 @@
            top right, and every panel is in a sheet pulled up from the bottom edge. */
 .dash-stage{container:dash-stage/inline-size}
 
-.dash-home{--dh-layout:stack;--dh-gap:16px;position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"window window" "journey cams" "tiles tiles";align-content:start;gap:var(--dh-gap);min-width:0;min-height:100vh;min-height:100dvh;padding:var(--stage-top,16px) 16px 16px;background:var(--bg)}
+.dash-home{--dh-layout:stack;--dh-gap:16px;position:relative;isolation:isolate;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"window window" "journey cams" "tiles tiles";grid-template-rows:minmax(clamp(200px,32dvh,300px),1fr) auto auto;align-content:stretch;gap:var(--dh-gap);min-width:0;min-height:100vh;min-height:100dvh;padding:var(--stage-top,16px) 16px 16px;background:var(--bg)}
 .dh-map{position:absolute;inset:0;z-index:0}
 /* The map is its own layer; everything else sits above it. */
 .dh-journey,.dh-cams,.dh-tiles{position:relative;z-index:500;min-width:0}
@@ -20,7 +20,7 @@
 :is(.shell-top,.shell-side) .dash-home .dh-cams .dashboard-camera-pair figure{aspect-ratio:auto;min-height:calc(50cqi*9/16)}
 /* The tiles are always equal in width and height, with the same gap between every pair. */
 .dh-tiles{grid-area:tiles;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--dh-gap)}
-.dh-window{grid-area:window;height:clamp(200px,32vh,300px);pointer-events:none}
+.dh-window{grid-area:window;min-height:200px;pointer-events:none}
 .dash-home .panel{box-shadow:var(--shadow-float);border-color:color-mix(in srgb,var(--line) 70%,transparent)}
 .dash-home .dh-tile{align-self:stretch}
 

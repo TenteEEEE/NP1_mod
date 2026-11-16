@@ -123,6 +123,11 @@ if test -f experimental/ncc-native-setting-helper; then
         chmod 0600 "$BASE/experimental/ncc-native-setting-notification-helper.new"
         mv -f "$BASE/experimental/ncc-native-setting-notification-helper.new" "$BASE/experimental/ncc-native-setting-notification-helper"
     fi
+    if test -f experimental/ncc-native-operations-helper; then
+        cp experimental/ncc-native-operations-helper "$BASE/experimental/ncc-native-operations-helper.new"
+        chmod 0600 "$BASE/experimental/ncc-native-operations-helper.new"
+        mv -f "$BASE/experimental/ncc-native-operations-helper.new" "$BASE/experimental/ncc-native-operations-helper"
+    fi
     if test -f experimental/ncc-native-audio-helper; then
         cp experimental/ncc-native-audio-helper "$BASE/experimental/ncc-native-audio-helper.new"
         chmod 0600 "$BASE/experimental/ncc-native-audio-helper.new"

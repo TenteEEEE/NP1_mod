@@ -157,6 +157,7 @@ func (s *Server) restoreFullBackup(w http.ResponseWriter, r *http.Request, raw [
 	if v.Settings.CellularLimitBytes == "" {
 		v.Settings.CellularLimitBytes = "0"
 	}
+	v.Settings.MapThemes = normalizeMapThemes(v.Settings.MapThemes)
 	if !validateSettings(v.Settings) {
 		fail(w, 400, "INVALID_BACKUP", "表示設定の値を確認してください")
 		return
