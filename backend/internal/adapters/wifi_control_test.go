@@ -3,7 +3,6 @@ package adapters
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -118,7 +117,7 @@ func wifiTestController(t *testing.T) (*WiFiController, *fakeWiFi) {
 	return c, f
 }
 
-func TestWiFiNewConnectionConfirmKeepsSecretPrivate(t *testing.T) {
+func TestWiFiNewConnectionConfirmReturnsSavedPasswordToOwnerUI(t *testing.T) {
 	c, f := wifiTestController(t)
 	ctx := context.Background()
 	secret := "secret \"quoted\\ password"
@@ -134,12 +133,8 @@ func TestWiFiNewConnectionConfirmKeepsSecretPrivate(t *testing.T) {
 		t.Fatal(e)
 	}
 	view, e = c.List(ctx)
-	if e != nil || len(view.Saved) != 1 || !view.Saved[0].PasswordConfigured || view.Transaction.State != "confirmed" {
+	if e != nil || len(view.Saved) != 1 || !view.Saved[0].PasswordConfigured || view.Saved[0].Password != secret || view.Transaction.State != "confirmed" {
 		t.Fatalf("confirmed view %#v %v", view, e)
-	}
-	raw, _ := json.Marshal(view)
-	if strings.Contains(string(raw), secret) || strings.Contains(string(raw), "password\"") {
-		t.Fatal("public response contains a password")
 	}
 	private, e := os.ReadFile(filepath.Join(c.directory, "profiles.json"))
 	if e != nil || !strings.Contains(string(private), "password") {

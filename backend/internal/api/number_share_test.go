@@ -11,7 +11,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/plate"
 )
 
-func TestNumberShareConfigIsWriteOnlyAndRevisioned(t *testing.T) {
+func TestNumberShareConfigReturnsSavedKeyAndIsRevisioned(t *testing.T) {
 	srv, ts, client, csrf := plateFixture(t, &fakeSensor{instance: "share-test"})
 	key := "fictional-secret-key"
 	if _, err := srv.numberShare.Configure(1, true, "https://share.example/api/", &key); err != nil {
@@ -20,16 +20,17 @@ func TestNumberShareConfigIsWriteOnlyAndRevisioned(t *testing.T) {
 	res := request(t, client, ts, http.MethodGet, "/plate/share/status", csrf, nil)
 	body, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if res.StatusCode != http.StatusOK || strings.Contains(string(body), key) || strings.Contains(string(body), "apiKey") {
-		t.Fatalf("status %d leaked secret: %s", res.StatusCode, body)
+	if res.StatusCode != http.StatusOK || !strings.Contains(string(body), key) || !strings.Contains(string(body), "apiKey") {
+		t.Fatalf("status %d did not return saved key", res.StatusCode)
 	}
 	var status struct {
 		Config struct {
-			Revision      int  `json:"revision"`
-			KeyConfigured bool `json:"keyConfigured"`
+			Revision      int    `json:"revision"`
+			KeyConfigured bool   `json:"keyConfigured"`
+			APIKey        string `json:"apiKey"`
 		} `json:"config"`
 	}
-	if err := json.Unmarshal(body, &status); err != nil || status.Config.Revision != 2 || !status.Config.KeyConfigured {
+	if err := json.Unmarshal(body, &status); err != nil || status.Config.Revision != 2 || !status.Config.KeyConfigured || status.Config.APIKey != key {
 		t.Fatalf("status = %+v, %v", status, err)
 	}
 	// Omitting key preserves it, and stale updates are rejected.

@@ -806,7 +806,7 @@ paths:
         '200': {description: 'config{revision, enabled, endpoint, keyConfigured}, pending, sent, blocked, items（新しい順に最大100件）。itemsに送信本文・試行回数・次回時刻・エラーを含む。'}
   /plate/share/config:
     put:
-      summary: NumberShare APIのHTTPSエンドポイント・書き込み専用認証キー・送信有効状態を保存
+      summary: NumberShare APIのHTTPSエンドポイント・認証キー・送信有効状態を保存
       requestBody:
         required: true
         content:

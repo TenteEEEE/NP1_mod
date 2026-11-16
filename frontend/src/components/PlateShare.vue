@@ -6,7 +6,7 @@ import {VectorMap,collection,feature,type LatLon} from '../services/vector-map'
 import {jstDay,plateSerial,type NumberShareSighting,type NumberShareSightings,type NumberShareStatus,type NumberShareUpload,type NumberShareVehicle,type NumberShareVehicles} from '../services/plate'
 
 const status=ref<NumberShareStatus>(),items=ref<NumberShareSighting[]>([]),vehicles=ref<NumberShareVehicle[]>([]),categories=ref<string[]>([])
-const endpoint=ref(''),enabled=ref(false),key=ref(''),clearKey=ref(false),query=ref(''),scope=ref<'all'|'mine'|'others'>('all'),matchStatus=ref('')
+const endpoint=ref(''),enabled=ref(false),key=ref(''),showKey=ref(false),clearKey=ref(false),query=ref(''),scope=ref<'all'|'mine'|'others'>('all'),matchStatus=ref('')
 const vehicleQuery=ref(''),serial=ref(''),category=ref('')
 const uploadFrom=ref(jstDay(-6)),uploadTo=ref(jstDay(0)),uploading=ref(false)
 const loading=ref(false),saving=ref(false),checking=ref(false),error=ref(''),notice=ref(''),syncedAt=ref(''),online=ref(true)
@@ -18,7 +18,7 @@ const display=(p:NumberShareSighting['plate']|NumberShareVehicle)=>[p.region,p.c
 const located=computed(()=>items.value.filter(item=>item.location))
 
 async function loadStatus(){
- try{const first=!status.value;status.value=await api<NumberShareStatus>('/plate/share/status');if(first){endpoint.value=status.value.config.endpoint;enabled.value=status.value.config.enabled}}catch(e){error.value=message(e)}
+ try{const first=!status.value;status.value=await api<NumberShareStatus>('/plate/share/status');if(first){endpoint.value=status.value.config.endpoint;enabled.value=status.value.config.enabled;key.value=status.value.config.apiKey||''}}catch(e){error.value=message(e)}
 }
 async function saveConfig(){
  if(!status.value)return;saving.value=true;error.value=''
@@ -31,7 +31,7 @@ async function retry(id:string){try{await api('/plate/share/retry/'+encodeURICom
 async function uploadRange(){
  uploading.value=true;error.value=''
  try{const result=await api<NumberShareUpload>('/plate/share/upload','POST',{from:uploadFrom.value,to:uploadTo.value})
-  notice.value=result.queued?`${result.queued}件をアップロード待ちへ追加しました${result.existing?`（登録済み ${result.existing}件）`:''}`:`対象${result.total}件はすべて登録済みです`
+  notice.value=result.queued||result.requeued?`${result.queued}件を追加、${result.requeued}件を再送待ちへ戻しました${result.existing?`（登録済み ${result.existing}件）`:''}`:`対象${result.total}件はすべて送信済みまたは送信待ちです`
   await loadStatus();await loadShared()
  }catch(e){error.value=message(e)}finally{uploading.value=false}
 }
@@ -67,11 +67,12 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
    <div class="panel-head"><h2><Cloud :size="18"/>NumberShare API</h2><span v-if="status" class="share-state" :class="status.config.enabled?'on':'off'">{{status.config.enabled?'リアルタイム送信中':'送信停止中'}}</span></div>
    <div class="share-config-grid">
     <label class="share-endpoint">APIエンドポイント<input v-model.trim="endpoint" type="url" placeholder="https://example.jp/api/" autocomplete="off" spellcheck="false"></label>
-    <label>認証キー<input v-model="key" type="password" :placeholder="status?.config.keyConfigured?'設定済み（変更時のみ入力）':'APIキーを入力'" :disabled="clearKey" autocomplete="new-password" spellcheck="false"></label>
+    <label>認証キー<input v-model="key" :type="showKey?'text':'password'" placeholder="APIキーを入力" :disabled="clearKey" autocomplete="off" spellcheck="false"></label>
+    <label class="plate-check"><input v-model="showKey" type="checkbox">認証キーを表示する</label>
     <label class="plate-check"><input v-model="enabled" type="checkbox">検知をリアルタイム送信する</label>
     <label v-if="status?.config.keyConfigured" class="plate-check"><input v-model="clearKey" type="checkbox">保存済みキーを削除する</label>
    </div>
-   <p class="hint">認証キーは端末内の所有者専用領域へ保存し、画面やログへ再表示しません。HTTPS証明書の検証は常に有効です。</p>
+   <p class="hint">保存済みの認証キーを読み込み、通常は伏せ字で表示します。「認証キーを表示する」を選んだときだけ平文表示します。HTTPS証明書の検証は常に有効です。</p>
    <div class="share-actions"><button class="secondary" :disabled="!status?.config.keyConfigured||checking" @click="check"><RefreshCw :size="14"/>{{checking?'確認中…':'接続を確認'}}</button><button class="primary" :disabled="!status||saving" @click="saveConfig">{{saving?'保存中…':'設定を保存'}}</button></div>
   </section>
 
@@ -97,9 +98,9 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
     <label>表示<select v-model="scope"><option value="all">すべて</option><option value="mine">自分の検知</option><option value="others">他の利用者</option></select></label>
     <label>照合<select v-model="matchStatus"><option value="">すべて</option><option value="exact">確定一致</option><option value="candidate">候補</option><option value="none">一致なし</option></select></label>
     <label class="plate-check"><input v-model="online" type="checkbox">地図の背景を表示</label>
-    <button class="secondary compact" :disabled="loading||!status?.config.keyConfigured" @click="loadShared"><RefreshCw :size="14"/>{{loading?'同期中…':'APIから全件同期'}}</button>
+    <button class="secondary compact" :disabled="loading||!status?.config.keyConfigured" @click="loadShared"><RefreshCw :size="14"/>{{loading?'受信中…':'APIから全件受信'}}</button>
    </div>
-   <p class="plate-count">{{loading?'APIの全ページを同期中…':`${items.length}件 · 地図に表示 ${located.length}件`}}<span v-if="syncedAt"> · 同期 {{time(syncedAt)}}</span></p>
+   <p class="plate-count">{{loading?'APIの全ページを受信中…':`${items.length}件 · 地図に表示 ${located.length}件`}}<span v-if="syncedAt"> · 受信 {{time(syncedAt)}}</span></p>
    <div class="plate-split">
     <div class="plate-map-wrap"><div class="plate-map-frame"><div ref="mapEl" class="plate-map share-map" role="region" aria-label="共有されたナンバーの地図"></div><div v-if="!loading&&!located.length" class="plate-map-placeholder"><MapPin :size="24"/><strong>位置のある共有情報はありません</strong></div></div><div class="plate-legend"><span><i class="dot share-other"></i>他の利用者</span><span><i class="dot share-own"></i>自分</span></div></div>
     <div class="plate-list share-list"><button v-for="item in items" :key="item.event_id" :class="['share-item',{mine:item.mine,selected:item.event_id===selected}]" @click="select(item)"><strong>{{display(item.plate)}}</strong><span><b>{{item.mine?'自分':'他の利用者'}}</b> · {{time(item.observed_at)}} · {{item.match_status==='exact'?'確定一致':item.match_status==='candidate'?'候補':'一致なし'}}</span><small>{{item.location?'位置あり':'位置なし'}}</small></button><p v-if="!loading&&!items.length" class="plate-empty">条件に一致する共有情報はありません。</p></div>

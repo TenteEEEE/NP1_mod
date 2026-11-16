@@ -26,6 +26,7 @@ import (
 
 const (
 	maxResponseBytes = 2 << 20
+	apiTimeLayout    = "2006-01-02T15:04:05.000Z07:00"
 )
 
 type APIConfig struct {
@@ -40,6 +41,7 @@ type PublicConfig struct {
 	Enabled       bool   `json:"enabled"`
 	Endpoint      string `json:"endpoint"`
 	KeyConfigured bool   `json:"keyConfigured"`
+	APIKey        string `json:"apiKey"`
 }
 
 type Plate struct {
@@ -82,6 +84,7 @@ type QueueItem struct {
 type UploadResult struct {
 	Total    int `json:"total"`
 	Queued   int `json:"queued"`
+	Requeued int `json:"requeued"`
 	Existing int `json:"existing"`
 	Skipped  int `json:"skipped"`
 }
@@ -120,6 +123,27 @@ func New(stateDir string, client *http.Client) *Service {
 		var saved []QueueItem
 		if json.Unmarshal(b, &saved) == nil && saved != nil {
 			s.queue = saved
+			// Older clients emitted RFC3339Nano with up to nine fractional digits,
+			// while NumberShare accepts the documented millisecond representation.
+			// Keep rejected items blocked. Only an explicit period upload may return
+			// records in the owner's selected date range to the retry queue.
+			changed := false
+			for i := range s.queue {
+				item := &s.queue[i]
+				parsed, parseErr := time.Parse(time.RFC3339Nano, item.Payload.ObservedAt)
+				if parseErr != nil {
+					continue
+				}
+				normalized := parsed.Format(apiTimeLayout)
+				if normalized == item.Payload.ObservedAt {
+					continue
+				}
+				item.Payload.ObservedAt = normalized
+				changed = true
+			}
+			if changed {
+				_ = s.saveQueueLocked()
+			}
 		}
 	}
 	return s
@@ -129,7 +153,7 @@ func (s *Service) configPath() string { return filepath.Join(s.dir, "config.json
 func (s *Service) queuePath() string  { return filepath.Join(s.dir, "queue.json") }
 
 func publicConfig(c APIConfig) PublicConfig {
-	return PublicConfig{Revision: c.Revision, Enabled: c.Enabled, Endpoint: c.Endpoint, KeyConfigured: c.APIKey != ""}
+	return PublicConfig{Revision: c.Revision, Enabled: c.Enabled, Endpoint: c.Endpoint, KeyConfigured: c.APIKey != "", APIKey: c.APIKey}
 }
 
 func normalizeEndpoint(raw string) (string, error) {
@@ -206,7 +230,7 @@ func uuidV4() (string, error) {
 }
 
 func payloadFor(record plate.Record, eventID string) SightingPayload {
-	p := SightingPayload{EventID: eventID, ObservedAt: record.FirstSeen.Format(time.RFC3339Nano), Plate: Plate{
+	p := SightingPayload{EventID: eventID, ObservedAt: record.FirstSeen.Format(apiTimeLayout), Plate: Plate{
 		SerialNumber: record.Reading.Number, Region: record.Reading.Region,
 		ClassificationNumber: record.Reading.Class, Hiragana: record.Reading.Kana,
 	}}
@@ -261,40 +285,47 @@ func (s *Service) EnqueueUpload(records []plate.Record) (UploadResult, error) {
 		s.mu.Unlock()
 		return result, errors.New("NumberShare APIが未設定です")
 	}
-	existing := make(map[string]bool, len(s.queue))
-	for _, item := range s.queue {
-		existing[item.RecordID] = true
+	existing := make(map[string]int, len(s.queue))
+	for i, item := range s.queue {
+		existing[item.RecordID] = i
 	}
-	originalLen := len(s.queue)
+	original := append([]QueueItem(nil), s.queue...)
 	now := s.clock().UTC()
 	for _, record := range records {
 		if strings.TrimSpace(record.Reading.Number) == "" {
 			result.Skipped++
 			continue
 		}
-		if existing[record.ID] {
+		if index, ok := existing[record.ID]; ok {
 			result.Existing++
+			item := &s.queue[index]
+			if item.State == "blocked" {
+				item.Payload = payloadFor(record, item.EventID)
+				item.State, item.LastError, item.HTTPStatus, item.Manual = "pending", "", 0, true
+				item.NextAttempt = &now
+				result.Requeued++
+			}
 			continue
 		}
 		id, err := uuidV4()
 		if err != nil {
-			s.queue = s.queue[:originalLen]
+			s.queue = original
 			s.mu.Unlock()
 			return result, err
 		}
 		s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payloadFor(record, id), State: "pending", QueuedAt: now, NextAttempt: &now, Manual: true})
-		existing[record.ID] = true
+		existing[record.ID] = len(s.queue) - 1
 		result.Queued++
 	}
-	if result.Queued > 0 {
+	if result.Queued > 0 || result.Requeued > 0 {
 		if err := s.saveQueueLocked(); err != nil {
-			s.queue = s.queue[:originalLen]
+			s.queue = original
 			s.mu.Unlock()
 			return result, err
 		}
 	}
 	s.mu.Unlock()
-	if result.Queued > 0 {
+	if result.Queued > 0 || result.Requeued > 0 {
 		s.signal()
 	}
 	return result, nil

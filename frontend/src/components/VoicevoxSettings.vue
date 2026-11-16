@@ -4,12 +4,11 @@ import {api} from '../services/api'
 import type {VoicevoxConfig} from '../services/plate'
 
 // Owner settings for the WEB版VOICEVOX API used by plate announcements.
-// The key is write-only: the server only reports whether one is stored.
-const config=ref<VoicevoxConfig>(),endpoint=ref(''),key=ref(''),busy=ref(false),error=ref(''),message=ref(''),points=ref('')
+const config=ref<VoicevoxConfig>(),endpoint=ref(''),key=ref(''),showKey=ref(false),busy=ref(false),error=ref(''),message=ref(''),points=ref('')
 const errorText=(e:unknown)=>e instanceof Error?e.message:String(e)
-function receive(c:VoicevoxConfig){if(typeof c?.endpoint!=='string'||typeof c.defaultEndpoint!=='string')throw new Error('API設定を取得できませんでした。画面を更新してください。');config.value=c;endpoint.value=c.endpoint;key.value=''}
+function receive(c:VoicevoxConfig){if(typeof c?.endpoint!=='string'||typeof c.defaultEndpoint!=='string'||typeof c.apiKey!=='string')throw new Error('API設定を取得できませんでした。画面を更新してください。');config.value=c;endpoint.value=c.endpoint;key.value=c.apiKey}
 async function load(){error.value='';try{receive(await api<VoicevoxConfig>('/voicevox'))}catch(e){error.value=errorText(e)}}
-async function save(clearKey=false){busy.value=true;error.value='';message.value='';points.value='';try{const body:Record<string,string>={endpoint:endpoint.value.trim()};if(clearKey)body.key='';else if(key.value.trim())body.key=key.value.trim();receive(await api<VoicevoxConfig>('/voicevox','PUT',body));message.value=clearKey?'APIキーを削除しました':'保存しました。ナンバーの発話音声を生成します'}catch(e){error.value=errorText(e)}finally{busy.value=false}}
+async function save(clearKey=false){busy.value=true;error.value='';message.value='';points.value='';try{const body:Record<string,string>={endpoint:endpoint.value.trim()};if(clearKey)body.key='';else if(key.value.trim()!==config.value?.apiKey)body.key=key.value.trim();receive(await api<VoicevoxConfig>('/voicevox','PUT',body));message.value=clearKey?'APIキーを削除しました':'保存しました。ナンバーの発話音声を生成します'}catch(e){error.value=errorText(e)}finally{busy.value=false}}
 async function check(){busy.value=true;error.value='';message.value='';try{const p=await api<{points:number;resetInHours:number}>('/voicevox/check','POST');points.value=`残り ${p.points.toLocaleString()} ポイント（約${Math.round(p.resetInHours)}時間後に回復）`}catch(e){error.value=errorText(e)}finally{busy.value=false}}
 onMounted(load)
 </script>
@@ -21,8 +20,9 @@ onMounted(load)
    <p class="hint">ナンバー画面の発話で使う音声は、条件を保存したときにこのAPIで生成して本体に保存します。走行中に検知した他の車のナンバーは送信しません。</p>
    <form class="voicevox-form" @submit.prevent="save()">
     <label>エンドポイント<input v-model="endpoint" type="url" required autocomplete="off" spellcheck="false" :placeholder="config?.defaultEndpoint"></label>
-    <label>APIキー<input v-model="key" type="password" autocomplete="off" spellcheck="false" :placeholder="config?.keyConfigured?'設定済み（変更する場合のみ入力）':'未設定'"></label>
-    <p class="hint">キーは <a href="https://su-shiki.com/api/" target="_blank" rel="noopener">su-shiki.com/api</a> で発行できます。保存したキーは画面に表示しません。<template v-if="config&&endpoint!==config.defaultEndpoint"> 既定のエンドポイントは <code>{{config.defaultEndpoint}}</code> です。</template></p>
+    <label>APIキー<input v-model="key" :type="showKey?'text':'password'" autocomplete="off" spellcheck="false" placeholder="未設定"></label>
+    <label><input v-model="showKey" type="checkbox">APIキーを表示する</label>
+    <p class="hint">キーは <a href="https://su-shiki.com/api/" target="_blank" rel="noopener">su-shiki.com/api</a> で発行できます。保存値は通常は伏せ字で、表示設定を有効にしたときだけ平文表示します。<template v-if="config&&endpoint!==config.defaultEndpoint"> 既定のエンドポイントは <code>{{config.defaultEndpoint}}</code> です。</template></p>
     <div class="voicevox-actions">
      <span class="voicevox-state" :class="config?.keyConfigured?'on':'warn'">{{config?.keyConfigured?'APIキー設定済み':'APIキー未設定'}}</span>
      <button type="button" class="secondary" :disabled="busy||!config?.keyConfigured" @click="check">接続を確認</button>

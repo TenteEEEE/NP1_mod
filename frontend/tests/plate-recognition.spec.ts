@@ -76,22 +76,22 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   expect(errors).toEqual([])
  })
 
- test('NumberShare separates own and shared sightings, searches vehicles, and keeps the key write-only',async({page})=>{
+ test('NumberShare receives all sightings and masks the saved key until explicitly shown',async({page})=>{
   await page.setViewportSize({width:390,height:900})
-  const configWrites:any[]=[],uploads:any[]=[]
+  const configWrites:any[]=[],uploads:any[]=[],receiveMethods:string[]=[]
   const shared=[
    {id:1,event_id:'11111111-1111-4111-8111-111111111111',observed_at:at(3),received_at:at(2),match_status:'exact',recognition_revision:0,plate:{serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ'},location:{latitude:35.62,longitude:139.74},mine:true},
    {id:2,event_id:'22222222-2222-4222-8222-222222222222',observed_at:at(8),received_at:at(7),match_status:'none',recognition_revision:0,plate:{serial_number:'56-78',region:'練馬'},location:{latitude:35.64,longitude:139.71},mine:false},
   ]
-  const shareStatus={config:{revision:2,enabled:true,endpoint:'https://share.example/api/',keyConfigured:true},pending:1,sent:4,blocked:1,items:[{eventId:'33333333-3333-4333-8333-333333333333',recordId:'pfix-0004',payload:{event_id:'33333333-3333-4333-8333-333333333333',observed_at:at(12),plate:{serial_number:'77',region:'横浜'}},state:'blocked',attempts:1,queuedAt:at(12),httpStatus:422,lastError:'API 422: bad plate'}]}
+  const shareStatus={config:{revision:2,enabled:true,endpoint:'https://share.example/api/',keyConfigured:true,apiKey:'saved-fixture-key'},pending:1,sent:4,blocked:1,items:[{eventId:'33333333-3333-4333-8333-333333333333',recordId:'pfix-0004',payload:{event_id:'33333333-3333-4333-8333-333333333333',observed_at:at(12),plate:{serial_number:'77',region:'横浜'}},state:'blocked',attempts:1,queuedAt:at(12),httpStatus:422,lastError:'API 422: bad plate'}]}
   const errors=await open(page,async route=>{
    const url=new URL(route.request().url()),method=route.request().method()
    if(url.pathname==='/api/v1/plate/share/status'){await route.fulfill({json:shareStatus});return true}
-   if(url.pathname==='/api/v1/plate/share/sightings'){const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false,syncedAt:at(0)}});return true}
+   if(url.pathname==='/api/v1/plate/share/sightings'){receiveMethods.push(method);const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false,syncedAt:at(0)}});return true}
    if(url.pathname==='/api/v1/plate/share/vehicles'){await route.fulfill({json:{items:[{id:10,serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ',category:'危険',comment:'合成テスト車両',sightings:2,last_seen:at(2),last_location:{latitude:35.62,longitude:139.74}}],total:1,categories:['未分類','危険']}});return true}
    if(url.pathname==='/api/v1/plate/share/config'&&method==='PUT'){configWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:3}});return true}
    if(url.pathname==='/api/v1/plate/share/check'){await route.fulfill({json:{ok:true,identity:{user_handle:'fixture_user'}}});return true}
-   if(url.pathname==='/api/v1/plate/share/upload'&&method==='POST'){uploads.push(route.request().postDataJSON());await route.fulfill({status:202,json:{total:4,queued:3,existing:1,skipped:0}});return true}
+   if(url.pathname==='/api/v1/plate/share/upload'&&method==='POST'){uploads.push(route.request().postDataJSON());await route.fulfill({status:202,json:{total:4,queued:3,requeued:0,existing:1,skipped:0}});return true}
    return false
   })
   await page.getByRole('tab',{name:'共有',exact:true}).click()
@@ -105,18 +105,22 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await page.locator('.share-upload').getByLabel('開始日').fill('2026-11-01')
   await page.locator('.share-upload').getByLabel('終了日').fill('2026-11-16')
   await page.getByRole('button',{name:'この期間をアップロード'}).click()
-  await expect(page.getByText('3件をアップロード待ちへ追加しました（登録済み 1件）')).toBeVisible()
+  await expect(page.getByText('3件を追加、0件を再送待ちへ戻しました（登録済み 1件）')).toBeVisible()
   expect(uploads).toEqual([{from:'2026-11-01',to:'2026-11-16'}])
   await page.getByRole('combobox',{name:'表示',exact:true}).selectOption('others')
-  await page.locator('.share-history').getByRole('button',{name:'APIから全件同期'}).click()
+  await page.locator('.share-history').getByRole('button',{name:'APIから全件受信'}).click()
+  expect(receiveMethods.length).toBeGreaterThan(0)
+  expect(receiveMethods.every(method=>method==='GET')).toBe(true)
   await expect(page.locator('.share-item')).toHaveCount(1)
   await expect(page.locator('.share-item')).toContainText('他の利用者')
-  await expect(page.getByLabel('認証キー')).toHaveAttribute('type','password')
-  await expect(page.getByLabel('認証キー')).toHaveValue('')
-  await page.getByLabel('認証キー').fill('replacement-fixture-key')
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','password')
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
+  await page.getByLabel('認証キーを表示する').check()
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','text')
+  await page.getByLabel('認証キー',{exact:true}).fill('replacement-fixture-key')
   await page.getByRole('button',{name:'設定を保存'}).click()
   expect(configWrites).toEqual([{expectedRevision:2,enabled:true,endpoint:'https://share.example/api/',key:'replacement-fixture-key'}])
-  await expect(page.getByLabel('認証キー')).toHaveValue('')
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
   await page.getByRole('button',{name:'接続を確認'}).click()
   await expect(page.getByText('接続しました（匿名ID: fixture_user）')).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
@@ -346,13 +350,13 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   expect(tileRequests).toBe(count)
  })
 
- test('system VOICEVOX settings keep the key write-only and check the endpoint',async({page})=>{
-  let cfg={endpoint:'https://deprecatedapis.tts.quest',defaultEndpoint:'https://deprecatedapis.tts.quest',keyConfigured:false}
+ test('system VOICEVOX settings mask the saved key until explicitly shown',async({page})=>{
+  let cfg={endpoint:'https://deprecatedapis.tts.quest',defaultEndpoint:'https://deprecatedapis.tts.quest',keyConfigured:false,apiKey:''}
   const puts:any[]=[]
   await page.route('**/api/v1/**',async route=>{
    const url=new URL(route.request().url()),method=route.request().method()
    if(url.pathname==='/api/v1/voicevox'&&method==='GET')return route.fulfill({json:cfg})
-   if(url.pathname==='/api/v1/voicevox'&&method==='PUT'){const b=route.request().postDataJSON();puts.push(b);cfg={...cfg,endpoint:b.endpoint.replace(/\/$/,''),keyConfigured:'key' in b?b.key!=='':cfg.keyConfigured};return route.fulfill({json:cfg})}
+   if(url.pathname==='/api/v1/voicevox'&&method==='PUT'){const b=route.request().postDataJSON();puts.push(b);cfg={...cfg,endpoint:b.endpoint.replace(/\/$/,''),keyConfigured:'key' in b?b.key!=='':cfg.keyConfigured,apiKey:'key' in b?b.key:cfg.apiKey};return route.fulfill({json:cfg})}
    if(url.pathname==='/api/v1/voicevox/check')return route.fulfill({json:{points:9991900,resetInHours:23.9}})
    return route.fulfill({status:404,json:{reason:'fixture'}})
   })
@@ -362,12 +366,14 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect(page.getByLabel('エンドポイント')).toHaveValue('https://deprecatedapis.tts.quest')
   await expect(page.getByText('APIキー未設定')).toBeVisible()
   await expect(page.getByRole('button',{name:'接続を確認'})).toBeDisabled()
-  await page.getByLabel('APIキー').fill('fictional-key')
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveAttribute('type','password')
+  await page.getByLabel('APIキー',{exact:true}).fill('fictional-key')
   await page.getByRole('button',{name:'保存'}).click()
   await expect(page.getByText('APIキー設定済み')).toBeVisible()
   expect(puts[0]).toEqual({endpoint:'https://deprecatedapis.tts.quest',key:'fictional-key'})
-  await expect(page.getByLabel('APIキー')).toHaveValue('')
-  await expect(page.getByLabel('APIキー')).toHaveAttribute('placeholder','設定済み（変更する場合のみ入力）')
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveValue('fictional-key')
+  await page.getByLabel('APIキーを表示する').check()
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveAttribute('type','text')
   // Changing only the endpoint does not send (or clear) the key.
   await page.getByLabel('エンドポイント').fill('https://voice.example.invalid/')
   await page.getByRole('button',{name:'保存'}).click()

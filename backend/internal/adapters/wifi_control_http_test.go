@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,10 +29,21 @@ func TestWiFiHTTPOnlyAllowsTypedBoundedOperations(t *testing.T) {
 	if response.Code != 200 || strings.Contains(response.Body.String(), "fixture-private-secret") {
 		t.Fatal("typed connection failed or returned secret")
 	}
+	var transaction WiFiTransaction
+	if err := json.Unmarshal(response.Body.Bytes(), &transaction); err != nil || transaction.ID == "" {
+		t.Fatal("connection transaction missing")
+	}
+	request = httptest.NewRequest("POST", "/wifi/confirm", strings.NewReader(`{"transactionID":"`+transaction.ID+`"}`))
+	response = httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	if response.Code != 200 {
+		t.Fatal("connection confirmation failed")
+	}
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest("GET", "/wifi/networks", nil))
-	if response.Code != 200 || strings.Contains(response.Body.String(), "fixture-private-secret") || strings.Contains(response.Body.String(), `"password"`) {
-		t.Fatal("public network list contains credential")
+	var view WiFiView
+	if err := json.Unmarshal(response.Body.Bytes(), &view); response.Code != 200 || err != nil || len(view.Saved) != 1 || view.Saved[0].Password != "fixture-private-secret" {
+		t.Fatal("owner network list does not contain saved credential")
 	}
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest("POST", "/wifi/command", strings.NewReader(`{}`)))

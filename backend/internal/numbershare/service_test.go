@@ -154,6 +154,37 @@ func TestEstimatedLocationIsNotShared(t *testing.T) {
 	}
 }
 
+func TestPayloadUsesNumberShareMillisecondTimestamp(t *testing.T) {
+	at := time.Date(2026, 11, 16, 6, 0, 0, 817821101, time.UTC)
+	payload := payloadFor(testRecord(at), "event")
+	if payload.ObservedAt != "2026-11-16T06:00:00.817Z" {
+		t.Fatalf("observed_at = %q", payload.ObservedAt)
+	}
+}
+
+func TestReloadMigratesRejectedNanosecondTimestampWithoutChangingEventID(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "numbershare")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	item := QueueItem{
+		EventID: "11111111-1111-4111-8111-111111111111", RecordID: "record-1", State: "blocked",
+		HTTPStatus: 422, LastError: "invalid observed_at", QueuedAt: now, Manual: true,
+		Payload: SightingPayload{EventID: "11111111-1111-4111-8111-111111111111", ObservedAt: "2026-11-16T06:00:00.817821101Z", Plate: Plate{SerialNumber: "1234"}},
+	}
+	b, _ := json.Marshal([]QueueItem{item})
+	if err := os.WriteFile(filepath.Join(dir, "queue.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	status := New(root, nil).Status()
+	got := status.Items[0]
+	if status.Blocked != 1 || got.EventID != item.EventID || got.Payload.ObservedAt != "2026-11-16T06:00:00.817Z" || got.HTTPStatus != 422 {
+		t.Fatalf("migrated = %+v", status)
+	}
+}
+
 func TestSharedMarksLocalEventsAndFiltersOthers(t *testing.T) {
 	var localEvent string
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +242,53 @@ func TestManualRangeUploadRunsWithRealtimeDisabledAndDeduplicates(t *testing.T) 
 	}
 	if result, err = s.EnqueueUpload([]plate.Record{record}); err != nil || result.Queued != 0 || result.Existing != 1 {
 		t.Fatalf("repeat upload = %+v, %v", result, err)
+	}
+}
+
+func TestManualRangeUploadRequeuesOnlySelectedBlockedRecords(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":"invalid observed_at"}`))
+	}))
+	defer server.Close()
+	s := New(t.TempDir(), server.Client())
+	configureTest(t, s, server.URL+"/")
+	selected := testRecord(time.Date(2026, 11, 14, 12, 0, 0, 987654321, time.FixedZone("JST", 9*60*60)))
+	other := testRecord(time.Date(2026, 11, 15, 12, 0, 0, 123456789, time.FixedZone("JST", 9*60*60)))
+	other.ID = "record-other-day"
+	for _, record := range []plate.Record{selected, other} {
+		if err := s.Enqueue(record); err != nil {
+			t.Fatal(err)
+		}
+		item, cfg, due := s.nextDue()
+		if !due {
+			t.Fatal("queued item was not due")
+		}
+		status, body, err := s.send(context.Background(), cfg, item)
+		s.complete(item, status, body, err)
+	}
+	before := s.Status()
+	if before.Blocked != 2 {
+		t.Fatalf("before = %+v", before)
+	}
+	if _, err := s.Configure(2, false, server.URL+"/", nil); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.EnqueueUpload([]plate.Record{selected})
+	if err != nil || result.Requeued != 1 || result.Queued != 0 || result.Existing != 1 {
+		t.Fatalf("upload = %+v, %v", result, err)
+	}
+	after := s.Status()
+	if after.Pending != 1 || after.Blocked != 1 {
+		t.Fatalf("after = %+v", after)
+	}
+	for _, item := range after.Items {
+		if item.RecordID == selected.ID && (item.State != "pending" || !item.Manual || item.Payload.ObservedAt != "2026-11-14T12:00:00.987+09:00") {
+			t.Fatalf("selected = %+v", item)
+		}
+		if item.RecordID == other.ID && item.State != "blocked" {
+			t.Fatalf("other date changed = %+v", item)
+		}
 	}
 }
 

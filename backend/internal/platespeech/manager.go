@@ -222,6 +222,14 @@ func (m *Manager) APIConfig() (endpoint string, keyConfigured bool) {
 	return m.api.Endpoint, m.api.Key != ""
 }
 
+// APIConfigValue returns the owner-configured value for the management UI.
+// The UI masks it by default and reveals it only after an explicit toggle.
+func (m *Manager) APIConfigValue() (endpoint, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.api.Endpoint, m.api.Key
+}
+
 // SetAPI stores the endpoint and, when key is non-nil, the key ("" clears).
 func (m *Manager) SetAPI(endpoint string, key *string) error {
 	ep, e := ValidateEndpoint(endpoint)

@@ -308,6 +308,7 @@ func TestPlateSpeechUploadsAndVoicevoxSettings(t *testing.T) {
 	res := request(t, client, ts, "GET", "/voicevox", "", nil)
 	var cfg struct {
 		Endpoint, DefaultEndpoint string
+		APIKey                    string
 		KeyConfigured             bool
 	}
 	json.NewDecoder(res.Body).Decode(&cfg)
@@ -331,15 +332,15 @@ func TestPlateSpeechUploadsAndVoicevoxSettings(t *testing.T) {
 	}
 	json.NewDecoder(res.Body).Decode(&cfg)
 	res.Body.Close()
-	if cfg.Endpoint != "https://voice.example.invalid" || !cfg.KeyConfigured {
+	if cfg.Endpoint != "https://voice.example.invalid" || !cfg.KeyConfigured || cfg.APIKey != key {
 		t.Fatalf("saved %+v", cfg)
 	}
-	// The key is never echoed back.
+	// The owner UI receives the saved key and masks it until explicitly shown.
 	res = request(t, client, ts, "GET", "/voicevox", "", nil)
 	raw, _ := io.ReadAll(res.Body)
 	res.Body.Close()
-	if strings.Contains(string(raw), key) {
-		t.Fatal("key returned to client")
+	if !strings.Contains(string(raw), key) {
+		t.Fatal("saved key not returned to owner UI")
 	}
 	if res = request(t, client, ts, "PUT", "/voicevox", csrf, map[string]any{"endpoint": "ftp://x"}); res.StatusCode != 400 {
 		t.Fatalf("bad endpoint %d", res.StatusCode)

@@ -24,7 +24,7 @@ async function open(page:Page,summary:any,ledHandler?:(route:Route)=>Promise<voi
   }
   if(path.endsWith('/settings'))data={revision:1,theme:'system',locale:'ja',favorites:[]}
   if(path.endsWith('/capabilities'))data=[]
-  if(path.endsWith('/voicevox'))data={endpoint:'https://voice.example.invalid',defaultEndpoint:'https://voice.example.invalid',keyConfigured:false}
+  if(path.endsWith('/voicevox'))data={endpoint:'https://voice.example.invalid',defaultEndpoint:'https://voice.example.invalid',keyConfigured:false,apiKey:''}
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)})
  })
   await page.goto(reviewURL!+(ledHandler?'#system/led':''))

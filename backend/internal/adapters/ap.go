@@ -30,6 +30,7 @@ type APSettings struct {
 	Enabled              bool   `json:"enabled"`
 	SSID                 string `json:"ssid"`
 	PassphraseConfigured bool   `json:"passphraseConfigured"`
+	Passphrase           string `json:"passphrase"`
 	StandaloneFallback   bool   `json:"standaloneFallback"`
 	Preference           string `json:"preference"`
 }
@@ -73,7 +74,7 @@ type APWorkerState struct {
 var apApplyMutex sync.Mutex
 
 func apPublic(c apConfiguration) APSettings {
-	return APSettings{Revision: c.Revision, Enabled: c.Enabled, SSID: c.SSID, PassphraseConfigured: c.Passphrase != "", StandaloneFallback: c.StandaloneFallback, Preference: apDefaultPreference(c.Preference)}
+	return APSettings{Revision: c.Revision, Enabled: c.Enabled, SSID: c.SSID, PassphraseConfigured: c.Passphrase != "", Passphrase: c.Passphrase, StandaloneFallback: c.StandaloneFallback, Preference: apDefaultPreference(c.Preference)}
 }
 func apLoadConfig(path string) (apConfiguration, error) {
 	c := apConfiguration{SSID: "NP1-LAN", StandaloneFallback: true, Preference: "cellular"}
