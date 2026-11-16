@@ -19,7 +19,8 @@ export type NumberShareLocation={latitude:number;longitude:number;accuracy_m?:nu
 export type NumberShareQueueItem={eventId:string;recordId:string;payload:{event_id:string;observed_at:string;plate:NumberSharePlate;location?:NumberShareLocation};state:'pending'|'sent'|'blocked';attempts:number;queuedAt:string;lastAttemptAt?:string;nextAttemptAt?:string;sentAt?:string;httpStatus?:number;lastError?:string;matchStatus?:string}
 export type NumberShareStatus={config:{revision:number;enabled:boolean;endpoint:string;keyConfigured:boolean};pending:number;sent:number;blocked:number;items:NumberShareQueueItem[]}
 export type NumberShareSighting={id:number;event_id:string;observed_at:string;received_at:string;plate_id?:number;match_status:'exact'|'candidate'|'none';recognition_revision:number;plate:NumberSharePlate;location?:NumberShareLocation;mine:boolean}
-export type NumberShareSightings={items:NumberShareSighting[];truncated:boolean}
+export type NumberShareSightings={items:NumberShareSighting[];truncated:boolean;syncedAt:string}
+export type NumberShareUpload={total:number;queued:number;existing:number;skipped:number}
 export type NumberShareVehicle={id:number;serial_number:string;region:string;classification_number:string;hiragana:string;category:string;comment:string;sightings:number;last_seen?:string;last_location?:NumberShareLocation}
 export type NumberShareVehicles={items:NumberShareVehicle[];total:number;categories:string[]}
 

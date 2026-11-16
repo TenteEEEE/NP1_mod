@@ -188,6 +188,8 @@
 .share-config-grid input, .plate-share .plate-toolbar :is(input,select) { min-height: 44px; min-width: 0; }
 .share-config .hint { margin: 12px 0 0; }
 .share-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.share-upload .plate-toolbar { margin-top: 14px; }
+.share-upload .hint { margin: 12px 0 0; }
 .share-counts { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .share-counts div { min-width: 100px; padding: 10px 14px; border-radius: 7px; background: var(--soft); }
 .share-counts dt { font-size: 11px; color: var(--muted); }

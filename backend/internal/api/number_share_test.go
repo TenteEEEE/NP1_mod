@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/np1-control-center/ncc/internal/plate"
 )
 
 func TestNumberShareConfigIsWriteOnlyAndRevisioned(t *testing.T) {
@@ -55,5 +58,49 @@ func TestNumberShareRejectsInvalidQueriesBeforeExternalRequest(t *testing.T) {
 		if res.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s status=%d", path, res.StatusCode)
 		}
+	}
+}
+
+func TestNumberShareUploadRequiresExplicitValidPeriod(t *testing.T) {
+	_, ts, client, csrf := plateFixture(t, &fakeSensor{instance: "share-upload"})
+	for _, body := range []map[string]any{
+		{"from": "", "to": "2026-11-16"},
+		{"from": "2026-11-17", "to": "2026-11-16"},
+		{"from": "2026/11/16", "to": "2026-11-16"},
+	} {
+		res := request(t, client, ts, http.MethodPost, "/plate/share/upload", csrf, body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("body=%v status=%d", body, res.StatusCode)
+		}
+	}
+}
+
+func TestNumberShareUploadQueuesEveryRecordInPeriodOnce(t *testing.T) {
+	srv, ts, client, csrf := plateFixture(t, &fakeSensor{instance: "share-upload-success"})
+	key := "fictional-upload-key"
+	if _, err := srv.numberShare.Configure(1, false, "https://share.example/api/", &key); err != nil {
+		t.Fatal(err)
+	}
+	settings := plate.DefaultSettings()
+	settings.MinSightings = 1
+	at := time.Date(2026, 11, 16, 12, 0, 0, 0, time.FixedZone("JST", 9*3600))
+	if outcome, err := srv.plates.store.Ingest(plate.Detection{At: at, Reading: plate.Reading{Number: "1234", Confidence: 0.99}}, settings, nil); err != nil || !outcome.New {
+		t.Fatalf("ingest = %+v, %v", outcome, err)
+	}
+	for attempt, expected := range []struct{ queued, existing int }{{1, 0}, {0, 1}} {
+		res := request(t, client, ts, http.MethodPost, "/plate/share/upload", csrf, map[string]any{"from": "2026-11-16", "to": "2026-11-16"})
+		var result struct {
+			Total, Queued, Existing int
+		}
+		_ = json.NewDecoder(res.Body).Decode(&result)
+		res.Body.Close()
+		if res.StatusCode != http.StatusAccepted || result.Total != 1 || result.Queued != expected.queued || result.Existing != expected.existing {
+			t.Fatalf("attempt %d status=%d result=%+v", attempt, res.StatusCode, result)
+		}
+	}
+	status := srv.numberShare.Status()
+	if status.Pending != 1 || len(status.Items) != 1 || !status.Items[0].Manual {
+		t.Fatalf("queue = %+v", status)
 	}
 }

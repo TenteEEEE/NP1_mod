@@ -26,7 +26,6 @@ import (
 
 const (
 	maxResponseBytes = 2 << 20
-	maxSharedPages   = 5
 )
 
 type APIConfig struct {
@@ -77,6 +76,14 @@ type QueueItem struct {
 	HTTPStatus  int             `json:"httpStatus,omitempty"`
 	LastError   string          `json:"lastError,omitempty"`
 	MatchStatus string          `json:"matchStatus,omitempty"`
+	Manual      bool            `json:"manual,omitempty"`
+}
+
+type UploadResult struct {
+	Total    int `json:"total"`
+	Queued   int `json:"queued"`
+	Existing int `json:"existing"`
+	Skipped  int `json:"skipped"`
 }
 
 type Status struct {
@@ -244,6 +251,55 @@ func (s *Service) Enqueue(record plate.Record) error {
 	return nil
 }
 
+// EnqueueUpload adds an explicitly selected historical range to the durable
+// queue. Manual uploads are transmitted even when realtime sharing is off;
+// realtime detections remain opt-in through APIConfig.Enabled.
+func (s *Service) EnqueueUpload(records []plate.Record) (UploadResult, error) {
+	result := UploadResult{Total: len(records)}
+	s.mu.Lock()
+	if s.cfg.Endpoint == "" || s.cfg.APIKey == "" {
+		s.mu.Unlock()
+		return result, errors.New("NumberShare APIが未設定です")
+	}
+	existing := make(map[string]bool, len(s.queue))
+	for _, item := range s.queue {
+		existing[item.RecordID] = true
+	}
+	originalLen := len(s.queue)
+	now := s.clock().UTC()
+	for _, record := range records {
+		if strings.TrimSpace(record.Reading.Number) == "" {
+			result.Skipped++
+			continue
+		}
+		if existing[record.ID] {
+			result.Existing++
+			continue
+		}
+		id, err := uuidV4()
+		if err != nil {
+			s.queue = s.queue[:originalLen]
+			s.mu.Unlock()
+			return result, err
+		}
+		s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payloadFor(record, id), State: "pending", QueuedAt: now, NextAttempt: &now, Manual: true})
+		existing[record.ID] = true
+		result.Queued++
+	}
+	if result.Queued > 0 {
+		if err := s.saveQueueLocked(); err != nil {
+			s.queue = s.queue[:originalLen]
+			s.mu.Unlock()
+			return result, err
+		}
+	}
+	s.mu.Unlock()
+	if result.Queued > 0 {
+		s.signal()
+	}
+	return result, nil
+}
+
 func (s *Service) saveQueueLocked() error { return config.Atomic(s.queuePath(), s.queue) }
 func (s *Service) signal() {
 	select {
@@ -308,12 +364,12 @@ func retryDelay(attempt int) time.Duration {
 func (s *Service) nextDue() (QueueItem, APIConfig, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.cfg.Enabled || s.cfg.Endpoint == "" || s.cfg.APIKey == "" {
+	if s.cfg.Endpoint == "" || s.cfg.APIKey == "" {
 		return QueueItem{}, APIConfig{}, false
 	}
 	now := s.clock().UTC()
 	for _, item := range s.queue {
-		if item.State == "pending" && (item.NextAttempt == nil || !item.NextAttempt.After(now)) {
+		if item.State == "pending" && (s.cfg.Enabled || item.Manual) && (item.NextAttempt == nil || !item.NextAttempt.After(now)) {
 			return item, s.cfg, true
 		}
 	}
@@ -455,6 +511,7 @@ type SharedQuery struct {
 type SharedResponse struct {
 	Items     []SharedSighting `json:"items"`
 	Truncated bool             `json:"truncated"`
+	SyncedAt  time.Time        `json:"syncedAt"`
 }
 
 func (s *Service) apiGET(ctx context.Context, relative string, query url.Values, into any) error {
@@ -525,8 +582,9 @@ func (s *Service) Shared(ctx context.Context, q SharedQuery) (SharedResponse, er
 	if q.ObservedTo != "" {
 		values.Set("observed_to", q.ObservedTo)
 	}
-	out := SharedResponse{Items: []SharedSighting{}}
-	for page := 0; page < maxSharedPages; page++ {
+	out := SharedResponse{Items: []SharedSighting{}, SyncedAt: s.clock().UTC()}
+	seenCursors := map[string]bool{}
+	for {
 		var result struct {
 			Items      []SharedSighting `json:"items"`
 			NextCursor *string          `json:"next_cursor"`
@@ -547,10 +605,12 @@ func (s *Service) Shared(ctx context.Context, q SharedQuery) (SharedResponse, er
 		if result.NextCursor == nil || *result.NextCursor == "" {
 			return out, nil
 		}
+		if seenCursors[*result.NextCursor] {
+			return out, errors.New("NumberShare APIのページ情報が循環しています")
+		}
+		seenCursors[*result.NextCursor] = true
 		values.Set("cursor", *result.NextCursor)
 	}
-	out.Truncated = true
-	return out, nil
 }
 
 type Vehicle struct {

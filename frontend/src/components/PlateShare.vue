@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import {computed,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
-import {AlertTriangle,CheckCircle2,Cloud,MapPin,RefreshCw,RotateCcw,Search} from '@lucide/vue'
+import {AlertTriangle,CheckCircle2,Cloud,MapPin,RefreshCw,RotateCcw,Search,Upload} from '@lucide/vue'
 import {api} from '../services/api'
 import {VectorMap,collection,feature,type LatLon} from '../services/vector-map'
-import {plateSerial,type NumberShareSighting,type NumberShareSightings,type NumberShareStatus,type NumberShareVehicle,type NumberShareVehicles} from '../services/plate'
+import {jstDay,plateSerial,type NumberShareSighting,type NumberShareSightings,type NumberShareStatus,type NumberShareUpload,type NumberShareVehicle,type NumberShareVehicles} from '../services/plate'
 
 const status=ref<NumberShareStatus>(),items=ref<NumberShareSighting[]>([]),vehicles=ref<NumberShareVehicle[]>([]),categories=ref<string[]>([])
 const endpoint=ref(''),enabled=ref(false),key=ref(''),clearKey=ref(false),query=ref(''),scope=ref<'all'|'mine'|'others'>('all'),matchStatus=ref('')
 const vehicleQuery=ref(''),serial=ref(''),category=ref('')
-const loading=ref(false),saving=ref(false),checking=ref(false),error=ref(''),notice=ref(''),truncated=ref(false),online=ref(true)
+const uploadFrom=ref(jstDay(-6)),uploadTo=ref(jstDay(0)),uploading=ref(false)
+const loading=ref(false),saving=ref(false),checking=ref(false),error=ref(''),notice=ref(''),syncedAt=ref(''),online=ref(true)
 const mapEl=ref<HTMLElement>(),selected=ref('')
 let map:VectorMap|undefined,statusTimer:ReturnType<typeof setInterval>|undefined
 const message=(e:unknown)=>e instanceof Error?e.message:String(e)
@@ -27,9 +28,16 @@ async function saveConfig(){
 }
 async function check(){checking.value=true;error.value='';try{const r=await api<{identity?:{user_handle?:string}}>('/plate/share/check','POST');notice.value=r.identity?.user_handle?`接続しました（匿名ID: ${r.identity.user_handle}）`:'APIへ接続しました'}catch(e){error.value=message(e)}finally{checking.value=false}}
 async function retry(id:string){try{await api('/plate/share/retry/'+encodeURIComponent(id),'POST');notice.value='再送待ちへ戻しました';await loadStatus()}catch(e){error.value=message(e)}}
+async function uploadRange(){
+ uploading.value=true;error.value=''
+ try{const result=await api<NumberShareUpload>('/plate/share/upload','POST',{from:uploadFrom.value,to:uploadTo.value})
+  notice.value=result.queued?`${result.queued}件をアップロード待ちへ追加しました${result.existing?`（登録済み ${result.existing}件）`:''}`:`対象${result.total}件はすべて登録済みです`
+  await loadStatus();await loadShared()
+ }catch(e){error.value=message(e)}finally{uploading.value=false}
+}
 async function loadShared(){
  loading.value=true;error.value='';try{const q=new URLSearchParams();if(query.value.trim())q.set('q',query.value.trim());if(scope.value!=='all')q.set('scope',scope.value);if(matchStatus.value)q.set('matchStatus',matchStatus.value)
-  const result=await api<NumberShareSightings>('/plate/share/sightings?'+q);items.value=result.items;truncated.value=result.truncated;selected.value='';render()
+  const result=await api<NumberShareSightings>('/plate/share/sightings?'+q);items.value=result.items;syncedAt.value=result.syncedAt;selected.value='';render()
  }catch(e){items.value=[];error.value=message(e);render()}finally{loading.value=false}
 }
 async function searchVehicles(){
@@ -76,16 +84,22 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
    <p v-else class="plate-empty">送信対象はまだありません。</p>
   </section>
 
+  <section class="panel share-upload">
+   <div class="panel-head"><h2><Upload :size="18"/>期間を指定してアップロード</h2></div>
+   <div class="plate-toolbar"><label>開始日<input v-model="uploadFrom" type="date"></label><label>終了日<input v-model="uploadTo" type="date"></label><button class="primary" :disabled="uploading||!status?.config.keyConfigured||!uploadFrom||!uploadTo" @click="uploadRange"><Upload :size="14"/>{{uploading?'追加中…':'この期間をアップロード'}}</button></div>
+   <p class="hint">端末に保存された期間内の検知をすべて永続キューへ追加します。同じローカル記録は重複追加せず、リアルタイム送信が停止中でもこの手動アップロードは送信されます。</p>
+  </section>
+
   <section class="panel share-history">
-   <div class="panel-head"><h2>共有された検知</h2></div>
+   <div class="panel-head"><h2>APIの全検知履歴</h2></div>
    <div class="plate-toolbar">
     <label class="plate-search">ナンバーで検索<input v-model="query" type="search" placeholder="番号・地域・分類・かな"></label>
     <label>表示<select v-model="scope"><option value="all">すべて</option><option value="mine">自分の検知</option><option value="others">他の利用者</option></select></label>
     <label>照合<select v-model="matchStatus"><option value="">すべて</option><option value="exact">確定一致</option><option value="candidate">候補</option><option value="none">一致なし</option></select></label>
     <label class="plate-check"><input v-model="online" type="checkbox">地図の背景を表示</label>
-    <button class="secondary compact" :disabled="loading||!status?.config.keyConfigured" @click="loadShared"><Search :size="14"/>検索</button>
+    <button class="secondary compact" :disabled="loading||!status?.config.keyConfigured" @click="loadShared"><RefreshCw :size="14"/>{{loading?'同期中…':'APIから全件同期'}}</button>
    </div>
-   <p class="plate-count">{{loading?'読み込み中…':`${items.length}件 · 地図に表示 ${located.length}件`}}<span v-if="truncated"> · 最大500件まで表示</span></p>
+   <p class="plate-count">{{loading?'APIの全ページを同期中…':`${items.length}件 · 地図に表示 ${located.length}件`}}<span v-if="syncedAt"> · 同期 {{time(syncedAt)}}</span></p>
    <div class="plate-split">
     <div class="plate-map-wrap"><div class="plate-map-frame"><div ref="mapEl" class="plate-map share-map" role="region" aria-label="共有されたナンバーの地図"></div><div v-if="!loading&&!located.length" class="plate-map-placeholder"><MapPin :size="24"/><strong>位置のある共有情報はありません</strong></div></div><div class="plate-legend"><span><i class="dot share-other"></i>他の利用者</span><span><i class="dot share-own"></i>自分</span></div></div>
     <div class="plate-list share-list"><button v-for="item in items" :key="item.event_id" :class="['share-item',{mine:item.mine,selected:item.event_id===selected}]" @click="select(item)"><strong>{{display(item.plate)}}</strong><span><b>{{item.mine?'自分':'他の利用者'}}</b> · {{time(item.observed_at)}} · {{item.match_status==='exact'?'確定一致':item.match_status==='candidate'?'候補':'一致なし'}}</span><small>{{item.location?'位置あり':'位置なし'}}</small></button><p v-if="!loading&&!items.length" class="plate-empty">条件に一致する共有情報はありません。</p></div>

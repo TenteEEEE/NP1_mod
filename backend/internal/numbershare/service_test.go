@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -185,5 +187,54 @@ func TestConfigureRejectsPlainHTTPAndRequiresCredentials(t *testing.T) {
 	}
 	if _, err := s.Configure(1, true, "https://example.test/api", nil); err == nil {
 		t.Fatal("enabled without key accepted")
+	}
+}
+
+func TestManualRangeUploadRunsWithRealtimeDisabledAndDeduplicates(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"saved": true})
+	}))
+	defer server.Close()
+	s := New(t.TempDir(), server.Client())
+	configureTest(t, s, server.URL+"/")
+	if _, err := s.Configure(2, false, server.URL+"/", nil); err != nil {
+		t.Fatal(err)
+	}
+	record := testRecord(time.Now())
+	result, err := s.EnqueueUpload([]plate.Record{record, record})
+	if err != nil || result.Total != 2 || result.Queued != 1 || result.Existing != 1 {
+		t.Fatalf("upload = %+v, %v", result, err)
+	}
+	item, _, due := s.nextDue()
+	if !due || !item.Manual || item.RecordID != record.ID {
+		t.Fatalf("manual item is not due while realtime is disabled: %+v %v", item, due)
+	}
+	if result, err = s.EnqueueUpload([]plate.Record{record}); err != nil || result.Queued != 0 || result.Existing != 1 {
+		t.Fatalf("repeat upload = %+v, %v", result, err)
+	}
+}
+
+func TestSharedFetchesEveryCursorPage(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := 0
+		if cursor := r.URL.Query().Get("cursor"); cursor != "" {
+			page, _ = strconv.Atoi(strings.TrimPrefix(cursor, "page-"))
+		}
+		var next *string
+		if page < 6 {
+			value := "page-" + strconv.Itoa(page+1)
+			next = &value
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{
+			"id": page + 1, "event_id": "event-" + strconv.Itoa(page), "observed_at": "2026-11-16T06:00:00Z",
+			"received_at": "2026-11-16T06:00:01Z", "match_status": "none", "plate": map[string]string{"serial_number": "12-34"},
+		}}, "next_cursor": next})
+	}))
+	defer server.Close()
+	s := New(t.TempDir(), server.Client())
+	configureTest(t, s, server.URL+"/")
+	result, err := s.Shared(context.Background(), SharedQuery{})
+	if err != nil || len(result.Items) != 7 || result.Truncated {
+		t.Fatalf("all pages = %d truncated=%v err=%v", len(result.Items), result.Truncated, err)
 	}
 }

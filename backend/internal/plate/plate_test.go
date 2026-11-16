@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,24 @@ func TestNormalizeAndDisplay(t *testing.T) {
 	}
 	if got := Normalize(Reading{Number: "・・・8"}).Display(); got != "・・・8" {
 		t.Fatalf("short display = %q", got)
+	}
+}
+
+func TestListAllDoesNotApplyInteractiveLimit(t *testing.T) {
+	s := NewStore(t.TempDir())
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, jst)
+	s.clock = func() time.Time { return now }
+	for i := 0; i < MaxListLimit+1; i++ {
+		id := "record-" + strconv.Itoa(i)
+		s.open[id] = &Record{ID: id, FirstSeen: now, Reading: Reading{Number: "1234"}}
+	}
+	limited, truncated, err := s.List(Query{From: "2026-11-16", To: "2026-11-16"})
+	if err != nil || len(limited) != MaxListLimit || !truncated {
+		t.Fatalf("limited=%d truncated=%v err=%v", len(limited), truncated, err)
+	}
+	all, err := s.ListAll(Query{From: "2026-11-16", To: "2026-11-16"})
+	if err != nil || len(all) != MaxListLimit+1 {
+		t.Fatalf("all=%d err=%v", len(all), err)
 	}
 }
 

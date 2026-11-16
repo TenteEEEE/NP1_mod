@@ -25,3 +25,11 @@
 - NumberShare実機専用GET-onlyテストで、共有タブ、書き込み専用キー入力、初期キュー、モバイル幅の非オーバーフローを確認し、1件成功した。
 
 本番NumberShare APIのエンドポイントと認証キーは未設定のままにした。外部APIへの検知送信や共有データ取得は行っていない。
+
+## 全件同期・期間アップロード追加導入
+
+- API履歴を固定500件で打ち切らず、カーソル終端まで取得する全件同期へ更新した。
+- JSTの開始日・終了日を指定し、期間内の全ローカル検知を重複なく永続キューへ追加する手動アップロードを導入した。手動項目はリアルタイム送信の停止中でも処理する。
+- 全体ビルド、Go全パッケージのtest/vet、postboot 139件、NumberShare合成E2E、公開ツリーと既知の秘密値の漏えい検査に合格した。
+- `web-worker-update` でWeb/APIだけを更新し、復旧スナップショット `/overlay/owner-apps/np1-control/recovery/web-worker-20261116T070737Z` を作成した。配備物と実機バイナリのSHA-256一致をread-backした。
+- 更新後もWeb/API、broker、ナンバー認識と純正Communication／DriveRec／ImageRecog／Voice／QMMFはactive/running、`NRestarts=0`。API接続先と認証キーは未設定のため、外部送信は発生していない。

@@ -78,7 +78,7 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
 
  test('NumberShare separates own and shared sightings, searches vehicles, and keeps the key write-only',async({page})=>{
   await page.setViewportSize({width:390,height:900})
-  const configWrites:any[]=[]
+  const configWrites:any[]=[],uploads:any[]=[]
   const shared=[
    {id:1,event_id:'11111111-1111-4111-8111-111111111111',observed_at:at(3),received_at:at(2),match_status:'exact',recognition_revision:0,plate:{serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ'},location:{latitude:35.62,longitude:139.74},mine:true},
    {id:2,event_id:'22222222-2222-4222-8222-222222222222',observed_at:at(8),received_at:at(7),match_status:'none',recognition_revision:0,plate:{serial_number:'56-78',region:'練馬'},location:{latitude:35.64,longitude:139.71},mine:false},
@@ -87,10 +87,11 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   const errors=await open(page,async route=>{
    const url=new URL(route.request().url()),method=route.request().method()
    if(url.pathname==='/api/v1/plate/share/status'){await route.fulfill({json:shareStatus});return true}
-   if(url.pathname==='/api/v1/plate/share/sightings'){const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false}});return true}
+   if(url.pathname==='/api/v1/plate/share/sightings'){const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false,syncedAt:at(0)}});return true}
    if(url.pathname==='/api/v1/plate/share/vehicles'){await route.fulfill({json:{items:[{id:10,serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ',category:'危険',comment:'合成テスト車両',sightings:2,last_seen:at(2),last_location:{latitude:35.62,longitude:139.74}}],total:1,categories:['未分類','危険']}});return true}
    if(url.pathname==='/api/v1/plate/share/config'&&method==='PUT'){configWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:3}});return true}
    if(url.pathname==='/api/v1/plate/share/check'){await route.fulfill({json:{ok:true,identity:{user_handle:'fixture_user'}}});return true}
+   if(url.pathname==='/api/v1/plate/share/upload'&&method==='POST'){uploads.push(route.request().postDataJSON());await route.fulfill({status:202,json:{total:4,queued:3,existing:1,skipped:0}});return true}
    return false
   })
   await page.getByRole('tab',{name:'共有',exact:true}).click()
@@ -101,8 +102,13 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect.poll(async()=>(await vectorState(page,'.share-map'))?.sources['number-share'].features.filter((f:any)=>f.properties.mine).length??0).toBe(1)
   await expect.poll(async()=>(await vectorState(page,'.share-map'))?.sources['number-share'].features.filter((f:any)=>!f.properties.mine).length??0).toBe(1)
   await expect(page.locator('.share-vehicle-grid')).toContainText('合成テスト車両')
+  await page.locator('.share-upload').getByLabel('開始日').fill('2026-11-01')
+  await page.locator('.share-upload').getByLabel('終了日').fill('2026-11-16')
+  await page.getByRole('button',{name:'この期間をアップロード'}).click()
+  await expect(page.getByText('3件をアップロード待ちへ追加しました（登録済み 1件）')).toBeVisible()
+  expect(uploads).toEqual([{from:'2026-11-01',to:'2026-11-16'}])
   await page.getByRole('combobox',{name:'表示',exact:true}).selectOption('others')
-  await page.locator('.share-history').getByRole('button',{name:'検索'}).click()
+  await page.locator('.share-history').getByRole('button',{name:'APIから全件同期'}).click()
   await expect(page.locator('.share-item')).toHaveCount(1)
   await expect(page.locator('.share-item')).toContainText('他の利用者')
   await expect(page.getByLabel('認証キー')).toHaveAttribute('type','password')

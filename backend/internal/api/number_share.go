@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/numbershare"
+	"github.com/np1-control-center/ncc/internal/plate"
 )
 
 func strictQuery(w http.ResponseWriter, r *http.Request, allowed ...string) (url.Values, bool) {
@@ -82,6 +83,31 @@ func (s *Server) registerNumberShare() {
 		}
 		jsonOut(w, http.StatusOK, map[string]any{"ok": true, "identity": identity})
 	})
+	s.mux.HandleFunc("POST /api/v1/plate/share/upload", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+		if strings.TrimSpace(body.From) == "" || strings.TrimSpace(body.To) == "" {
+			fail(w, http.StatusBadRequest, "INVALID_PERIOD", "アップロード期間を指定してください")
+			return
+		}
+		records, err := s.plates.store.ListAll(plate.Query{From: body.From, To: body.To})
+		if err != nil {
+			fail(w, http.StatusBadRequest, "INVALID_PERIOD", err.Error())
+			return
+		}
+		result, err := n.EnqueueUpload(records)
+		if err != nil {
+			numberShareFailure(w, err)
+			return
+		}
+		s.audit("numbershare.period.upload", "accepted")
+		jsonOut(w, http.StatusAccepted, result)
+	})
 	s.mux.HandleFunc("GET /api/v1/plate/share/sightings", func(w http.ResponseWriter, r *http.Request) {
 		q, ok := strictQuery(w, r, "q", "matchStatus", "observedFrom", "observedTo", "scope")
 		if !ok {
@@ -97,7 +123,7 @@ func (s *Server) registerNumberShare() {
 			fail(w, http.StatusBadRequest, "INVALID_QUERY", "照合状態を確認してください")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 		defer cancel()
 		result, err := n.Shared(ctx, numbershare.SharedQuery{Text: q.Get("q"), MatchStatus: match, ObservedFrom: q.Get("observedFrom"), ObservedTo: q.Get("observedTo"), Scope: scope})
 		if err != nil {
