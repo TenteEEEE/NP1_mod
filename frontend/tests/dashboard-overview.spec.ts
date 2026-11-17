@@ -20,7 +20,7 @@ async function fixture(page:Page,theme:string,cadence=10000){
   if(path.endsWith('/trips'))data=observation({range:{period:'7',from:'2026-11-06',to:'2026-11-12'},days:[],period:{hasData:false},trips:[]})
   if(path.endsWith('/device/native-audio'))data=observation({masterVolume:17,mute:{value:1,enabled:false},correction:{value:2,label:'強'},writable:true})
   if(path.endsWith('/device/led'))data=observation({settings:{revision:1,mode:'off',brightness:180,speed:240,fps:15,rgb:[255,255,255],autostart:false},serviceState:'active'})
-  if(path.endsWith('/voicevox'))data={endpoint:'https://example.invalid/api',defaultEndpoint:'https://example.invalid/api',keyConfigured:false}
+  if(path.endsWith('/voicevox'))data={endpoint:'https://example.invalid/api',defaultEndpoint:'https://example.invalid/api',keyConfigured:false,apiKey:''}
   if(path.endsWith('/camera/sessions')&&method==='POST'){const source=route.request().postDataJSON().source;calls.created.push(source);data={id:'fixture-'+source}}
   if(/\/camera\/sessions\/[^/]+\/stream$/.test(path)){
    calls.frames.push(path)

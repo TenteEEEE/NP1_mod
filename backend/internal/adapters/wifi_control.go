@@ -60,6 +60,7 @@ type WiFiSavedProfile struct {
 	SSID               string `json:"ssid"`
 	Security           string `json:"security"`
 	PasswordConfigured bool   `json:"passwordConfigured"`
+	Password           string `json:"password"`
 }
 type WiFiTransaction struct {
 	ID         string    `json:"id"`
@@ -340,7 +341,7 @@ func (c *WiFiController) List(ctx context.Context) (WiFiView, error) {
 	}
 	saved := []WiFiSavedProfile{}
 	for _, p := range profiles {
-		saved = append(saved, WiFiSavedProfile{p.ID, p.SSID, p.Security, p.Password != ""})
+		saved = append(saved, WiFiSavedProfile{ID: p.ID, SSID: p.SSID, Security: p.Security, PasswordConfigured: p.Password != "", Password: p.Password})
 	}
 	for i := range networks {
 		if c.pending != nil && c.pending.CreatedID != nil && networks[i].ID == *c.pending.CreatedID {

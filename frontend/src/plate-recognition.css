@@ -181,6 +181,60 @@
 .plate-api-note { flex-wrap: wrap; }
 .plate-api-note > span { flex: 1 1 180px; }
 .plate-api-note a { margin-left: auto; white-space: nowrap; }
+
+.plate-share { display: grid; gap: 16px; }
+.plate-share .panel { padding: 0; }
+.share-panel-body { padding: 18px 20px 20px; }
+.plate-share .panel-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.share-config-head-actions { display: flex; align-items: center; gap: 8px; }
+.share-config-toggle svg { transition: transform .15s ease; }
+.share-config-toggle[aria-expanded=true] svg { transform: rotate(180deg); }
+.share-state { border-radius: 999px; padding: 5px 10px; font-size: 11px; background: var(--soft); color: var(--muted); }
+.share-state.on { color: var(--accent); }
+.share-config-grid { display: grid; grid-template-columns: minmax(260px,2fr) minmax(180px,1fr) auto; align-items: end; gap: 12px; }
+.share-config-grid > label:not(.plate-check), .plate-share .plate-toolbar > label:not(.plate-check) { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.share-config-grid input, .plate-share .plate-toolbar :is(input,select) { min-height: 44px; min-width: 0; }
+.share-registration { display: grid; gap: 14px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
+.share-registration h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.share-registration p { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.share-registration-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.share-registration-grid label { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }
+.share-registration-grid input { min-width: 0; min-height: 44px; }
+.share-registration > button { justify-self: end; }
+.share-config .hint { margin: 12px 0 0; }
+.share-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.share-management-link { color: var(--text); text-decoration: none; }
+.share-upload .hint { margin: 12px 0 0; }
+.share-counts { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+.share-counts div { min-width: 100px; padding: 10px 14px; border-radius: 7px; background: var(--soft); }
+.share-counts dt { font-size: 11px; color: var(--muted); }
+.share-counts dd { margin: 3px 0 0; font-size: 18px; font-weight: 700; }
+.share-counts dd.warn { color: var(--danger); }
+.share-queue-list { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.share-queue-list article { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; }
+.share-queue-list article > div { display: grid; gap: 3px; min-width: 0; }
+.share-queue-list span, .share-queue-list small { font-size: 11px; color: var(--muted); }
+.share-queue-list small { color: var(--danger); }
+.plate-map.share-map { height: 500px; }
+.plate-legend .dot.share-other { background: #397fd7; border-color: #fff; }
+.plate-legend .dot.share-own { width: 14px; height: 14px; background: #e8590c; border-color: #fff; }
+.share-list { max-height: 540px; }
+.share-item { display: grid; gap: 5px; width: 100%; padding: 11px 12px; text-align: left; color: var(--text); background: var(--paper); border: 1px solid var(--line); border-left: 4px solid #397fd7; border-radius: 7px; }
+.share-item.mine { border-left-color: #e8590c; }
+.share-item.selected { outline: 2px solid var(--accent); }
+.share-item span, .share-item small { color: var(--muted); font-size: 11px; }
+.share-item b { color: inherit; }
+.share-vehicle-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 14px; }
+.share-vehicle-grid article { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; }
+.share-vehicle-grid span { color: var(--muted); font-size: 11px; }
+.share-vehicle-grid p { margin: 3px 0 0; font-size: 12px; }
+@media (max-width: 800px) {
+ .share-config-grid { grid-template-columns: minmax(0,1fr); }
+ .share-registration-grid { grid-template-columns: minmax(0,1fr); }
+ .share-registration > button { justify-self: stretch; }
+ .share-vehicle-grid { grid-template-columns: minmax(0,1fr); }
+ .plate-map.share-map { height: 320px; }
+}
 .plate-voice > .plate-grid { padding: 18px 23px 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .plate-voice > .hint { padding: 0 23px 20px; }
 .plate-voice .plate-grid select { min-height: 44px; width: 100%; }

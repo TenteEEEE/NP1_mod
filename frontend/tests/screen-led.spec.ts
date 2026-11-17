@@ -19,7 +19,7 @@ async function setup(page:Page,{insecure=false,audio=false}={}){
   if(path.endsWith('/auth/session'))data={csrf:'fixture'}
   if(path.endsWith('/settings'))data={revision:1,theme:'dark',locale:'ja',favorites:[]}
   if(path.endsWith('/capabilities'))data=[]
-  if(path.endsWith('/voicevox'))data={endpoint:'https://voice.example.invalid',defaultEndpoint:'https://voice.example.invalid',keyConfigured:false}
+  if(path.endsWith('/voicevox'))data={endpoint:'https://voice.example.invalid',defaultEndpoint:'https://voice.example.invalid',keyConfigured:false,apiKey:''}
   if(path.endsWith('/device/led'))data={status:'available',data:{settings:{revision:1,mode:'off',brightness:180,speed:240,fps:15,rgb:[255,255,255],autostart:false},serviceState:'active'}}
   if(path.endsWith('/screen/sessions')&&method==='POST'){creates++;data={id:'synthetic-screen-session',frameIntervalMs:100,idleTimeoutMs:1500}}
   if(path.endsWith('/screen/sessions/synthetic-screen-session')){

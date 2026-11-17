@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -22,12 +23,14 @@ import (
 const defaultTailscaleBinary = "/overlay/owner-apps/np1-control/bin/tailscale"
 
 type RegistrationOptions struct {
-	ConfigPath         string
-	RecoveryPath       string
-	BootstrapKeyPath   string
+	ConfigPath          string
+	ManagedConfigPath   string
+	RecoveryPath        string
+	BootstrapKeyPath    string
 	ExistingUserKeyPath string
-	InternalUserIDPath string
-	DeviceName         string
+	InternalUserIDPath  string
+	DeviceName          string
+	UserHandle          string
 }
 
 type RegistrationResult struct {
@@ -89,7 +92,9 @@ func readCredential(path string, required bool) (string, error) {
 		}
 		return "", err
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Windows reports synthesized POSIX mode bits that do not represent its ACLs.
+	// The deployed NP1 target is Linux, where group/other access must be rejected.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", errors.New("credential-permissions-too-broad")
 	}
 	b, err := os.ReadFile(path)
@@ -214,6 +219,19 @@ func writePrivateJSON(path string, value any, mode os.FileMode) error {
 }
 
 func (r *Registrar) configured(ctx context.Context) (bool, error) {
+	if r.Options.ManagedConfigPath != "" {
+		managed, err := loadAPIConfig(r.Options.ManagedConfigPath)
+		if err == nil {
+			if !managed.Enabled {
+				return false, nil
+			}
+			_, err = r.validateKey(ctx, managed.Endpoint, managed.APIKey)
+			return err == nil, err
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return false, err
+		}
+	}
 	c, err := loadConfig(r.Options.ConfigPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -225,6 +243,12 @@ func (r *Registrar) configured(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	_, err = r.validateKey(ctx, c.BaseURL, c.APIKey)
+	if err == nil && r.Options.ManagedConfigPath != "" {
+		managed := APIConfig{Revision: 1, Enabled: true, Endpoint: c.BaseURL, APIKey: c.APIKey}
+		if writeErr := writePrivateJSON(r.Options.ManagedConfigPath, managed, 0o600); writeErr != nil {
+			return false, writeErr
+		}
+	}
 	return err == nil, err
 }
 
@@ -261,15 +285,18 @@ func (r *Registrar) Ensure(ctx context.Context) (RegistrationResult, error) {
 		issued.UserHandle = source.UserHandle
 		created = "device"
 	} else {
+		requestedHandle := strings.ToLower(strings.TrimSpace(r.Options.UserHandle))
+		if requestedHandle == "" {
+			return RegistrationResult{Status: "ui-registration-required"}, nil
+		}
+		if !registrationHandlePattern.MatchString(requestedHandle) || digitsOnlyPattern.MatchString(requestedHandle) {
+			return RegistrationResult{Status: "user-handle"}, errors.New("invalid-user-handle")
+		}
 		bootstrapKey, err := readCredential(r.Options.BootstrapKeyPath, true)
 		if err != nil {
 			return RegistrationResult{Status: "bootstrap-key"}, err
 		}
-		internalID, err := r.InternalUserID(ctx, r.Options.InternalUserIDPath)
-		if err != nil {
-			return RegistrationResult{Status: "internal-user-id"}, err
-		}
-		body := map[string]string{"user_handle": derivedUserHandle(internalID), "device_name": deviceName}
+		body := map[string]string{"user_handle": requestedHandle, "device_name": deviceName}
 		status, err := r.request(ctx, http.MethodPost, baseURL+"users", bootstrapKey, body, &issued)
 		if err != nil || status != http.StatusCreated {
 			return RegistrationResult{Status: "user-registration"}, err
@@ -285,14 +312,24 @@ func (r *Registrar) Ensure(ctx context.Context) (RegistrationResult, error) {
 		return RegistrationResult{Status: "issued-key-invalid"}, errors.New("issued-credential-validation-failed")
 	}
 	cutover := r.Clock().UTC()
-	configuration := Config{Enabled: true, BaseURL: baseURL, APIKey: issued.APIKey, CutoverAt: cutover, SendLocation: true}
-	if err = writePrivateJSON(r.Options.ConfigPath, configuration, 0o640); err != nil {
+	if r.Options.ManagedConfigPath != "" {
+		configuration := APIConfig{Revision: 1, Enabled: true, Endpoint: baseURL, APIKey: issued.APIKey}
+		err = writePrivateJSON(r.Options.ManagedConfigPath, configuration, 0o600)
+	} else {
+		configuration := Config{Enabled: true, BaseURL: baseURL, APIKey: issued.APIKey, CutoverAt: cutover, SendLocation: true}
+		err = writePrivateJSON(r.Options.ConfigPath, configuration, 0o640)
+	}
+	if err != nil {
 		return RegistrationResult{Status: "config-write"}, err
 	}
 	if issued.RecoveryCode != "" && r.Options.RecoveryPath != "" {
 		recovery := map[string]string{"userId": issued.UserID, "userHandle": issued.UserHandle, "recoveryCode": issued.RecoveryCode, "createdAt": cutover.Format(time.RFC3339)}
 		if err = writePrivateJSON(r.Options.RecoveryPath, recovery, 0o600); err != nil {
-			_ = os.Remove(r.Options.ConfigPath)
+			if r.Options.ManagedConfigPath != "" {
+				_ = os.Remove(r.Options.ManagedConfigPath)
+			} else {
+				_ = os.Remove(r.Options.ConfigPath)
+			}
 			return RegistrationResult{Status: "recovery-write"}, err
 		}
 	}

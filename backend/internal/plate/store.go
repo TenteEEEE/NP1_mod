@@ -416,6 +416,18 @@ func (q Query) accepts(r Record) bool {
 
 // List returns matching records newest first and whether the limit cut it.
 func (s *Store) List(q Query) ([]Record, bool, error) {
+	return s.list(q, true)
+}
+
+// ListAll returns every matching record in the bounded date range. It is used
+// by explicit export/synchronization operations where silently dropping the
+// oldest records would be worse than returning a large result.
+func (s *Store) ListAll(q Query) ([]Record, error) {
+	records, _, err := s.list(q, false)
+	return records, err
+}
+
+func (s *Store) list(q Query, capped bool) ([]Record, bool, error) {
 	q, e := q.validate(s.clock())
 	if e != nil {
 		return nil, false, e
@@ -446,7 +458,7 @@ func (s *Store) List(q Query) ([]Record, bool, error) {
 		}
 		return out[a].ID > out[b].ID
 	})
-	truncated := len(out) > q.Limit
+	truncated := capped && len(out) > q.Limit
 	if truncated {
 		out = out[:q.Limit]
 	}

@@ -1,14 +1,13 @@
 [Unit]
-Description=NP1 NumberShare plate-event sync
-After=network-online.target np1-dashboard.service np1-control-plate.service np1-control-numbershare-register.service
+Description=NP1 NumberShare legacy configuration bridge
+After=network-online.target np1-dashboard.service np1-control-plate.service
 Wants=network-online.target np1-dashboard.service np1-control-plate.service
-Requires=np1-control-numbershare-register.service
 StartLimitIntervalSec=120
 StartLimitBurst=5
 
 [Service]
 Type=simple
-User=nobody
+User=ncc
 Group=ncc
 RuntimeDirectory=np1-control-numbershare
 RuntimeDirectoryMode=0750
@@ -18,14 +17,13 @@ ExecStart=/run/np1-control-numbershare/ncc --mode numbershare-sync --numbershare
 Restart=on-failure
 RestartSec=15
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_NET_RAW
-AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadOnlyPaths=/overlay/owner-apps/np1-control/private
-ReadWritePaths=/overlay/owner-apps/np1-control/state/plate
-UMask=0007
+ReadWritePaths=/overlay/owner-apps/np1-control/state/numbershare
+UMask=0077
 Nice=12
 CPUQuota=20%
 MemoryLimit=48M

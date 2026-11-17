@@ -1,5 +1,5 @@
 import {test,expect,type Page} from '@playwright/test'
-import {calendar,groupJourney,type JourneyDay,type JourneyHistory} from '../src/services/journey'
+import {calendar,groupJourney,rollingJourney,type JourneyDay,type JourneyHistory} from '../src/services/journey'
 const now='2026-11-11T08:00:00Z'
 const observation=(data:unknown,status='available')=>({data,status,source:'synthetic-journey-fixture',observedAt:now,refreshSeconds:30,verified:false})
 function entries(from='2026-11-05',to='2026-11-11'){
@@ -31,10 +31,18 @@ async function fixture(page:Page,theme='light',empty=false){
 }
 test('calendar grouping preserves missing values, actual zero and partial totals',()=>{
  const daily=groupJourney(entries(),'day')
- expect(daily[0]?.distance).toBe(0);expect(daily[1]?.distance).toBe(null);expect(daily[1]?.cumulativeDistance).toBe(null);expect(daily[2]?.cumulativeDistance).toBe(14.65)
+ expect(daily[0]?.distance).toBe(0);expect(daily[1]?.distance).toBe(null);expect(daily[1]?.cumulativeDistance).toBe(0);expect(daily[2]?.cumulativeDistance).toBe(14.65);expect(daily[3]?.cumulativeDistance).toBe(14.65)
  const weeks=groupJourney(entries(),'week')
  expect(weeks).toHaveLength(2);expect(weeks[0]?.dayCount).toBe(4);expect(weeks[0]?.observedDays).toBe(2);expect(weeks[1]?.dayCount).toBe(3)
  expect(groupJourney(entries(),'month')[0]?.distance).toBeCloseTo(58.6)
+})
+test('rolling cumulative values stay flat through hours without driving',()=>{
+ const buckets=rollingJourney([
+  {from:'2026-11-10T00:00:00Z',to:'2026-11-10T01:00:00Z',distanceKm:null,drivingSeconds:null,observed:false},
+  {from:'2026-11-10T01:00:00Z',to:'2026-11-10T02:00:00Z',distanceKm:12,drivingSeconds:600,observed:true},
+  {from:'2026-11-10T02:00:00Z',to:'2026-11-10T03:00:00Z',distanceKm:null,drivingSeconds:null,observed:false},
+ ])
+ expect(buckets.map(bucket=>bucket.cumulativeDistance)).toEqual([0,12,12]);expect(buckets.map(bucket=>bucket.cumulativeHours)).toEqual([0,600/3600,600/3600])
 })
 for(const width of [1440,320])for(const theme of ['light','dark','system'])test(`paired journey chart remains usable at ${width}px in ${theme}`,async({page},testInfo)=>{
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
@@ -49,7 +57,7 @@ for(const width of [1440,320])for(const theme of ['light','dark','system'])test(
   return ['.jc-legend .jc-distance','.jc-legend .jc-time'].map(selector=>{const foreground=luminance(getComputedStyle(document.querySelector(selector)!).color);return (Math.max(background,foreground)+.05)/(Math.min(background,foreground)+.05)})
  })
  contrast.forEach(ratio=>expect(ratio).toBeGreaterThan(4.5))
- expect((await page.locator('.jc-distance-line').getAttribute('d'))!.match(/M/g)).toHaveLength(3)
+ const cumulativePath=(await page.locator('.jc-distance-line').getAttribute('d'))!;expect(cumulativePath.match(/M/g)).toHaveLength(1);expect(cumulativePath.match(/L/g)).toHaveLength(6)
  await expect(page.getByLabel('左軸: 各区間の距離kmと時間h')).toBeVisible();await expect(page.getByLabel('右軸: 計測分累計の距離kmと時間h')).toBeVisible()
  await page.locator('.jc-bucket').first().focus();await page.keyboard.press('Enter');await expect(page.locator('.jc-detail')).toContainText('距離 0 km')
  await page.keyboard.press('ArrowRight');await expect(page.locator('.jc-bucket').nth(1)).toBeFocused();await expect(page.locator('.jc-detail')).toContainText('距離 — km')

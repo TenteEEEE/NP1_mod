@@ -78,6 +78,7 @@ type plateService struct {
 	sensor  *http.Client
 	speaker plateSpeaker
 	voice   *platespeech.Manager
+	share   *numbershare.Service
 	clock   func() time.Time
 
 	mu        sync.Mutex
@@ -241,6 +242,11 @@ func (p *plateService) poll(ctx context.Context) int {
 		outcome, e := p.store.Ingest(d, settings, p.frame(ctx))
 		if e != nil {
 			code = "storage-unavailable"
+		}
+		if e == nil && outcome.Skipped == "" && outcome.Record.ID != "" && p.share != nil {
+			if shareErr := p.share.Enqueue(outcome.Record); shareErr != nil {
+				code = "storage-unavailable"
+			}
 		}
 		if outcome.Skipped == "" {
 			count++
@@ -603,8 +609,8 @@ func (s *Server) registerPlateSpeech() {
 		w.Write(platespeech.EncodeWAV(pcm))
 	})
 	s.mux.HandleFunc("GET /api/v1/voicevox", func(w http.ResponseWriter, r *http.Request) {
-		endpoint, keyConfigured := p.voice.APIConfig()
-		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": keyConfigured})
+		endpoint, key := p.voice.APIConfigValue()
+		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": key != "", "apiKey": key})
 	})
 	s.mux.HandleFunc("PUT /api/v1/voicevox", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -619,8 +625,8 @@ func (s *Server) registerPlateSpeech() {
 			return
 		}
 		s.audit("voicevox.update", "accepted")
-		endpoint, keyConfigured := p.voice.APIConfig()
-		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": keyConfigured})
+		endpoint, savedKey := p.voice.APIConfigValue()
+		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": savedKey != "", "apiKey": savedKey})
 	})
 	s.mux.HandleFunc("POST /api/v1/voicevox/check", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)

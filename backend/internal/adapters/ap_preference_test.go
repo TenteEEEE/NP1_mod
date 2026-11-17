@@ -66,8 +66,8 @@ func TestAPPreferencePartialUpdatePreservesRadioAndSecretAndCAS(t *testing.T) {
 		t.Fatal("private persistence/readback", e)
 	}
 	public, _ := json.Marshal(apPublic(readback))
-	if strings.Contains(string(public), previous.Passphrase) || !strings.Contains(string(public), `"preference":"wifi"`) {
-		t.Fatal("secret exposure or missing preference")
+	if !strings.Contains(string(public), previous.Passphrase) || !strings.Contains(string(public), `"preference":"wifi"`) {
+		t.Fatal("owner settings missing saved passphrase or preference")
 	}
 	if _, e := apNextConfiguration(previous, 3, change); e == nil || e.Error() != "REVISION_CONFLICT" {
 		t.Fatal("stale preference save accepted")

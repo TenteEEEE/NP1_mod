@@ -5,10 +5,11 @@ import {AlertTriangle,Camera,Image as ImageIcon,MapPin,Play,Plus,RefreshCw,ScanL
 import {api,apiUpload,bytes} from '../services/api'
 import {plateDisplay,plateSerial,plateMissing,plateLocationLabel,plateLocationNote,sensorLabel,speechLabel,collectorLabel,newRuleId,jstDay,speechPreview,jobLabel,toClipWav,defaultPlateLED,type PlateRecord,type PlateRecordsResponse,type PlateRule,type PlateSettings,type PlateSpeech,type PlateStatus} from '../services/plate'
 import PlateClipDialog from './PlateClipDialog.vue'
+import PlateShare from './PlateShare.vue'
 import '../plate-recognition.css'
 import '../radio-map.css'
 
-const tab=ref<'records'|'rules'|'status'>('records')
+const tab=ref<'records'|'share'|'rules'|'status'>('records')
 const status=ref<PlateStatus>(),settings=ref<PlateSettings>(),draft=ref<PlateSettings>()
 const records=ref<PlateRecordsResponse['records']>([]),truncated=ref(false),listReason=ref(''),listError=ref('')
 const loading=ref(false),saving=ref(false),error=ref(''),notice=ref('')
@@ -100,7 +101,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
   <div v-if="status&&status.sensor.state!=='running'" class="banner neutral plate-sensor-note"><Camera :size="16"/><span>{{status.sensor.reason||sensorLabel(status.sensor.state)}}。認識が動作するまで新しい記録は増えません。</span></div>
 
   <nav class="plate-tabs" role="tablist" aria-label="ナンバー">
-   <button v-for="t in [{id:'records',label:'記録'},{id:'rules',label:'条件と設定'},{id:'status',label:'状態'}] as const" :key="t.id" role="tab" :aria-selected="tab===t.id" :class="{active:tab===t.id}" @click="tab=t.id">{{t.label}}</button>
+   <button v-for="t in [{id:'records',label:'記録'},{id:'share',label:'共有'},{id:'rules',label:'条件と設定'},{id:'status',label:'状態'}] as const" :key="t.id" role="tab" :aria-selected="tab===t.id" :class="{active:tab===t.id}" @click="tab=t.id">{{t.label}}</button>
   </nav>
 
   <section v-if="tab==='records'" class="panel plate-records" aria-label="認識したナンバーの記録">
@@ -146,6 +147,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
    </div>
   </section>
 
+  <PlateShare v-else-if="tab==='share'"/>
   <section v-else-if="tab==='rules'&&draft" class="plate-rules" aria-label="条件と設定">
    <div class="panel plate-settings">
     <label class="plate-switch"><input v-model="draft.enabled" type="checkbox"><span><strong>ナンバーの記録を有効にする</strong><small>オフの間は、認識結果を記録しません。</small></span></label>

@@ -76,6 +76,108 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   expect(errors).toEqual([])
  })
 
+ test('NumberShare receives all sightings and masks the saved key until explicitly shown',async({page})=>{
+  await page.setViewportSize({width:390,height:900})
+  const configWrites:any[]=[],managementWrites:any[]=[],uploads:any[]=[],receiveMethods:string[]=[]
+  const shared=[
+   {id:1,event_id:'11111111-1111-4111-8111-111111111111',observed_at:at(3),received_at:at(2),match_status:'exact',recognition_revision:0,plate:{serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ'},location:{latitude:35.62,longitude:139.74},mine:true},
+   {id:2,event_id:'22222222-2222-4222-8222-222222222222',observed_at:at(8),received_at:at(7),match_status:'none',recognition_revision:0,plate:{serial_number:'56-78',region:'練馬'},location:{latitude:35.64,longitude:139.71},mine:false},
+  ]
+  const shareStatus={config:{revision:2,enabled:true,endpoint:'https://share.example/api/',keyConfigured:true,apiKey:'saved-fixture-key',managementUrl:'https://share.example/',adminKeyConfigured:true,adminApiKey:'saved-admin-key',userHandle:'fixture_user'},pending:1,sent:4,blocked:1,items:[{eventId:'33333333-3333-4333-8333-333333333333',recordId:'pfix-0004',payload:{event_id:'33333333-3333-4333-8333-333333333333',observed_at:at(12),plate:{serial_number:'77',region:'横浜'}},state:'blocked',attempts:1,queuedAt:at(12),httpStatus:422,lastError:'API 422: bad plate'}]}
+  const errors=await open(page,async route=>{
+   const url=new URL(route.request().url()),method=route.request().method()
+   if(url.pathname==='/api/v1/plate/share/status'){await route.fulfill({json:shareStatus});return true}
+   if(url.pathname==='/api/v1/plate/share/sightings'){receiveMethods.push(method);const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false,syncedAt:at(0)}});return true}
+   if(url.pathname==='/api/v1/plate/share/vehicles'){await route.fulfill({json:{items:[{id:10,serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ',category:'危険',comment:'合成テスト車両',sightings:2,last_seen:at(2),last_location:{latitude:35.62,longitude:139.74}}],total:1,categories:['未分類','危険']}});return true}
+   if(url.pathname==='/api/v1/plate/share/config'&&method==='PUT'){configWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:3}});return true}
+   if(url.pathname==='/api/v1/plate/share/management'&&method==='PUT'){managementWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:4}});return true}
+   if(url.pathname==='/api/v1/plate/share/check'){await route.fulfill({json:{ok:true,identity:{user_handle:'fixture_user'}}});return true}
+   if(url.pathname==='/api/v1/plate/share/upload'&&method==='POST'){uploads.push(route.request().postDataJSON());await route.fulfill({status:202,json:{total:4,queued:3,requeued:0,existing:1,skipped:0}});return true}
+   return false
+  })
+  await page.getByRole('tab',{name:'共有',exact:true}).click()
+  await expect(page.locator('.plate-share .panel')).toHaveCount(5)
+  await expect(page.locator('.plate-share .panel-head h2')).toHaveText(['NumberShare API','APIの全検知履歴','送信状況','期間を指定してアップロード','登録車両を検索'])
+  const configToggle=page.getByRole('button',{name:'API設定を開く'})
+  await expect(configToggle).toHaveAttribute('aria-expanded','false')
+  await expect(page.locator('.share-config-body')).toBeHidden()
+  await configToggle.click()
+  await expect(page.locator('.share-config-body')).toBeVisible()
+  expect(await page.locator('.plate-share .panel').evaluateAll(panels=>panels.map(panel=>({
+   panelTop:getComputedStyle(panel).paddingTop,
+   headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
+   bodyTop:getComputedStyle(panel.querySelector('.share-panel-body')!).paddingTop,
+  })))).toEqual(Array(5).fill({panelTop:'0px',headingTop:'16px',bodyTop:'18px'}))
+  await expect(page.getByText('リアルタイム送信中')).toBeVisible()
+  await expect(page.getByText('API 422: bad plate')).toBeVisible()
+  await expect(page.locator('.share-item.mine')).toContainText('自分')
+  await expect(page.locator('.share-item:not(.mine)')).toContainText('他の利用者')
+  await expect.poll(async()=>(await vectorState(page,'.share-map'))?.sources['number-share'].features.filter((f:any)=>f.properties.mine).length??0).toBe(1)
+  await expect.poll(async()=>(await vectorState(page,'.share-map'))?.sources['number-share'].features.filter((f:any)=>!f.properties.mine).length??0).toBe(1)
+  await expect(page.locator('.share-vehicle-grid')).toContainText('合成テスト車両')
+  await page.locator('.share-upload').getByLabel('開始日').fill('2026-11-01')
+  await page.locator('.share-upload').getByLabel('終了日').fill('2026-11-16')
+  await page.getByRole('button',{name:'この期間をアップロード'}).click()
+  await expect(page.getByText('3件を追加、0件を再送待ちへ戻しました（登録済み 1件）')).toBeVisible()
+  expect(uploads).toEqual([{from:'2026-11-01',to:'2026-11-16'}])
+  await page.getByRole('combobox',{name:'表示',exact:true}).selectOption('others')
+  await page.locator('.share-history').getByRole('button',{name:'APIから全件受信'}).click()
+  expect(receiveMethods.length).toBeGreaterThan(0)
+  expect(receiveMethods.every(method=>method==='GET')).toBe(true)
+  await expect(page.locator('.share-item')).toHaveCount(1)
+  await expect(page.locator('.share-item')).toContainText('他の利用者')
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','password')
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
+  await expect(page.getByLabel('管理画面用キー',{exact:true})).toHaveAttribute('type','password')
+  await expect(page.getByLabel('管理画面用キー',{exact:true})).toHaveValue('saved-admin-key')
+  await expect(page.getByRole('link',{name:'キーをコピーして管理画面を開く'})).toHaveAttribute('href','https://share.example/')
+  await page.getByLabel('認証キーを表示する').check()
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','text')
+  await page.getByLabel('認証キー',{exact:true}).fill('replacement-fixture-key')
+  await page.getByRole('button',{name:'設定を保存'}).click()
+  await expect(page.getByText('NumberShare API設定を保存しました')).toBeVisible()
+  expect(configWrites).toEqual([{expectedRevision:2,enabled:true,endpoint:'https://share.example/api/',key:'replacement-fixture-key'}])
+  expect(managementWrites).toEqual([{expectedRevision:3,managementUrl:'https://share.example/',key:'saved-admin-key'}])
+  await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
+  await page.getByRole('button',{name:'接続を確認'}).click()
+  await expect(page.getByText('接続しました（匿名ID: fixture_user）')).toBeVisible()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await page.setViewportSize({width:1440,height:900})
+  expect(await page.locator('.plate-share .panel').evaluateAll(panels=>panels.map(panel=>({
+   panelTop:getComputedStyle(panel).paddingTop,
+   headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
+   bodyTop:getComputedStyle(panel.querySelector('.share-panel-body')!).paddingTop,
+  })))).toEqual(Array(5).fill({panelTop:'0px',headingTop:'18px',bodyTop:'18px'}))
+  expect(errors).toEqual([])
+ })
+
+ test('NumberShare API settings stay expanded by default until a key is configured',async({page})=>{
+  const registrations:any[]=[]
+  const unconfigured={config:{revision:1,enabled:false,endpoint:'',keyConfigured:false,apiKey:'',adminKeyConfigured:false},pending:0,sent:0,blocked:0,items:[]}
+  const errors=await open(page,async route=>{
+   const path=new URL(route.request().url()).pathname
+   if(path==='/api/v1/plate/share/status'){await route.fulfill({json:unconfigured});return true}
+   if(path==='/api/v1/plate/share/register'){registrations.push(route.request().postDataJSON());await route.fulfill({status:201,json:{userHandle:'new_owner',deviceId:'device-1'}});return true}
+   return false
+  })
+  await page.getByRole('tab',{name:'共有',exact:true}).click()
+  await expect(page.getByRole('button',{name:'API設定を閉じる'})).toHaveAttribute('aria-expanded','true')
+  await expect(page.locator('.share-config-body')).toBeVisible()
+  await expect(page.getByRole('heading',{name:'初回登録'})).toBeVisible()
+  const registerButton=page.getByRole('button',{name:'APIキーを取得して保存'})
+  await expect(registerButton).toBeDisabled()
+  await page.getByLabel('匿名ユーザーID').fill('new_owner')
+  await page.getByLabel('接続用キー（DEVICE_API_KEY）').fill('bootstrap-fixture-key-0123456789')
+  await expect(registerButton).toBeEnabled()
+  await expect(page.getByLabel('接続用キー（DEVICE_API_KEY）')).toHaveAttribute('type','password')
+  await page.getByLabel('接続用キーを表示する').check()
+  await expect(page.getByLabel('接続用キー（DEVICE_API_KEY）')).toHaveAttribute('type','text')
+  await registerButton.click()
+  await expect(page.getByText('new_owner として初回登録しました。発行された機器用認証キーを保存しました')).toBeVisible()
+  expect(registrations).toEqual([{expectedRevision:1,endpoint:'https://nmch.jp/app/numbershare/api/',userHandle:'new_owner',bootstrapKey:'bootstrap-fixture-key-0123456789'}])
+  expect(errors).toEqual([])
+ })
+
  for(const width of [320,390,1440])for(const theme of ['light','dark'] as const){test(`${width}px ${theme}: list, map and highlight without horizontal overflow`,async({page},info)=>{
   await page.setViewportSize({width,height:900});await page.emulateMedia({colorScheme:theme})
   const errors=await open(page)
@@ -299,13 +401,13 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   expect(tileRequests).toBe(count)
  })
 
- test('system VOICEVOX settings keep the key write-only and check the endpoint',async({page})=>{
-  let cfg={endpoint:'https://deprecatedapis.tts.quest',defaultEndpoint:'https://deprecatedapis.tts.quest',keyConfigured:false}
+ test('system VOICEVOX settings mask the saved key until explicitly shown',async({page})=>{
+  let cfg={endpoint:'https://deprecatedapis.tts.quest',defaultEndpoint:'https://deprecatedapis.tts.quest',keyConfigured:false,apiKey:''}
   const puts:any[]=[]
   await page.route('**/api/v1/**',async route=>{
    const url=new URL(route.request().url()),method=route.request().method()
    if(url.pathname==='/api/v1/voicevox'&&method==='GET')return route.fulfill({json:cfg})
-   if(url.pathname==='/api/v1/voicevox'&&method==='PUT'){const b=route.request().postDataJSON();puts.push(b);cfg={...cfg,endpoint:b.endpoint.replace(/\/$/,''),keyConfigured:'key' in b?b.key!=='':cfg.keyConfigured};return route.fulfill({json:cfg})}
+   if(url.pathname==='/api/v1/voicevox'&&method==='PUT'){const b=route.request().postDataJSON();puts.push(b);cfg={...cfg,endpoint:b.endpoint.replace(/\/$/,''),keyConfigured:'key' in b?b.key!=='':cfg.keyConfigured,apiKey:'key' in b?b.key:cfg.apiKey};return route.fulfill({json:cfg})}
    if(url.pathname==='/api/v1/voicevox/check')return route.fulfill({json:{points:9991900,resetInHours:23.9}})
    return route.fulfill({status:404,json:{reason:'fixture'}})
   })
@@ -315,12 +417,14 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect(page.getByLabel('エンドポイント')).toHaveValue('https://deprecatedapis.tts.quest')
   await expect(page.getByText('APIキー未設定')).toBeVisible()
   await expect(page.getByRole('button',{name:'接続を確認'})).toBeDisabled()
-  await page.getByLabel('APIキー').fill('fictional-key')
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveAttribute('type','password')
+  await page.getByLabel('APIキー',{exact:true}).fill('fictional-key')
   await page.getByRole('button',{name:'保存'}).click()
   await expect(page.getByText('APIキー設定済み')).toBeVisible()
   expect(puts[0]).toEqual({endpoint:'https://deprecatedapis.tts.quest',key:'fictional-key'})
-  await expect(page.getByLabel('APIキー')).toHaveValue('')
-  await expect(page.getByLabel('APIキー')).toHaveAttribute('placeholder','設定済み（変更する場合のみ入力）')
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveValue('fictional-key')
+  await page.getByLabel('APIキーを表示する').check()
+  await expect(page.getByLabel('APIキー',{exact:true})).toHaveAttribute('type','text')
   // Changing only the endpoint does not send (or clear) the key.
   await page.getByLabel('エンドポイント').fill('https://voice.example.invalid/')
   await page.getByRole('button',{name:'保存'}).click()

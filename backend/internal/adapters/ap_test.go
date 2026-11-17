@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestAPConfigurationValidationAndSecretRedaction(t *testing.T) {
+func TestAPConfigurationValidationAndOwnerDisplay(t *testing.T) {
 	for _, test := range []struct {
 		ssid, password string
 		enabled, valid bool
@@ -22,8 +22,8 @@ func TestAPConfigurationValidationAndSecretRedaction(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if strings.Contains(string(b), c.Passphrase) || strings.Contains(string(b), `"passphrase"`) {
-		t.Fatal("AP public settings leaked credential")
+	if !strings.Contains(string(b), c.Passphrase) || !strings.Contains(string(b), `"passphrase"`) {
+		t.Fatal("AP owner settings do not contain the saved credential")
 	}
 	if !strings.Contains(string(b), `"passphraseConfigured":true`) {
 		t.Fatal("credential presence not exposed safely")

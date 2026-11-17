@@ -799,6 +799,86 @@ paths:
       description: 認識プロセスの状態は/run/np1-control-plate/sensor.sockの自己申告のみを返し、推測しない。speech.availableは本体の音声出力（pacat）とVOICEVOX APIキーがそろったときだけtrue。
       responses:
         '200': {description: 'enabled, revision, sensor{state: running|model-missing|engine-missing|error|unavailable, reason, engine, backend, fps, lastFrameAt}, collector{lastPollAt, error}, speech{available, reason}, usage, imageQuotaBytes'}
+  /plate/share/status:
+    get:
+      summary: NumberShareの公開設定と永続送信キュー状態（認証キー値は返さない）
+      responses:
+        '200': {description: 'config{revision, enabled, endpoint, keyConfigured}, pending, sent, blocked, items（新しい順に最大100件）。itemsに送信本文・試行回数・次回時刻・エラーを含む。'}
+  /plate/share/config:
+    put:
+      summary: NumberShare APIのHTTPSエンドポイント・認証キー・送信有効状態を保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [expectedRevision, enabled, endpoint], properties: {expectedRevision: {type: integer, minimum: 1}, enabled: {type: boolean}, endpoint: {type: string, format: uri}, key: {type: string, description: 省略時は保存値を維持}}}
+      responses:
+        '200': {description: 'config{revision, enabled, endpoint, keyConfigured}。キー値は返さない。'}
+        '400': {description: HTTPSでない、URL不正、有効化に必要な値がない}
+        '409': {description: revision競合}
+  /plate/share/register:
+    post:
+      summary: 匿名ユーザーIDとNumberShare接続用キーで初回登録し、発行された機器用認証情報を端末へ保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, endpoint, userHandle, bootstrapKey]
+              properties:
+                expectedRevision: {type: integer, minimum: 1}
+                endpoint: {type: string, format: uri}
+                userHandle: {type: string, minLength: 3, maxLength: 24, pattern: '^[a-z0-9][a-z0-9_-]{2,23}$'}
+                bootstrapKey: {type: string, minLength: 24, description: 運用者から配布されたDEVICE_API_KEY。登録後は保存しない}
+                deviceName: {type: string, minLength: 1, maxLength: 100, description: 省略時はNP1}
+      responses:
+        '201': {description: 'userHandle, deviceId。発行されたapi_key・device_id・recovery_codeは端末へ保存済み。' }
+        '400': {description: エンドポイント、匿名ユーザーID、接続用キーまたは端末名が不正}
+        '409': {description: 既に登録済み、またはrevision競合}
+        '502': {description: NumberShare登録APIの接続・認証・応答エラー}
+  /plate/share/check:
+    post:
+      summary: 保存済み認証キーでNumberShareの本人情報を確認（秘密フィールドは除去）
+      responses:
+        '200': {description: 'ok, identity（user_handle等）'}
+        '409': {description: API未設定}
+        '502': {description: 外部API接続・認証・応答エラー}
+  /plate/share/retry/{event_id}:
+    post:
+      summary: 自動再送を停止した検知を同じイベントID・本文で再送待ちへ戻す
+      parameters:
+        - {name: event_id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: 'queued: true'}
+        '404': {description: 未送信の対象がない}
+  /plate/share/sightings:
+    get:
+      summary: NumberShareの検知履歴を取得し、端末内イベントIDとの一致で自分／他利用者を分類
+      parameters:
+        - {name: q, in: query, schema: {type: string}, description: ナンバー4項目の部分一致}
+        - {name: matchStatus, in: query, schema: {type: string, enum: [exact, candidate, none]}}
+        - {name: observedFrom, in: query, schema: {type: string, format: date-time}}
+        - {name: observedTo, in: query, schema: {type: string, format: date-time}}
+        - {name: scope, in: query, schema: {type: string, enum: [all, mine, others]}}
+      responses:
+        '200': {description: 'items（最大5ページ・500件を取得して検索。各項目にmineを追加）, truncated'}
+        '400': {description: 未知・不正なquery}
+        '409': {description: API未設定}
+        '502': {description: 外部APIエラー}
+  /plate/share/vehicles:
+    get:
+      summary: NumberShareの登録車両を検索
+      parameters:
+        - {name: q, in: query, schema: {type: string}, description: 地域・コメントの部分一致}
+        - {name: serialNumber, in: query, schema: {type: string}, description: 一連指定番号の等価検索}
+        - {name: category, in: query, schema: {type: string}}
+      responses:
+        '200': {description: 'items, total, categories（先頭100件）'}
+        '400': {description: 未知・不正なquery}
+        '409': {description: API未設定}
+        '502': {description: 外部APIエラー}
   /plate/settings:
     get:
       summary: ナンバー認識の設定と条件

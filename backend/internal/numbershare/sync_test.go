@@ -57,7 +57,7 @@ func TestSyncOnceSendsStableNewRecordWithoutPrivateFields(t *testing.T) {
 		t.Fatalf("fixture rejected: config=%+v load=%v payload=%v first=%v last=%v", loaded, loadErr, payloadOK, listed[0].FirstSeen, listed[0].LastSeen)
 	}
 
-	s := New(conf, filepath.Join(dir, "state"))
+	s := NewSyncer(conf, filepath.Join(dir, "state"))
 	s.Client = client
 	s.Clock = func() time.Time { return now }
 	n, err := s.SyncOnce(context.Background())
@@ -89,7 +89,7 @@ func TestPayloadSendsLocationOnlyWhenExplicitlyEnabled(t *testing.T) {
 		ID:        "plocation-0001",
 		FirstSeen: time.Date(2026, 11, 16, 2, 0, 0, 0, time.UTC),
 		Reading:   plate.Reading{Number: "1234"},
-		Location:  &plate.Location{Lat: 35.0, Lon: 139.0, AccuracyM: &accuracy, Estimated: true},
+		Location:  &plate.Location{Lat: 35.0, Lon: 139.0, AccuracyM: &accuracy},
 	}
 	without, ok := payload(record, false)
 	if !ok || without.Location != nil {
@@ -138,7 +138,7 @@ func TestSyncOnceDoesNotBackfillOrSendUnsettledRecord(t *testing.T) {
 	for _, r := range records {
 		writeJSONLine(t, filepath.Join(dir, "state", "plate", "records", plate.Day(r.FirstSeen)+".jsonl"), r)
 	}
-	s := New(conf, filepath.Join(dir, "state"))
+	s := NewSyncer(conf, filepath.Join(dir, "state"))
 	s.Client = client
 	s.Clock = func() time.Time { return now }
 	if n, err := s.SyncOnce(context.Background()); err != nil || n != 0 || requests != 0 {
@@ -157,7 +157,7 @@ func TestCheckAuthenticatesWithoutReturningPrivateBody(t *testing.T) {
 	dir := t.TempDir()
 	conf := filepath.Join(dir, "numbershare.json")
 	writeJSON(t, conf, Config{Enabled: true, BaseURL: "https://numbershare.test/api/", APIKey: "device-secret", CutoverAt: time.Now().Add(-time.Minute)})
-	s := New(conf, filepath.Join(dir, "state"))
+	s := NewSyncer(conf, filepath.Join(dir, "state"))
 	s.Client = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/users/me" || r.Header.Get("X-API-Key") != "device-secret" {
 			t.Fatalf("check request mismatch")
