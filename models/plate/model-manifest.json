@@ -1,0 +1,82 @@
+{
+  "version": "numbershare-reader-v4-night-context",
+  "files": {
+    "detector.tflite": "f3a24c66b9979f719e571d6240b3c4062665f10187010ba9bbf2e7f1aca4e211",
+    "ocr.tflite": "7addf80708a946b80b303028361f50cc850057490974e37f5e4d94cb8468dbd4",
+    "ocr-kana.tflite": "4c8b2860acb660f13f65739cda1178b5a96c4c20d618b67bf6564bd4ab506101",
+    "ocr-classification.tflite": "65bae4df053331d88235bdd50aaec2bd929ab2e5adb21f6179efba90753e3732",
+    "ppocrv6_rec.onnx": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+    "ppocr-dictionary.json": "b50d01361bea9087ccb896a6381c1a8334e2af14ae0f1036571bd06cdc3832bf",
+    "plate-model.json": "0ab6ae75223fb9a63fe04788c9c4b5ce1cb0f32b12ebe854c1dc6d787d020aa6"
+  },
+  "japanese_ocr_source": "https://huggingface.co/bukuroo/Lipla-jp/tree/947afab7678ff50d7101e5cf802de25e9d4d0fe1",
+  "runtime": "ONNX Runtime Android 1.31.1 CPU 3 intra-op / 1 inter-op; LiteRT 1.4.2 2 threads",
+  "region_model": "PP-OCRv6 original absolute CTC probability with Japanese region lexicon",
+  "kana_model": "PP-OCRv6 + conservative trained-head/base-head agreement fallback",
+  "numeric_baseline": "Reader-v1, with tightly checked PP-OCR classification votes and low-confidence serial completion",
+  "field_training_completed_steps": {
+    "kana": 20000,
+    "classification": 10000
+  },
+  "unique_base_public_photos": 1273,
+  "extra_verified_training_video_frames": 2,
+  "video_proposals_not_ground_truth": 168,
+  "actual_driving_accuracy_verified": false,
+  "limitations": [
+    "small public development sets; not an untouched final benchmark",
+    "labels reviewed by assistant, not independent human annotators",
+    "actual Pixel driving accuracy and end-to-end detector recall not measured"
+  ],
+  "night_behavior": "Unread region/kana: exact full-line context, two crop views, geometric word score and known class/serial checks; bounded contrast auxiliary for unread regions. Additional night-trained and Japanese-v3 candidate weights were not adopted.",
+  "night_policy": {
+    "region_context_min_token": 0.85,
+    "region_context_geometric_mean": 0.95,
+    "class_tokens": 0.98,
+    "kana_context": 0.95,
+    "serial_tokens": 0.98,
+    "required_matching_context_views": 2,
+    "aux_region_model": 0.9,
+    "aux_region_original_ctc": 0.1,
+    "aux_region_required_views": 2,
+    "strong_conflicting_ctc_veto": 0.6,
+    "conditional_lexicon_probability_is_not_acceptance_confidence": true
+  },
+  "night_validation": {
+    "real_source_photos": 4,
+    "real_plate_crops": 6,
+    "fully_labelled_crops": 3,
+    "region_before": 2,
+    "region_after": 4,
+    "full_before": 2,
+    "full_after": 3,
+    "negative_crops": 10,
+    "false_complete_plates_on_negatives": 0,
+    "host_production_java_fixtures": 17,
+    "physical_pixel_test_this_version": false
+  },
+  "night_candidate_training": {
+    "adopted": false,
+    "reason": "No end-to-end kana gain on the recorded cohorts; raw validation correctness fell despite a small high-confidence coverage gain",
+    "steps": 2000,
+    "augmented_feature_views": 32768,
+    "real_night_training_images": 0
+  },
+  "frame_color_policy": {
+    "version": "0.8.1",
+    "source": "Image.getDataSpace on API 33+",
+    "range": "Honor full or limited range per frame; unknown metadata retains legacy limited range",
+    "matrix": "BT.601 or BT.709 as reported",
+    "observed_pixel_analysis_dataspace": "0x08c20000 (JFIF full range)",
+    "reference": "https://developer.android.com/reference/android/hardware/DataSpace#DATASPACE_JFIF"
+  },
+  "runtime_tuning": {
+    "version": "0.8.3",
+    "pixel_model": "Pixel 9a",
+    "cpu_intra_op_threads": 3,
+    "model_weights_changed": false,
+    "probe_cpu2_median_ms": 55.984294,
+    "probe_cpu3_median_ms": 39.403035,
+    "xnnpack_adopted": false,
+    "reason": "XNNPACK candidate crashes on first width-95 input; CPU3 is faster and numerically close to CPU2"
+  }
+}

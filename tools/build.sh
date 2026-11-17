@@ -48,12 +48,26 @@ fi
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 mkdir -p "$ROOT/artifacts/ncc/plate/models" "$ROOT/artifacts/ncc/plate/licenses"
-cp "$ROOT/models/plate/detector.tflite" "$ROOT/models/plate/ocr.tflite" "$ROOT/models/plate/plate-model.json" "$ROOT/models/plate/README.md" "$ROOT/models/plate/LICENSING.md" "$ROOT/artifacts/ncc/plate/models/"
+cp "$ROOT/models/plate/detector.tflite" \
+    "$ROOT/models/plate/ocr.tflite" \
+    "$ROOT/models/plate/ocr-kana.tflite" \
+    "$ROOT/models/plate/ocr-classification.tflite" \
+    "$ROOT/models/plate/ppocrv6_rec.onnx" \
+    "$ROOT/models/plate/plate-model.json" \
+    "$ROOT/models/plate/ppocr-dictionary.json" \
+    "$ROOT/models/plate/model-manifest.json" \
+    "$ROOT/models/plate/README.md" \
+    "$ROOT/models/plate/LICENSING.md" \
+    "$ROOT/models/plate/ONNX_RUNTIME_LICENSE.txt" \
+    "$ROOT/models/plate/PPOCR_MODEL_CARD.md" \
+    "$ROOT/artifacts/ncc/plate/models/"
 cp -R "$ROOT/models/plate/notices" "$ROOT/artifacts/ncc/plate/models/"
 if test -f "$ROOT/artifacts/plate/plate-engine-aarch64"; then
     cp "$ROOT/artifacts/plate/plate-engine-aarch64" "$ROOT/artifacts/ncc/plate/plate-engine"
+    cp "$ROOT/artifacts/plate/libonnxruntime.so.1.30.0" "$ROOT/artifacts/ncc/plate/libonnxruntime.so.1.30.0"
 else
     cp "$ROOT/prebuilt/plate-engine/plate-engine-aarch64" "$ROOT/artifacts/ncc/plate/plate-engine"
+    cp "$ROOT/prebuilt/plate-engine/libonnxruntime.so.1.30.0" "$ROOT/artifacts/ncc/plate/libonnxruntime.so.1.30.0"
 fi
 cp "$ROOT/prebuilt/plate-engine/licenses/"* "$ROOT/artifacts/ncc/plate/licenses/"
 python3 "$ROOT/tools/sbom.py"

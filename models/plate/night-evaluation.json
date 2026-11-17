@@ -1,0 +1,6312 @@
+{
+  "adopted": "Full-line context and region corroboration only; no night-trained or Japanese-v3 candidate model weights",
+  "limitations": [
+    "simulated low light is not real night footage",
+    "small previously-used development cohorts, not independent final accuracy"
+  ],
+  "public_dev": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 45,
+          "accepted": 34,
+          "correct": 34
+        },
+        "classification": {
+          "n": 42,
+          "accepted": 40,
+          "correct": 40
+        },
+        "kana": {
+          "n": 44,
+          "accepted": 41,
+          "correct": 41
+        },
+        "number": {
+          "n": 47,
+          "accepted": 47,
+          "correct": 47
+        },
+        "full": {
+          "n": 39,
+          "accepted": 28,
+          "correct": 28
+        }
+      },
+      "new": {
+        "region": {
+          "n": 45,
+          "accepted": 36,
+          "correct": 36
+        },
+        "classification": {
+          "n": 42,
+          "accepted": 40,
+          "correct": 40
+        },
+        "kana": {
+          "n": 44,
+          "accepted": 41,
+          "correct": 41
+        },
+        "number": {
+          "n": 47,
+          "accepted": 47,
+          "correct": 47
+        },
+        "full": {
+          "n": 39,
+          "accepted": 30,
+          "correct": 30
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "自家用/熊本/c974b69ee99aa91a121c9d378267e8b0.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "530",
+          "kana": "り",
+          "number": "3121"
+        },
+        "old": {
+          "region": "熊本",
+          "classification": "530",
+          "kana": "り",
+          "serial": "3121",
+          "confidence": 0.9381571412086487
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "530",
+          "kana": "り",
+          "serial": "3121",
+          "confidence": 0.9381571412086487
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.762732744216919
+            ],
+            [
+              "熊本",
+              0.7251476049423218
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/fa8fa24eecf5b60270e948ce61b3be05.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "せ",
+          "number": "6492"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "せ",
+          "serial": "6492",
+          "confidence": 0.9000420570373535
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "せ",
+          "serial": "6492",
+          "confidence": 0.9000420570373535
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8853709101676941
+            ],
+            [
+              "佐世保",
+              0.9435291290283203
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/iCA779KU4oNKHd3UXbTVkxbgX.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "く",
+          "number": "7517"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "く",
+          "serial": "7517",
+          "confidence": 0.9458017349243164
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "く",
+          "serial": "7517",
+          "confidence": 0.9458017349243164
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8932449221611023
+            ],
+            [
+              "佐世保",
+              0.9376277923583984
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/多摩/fa58b6a7fd2027040f0b90a12942026a.png",
+        "expected": {
+          "region": "多摩",
+          "classification": "372",
+          "kana": "は",
+          "number": ""
+        },
+        "old": {
+          "region": "多摩",
+          "classification": "372",
+          "kana": "は",
+          "serial": "6",
+          "confidence": 0.9643963575363159
+        },
+        "new": {
+          "region": "多摩",
+          "classification": "372",
+          "kana": "は",
+          "serial": "6",
+          "confidence": 0.9643963575363159
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "多摩",
+              0.5925371050834656
+            ],
+            [
+              "多摩",
+              0.40735679864883423
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/Zn0pfNJS2CWKcEoQ9dr6HnAvBsS9fuigrCtGMQHi.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "200",
+          "kana": "さ",
+          "number": "384"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "200",
+          "kana": "さ",
+          "serial": "384",
+          "confidence": 0.9564003944396973
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "200",
+          "kana": "さ",
+          "serial": "384",
+          "confidence": 0.9564003944396973
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9902055859565735
+            ],
+            [
+              "佐世保",
+              0.9788589477539062
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐賀/5163a175b37dac50f6cc233e6833b5af.jpeg",
+        "expected": {
+          "region": "佐賀",
+          "classification": "331",
+          "kana": "や",
+          "number": "1881"
+        },
+        "old": {
+          "region": "佐賀",
+          "classification": "",
+          "kana": "や",
+          "serial": "1881",
+          "confidence": 0.9175438284873962
+        },
+        "new": {
+          "region": "佐賀",
+          "classification": "",
+          "kana": "や",
+          "serial": "1881",
+          "confidence": 0.9175438284873962
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.13376682996749878
+            ],
+            [
+              "長崎",
+              0.15713684260845184
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/48456dab2b9035c8c473f99f13a811fa.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "580",
+          "kana": "わ",
+          "number": "3203"
+        },
+        "old": {
+          "region": "熊本",
+          "classification": "580",
+          "kana": "わ",
+          "serial": "3203",
+          "confidence": 0.9474735856056213
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "580",
+          "kana": "わ",
+          "serial": "3203",
+          "confidence": 0.9474735856056213
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.28969451785087585
+            ],
+            [
+              "横浜",
+              0.25737929344177246
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/b7e2c025699cec6845575e72e8fd1cb8.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "",
+          "kana": "そ",
+          "number": "577"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "そ",
+          "serial": "577",
+          "confidence": 0.942578136920929
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "そ",
+          "serial": "577",
+          "confidence": 0.942578136920929
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.6759244799613953
+            ],
+            [
+              "福山",
+              0.654371976852417
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/5dc6096432ad98ef9a37883e8ebb0d46.png",
+        "expected": {
+          "region": "福岡",
+          "classification": "200",
+          "kana": "か",
+          "number": "4194"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "4194",
+          "confidence": 0.8959632515907288
+        },
+        "new": {
+          "region": "福岡",
+          "classification": "200",
+          "kana": "か",
+          "serial": "4194",
+          "confidence": 0.8959632515907288
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.8205100297927856
+            ],
+            [
+              "福岡",
+              0.8120872378349304
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/a30d1406daf40c461c8c24fcb0b4219a.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "け",
+          "number": "3725"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "け",
+          "serial": "3725",
+          "confidence": 0.9336398839950562
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "け",
+          "serial": "3725",
+          "confidence": 0.9336398839950562
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.959793210029602
+            ],
+            [
+              "佐世保",
+              0.9747539758682251
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/27808b5001fb85045ed1989c0049249b.png",
+        "expected": {
+          "region": "久留米",
+          "classification": "230",
+          "kana": "い",
+          "number": "168"
+        },
+        "old": {
+          "region": "久留米",
+          "classification": "230",
+          "kana": "い",
+          "serial": "168",
+          "confidence": 0.9300144910812378
+        },
+        "new": {
+          "region": "久留米",
+          "classification": "230",
+          "kana": "い",
+          "serial": "168",
+          "confidence": 0.9300144910812378
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "久留米",
+              0.9015498161315918
+            ],
+            [
+              "久留米",
+              0.9080620408058167
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/06adbd35dac776672d39c16d8bdf65c3.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "た",
+          "number": "906"
+        },
+        "old": {
+          "region": "",
+          "classification": "400",
+          "kana": "た",
+          "serial": "906",
+          "confidence": 0.9395200610160828
+        },
+        "new": {
+          "region": "",
+          "classification": "400",
+          "kana": "た",
+          "serial": "906",
+          "confidence": 0.9395200610160828
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.8102794289588928
+            ],
+            [
+              "福山",
+              0.8183283805847168
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/春日部/b8e8e036f973c24bce04a241186e065a.png",
+        "expected": {
+          "region": "春日部",
+          "classification": "800",
+          "kana": "す",
+          "number": "5817"
+        },
+        "old": {
+          "region": "春日部",
+          "classification": "800",
+          "kana": "す",
+          "serial": "5817",
+          "confidence": 0.9084105491638184
+        },
+        "new": {
+          "region": "春日部",
+          "classification": "800",
+          "kana": "す",
+          "serial": "5817",
+          "confidence": 0.9084105491638184
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "春日部",
+              0.24261242151260376
+            ],
+            [
+              "春日部",
+              0.20505844056606293
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/c38d4sbr6a4562iztzmt.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "く",
+          "number": "4536"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "4536",
+          "confidence": 0.8455761075019836
+        },
+        "new": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "4536",
+          "confidence": 0.8455761075019836
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9823709726333618
+            ],
+            [
+              "福山",
+              0.9669073820114136
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/372ff338167321de44f1f01510306638.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "た",
+          "number": "5445"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "た",
+          "serial": "5445",
+          "confidence": 0.9638302326202393
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "た",
+          "serial": "5445",
+          "confidence": 0.9638302326202393
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.932780385017395
+            ],
+            [
+              "佐世保",
+              0.9339032769203186
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/f96b3bf99d71deca82b782a297e433ed.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "545",
+          "kana": "る",
+          "number": "1122"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "545",
+          "kana": "る",
+          "serial": "1122",
+          "confidence": 0.914941668510437
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "545",
+          "kana": "る",
+          "serial": "1122",
+          "confidence": 0.914941668510437
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.5629012584686279
+            ],
+            [
+              "長崎",
+              0.5130876898765564
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/26ceb868a1fef8cfffae95f046b221dc.png",
+        "expected": {
+          "region": "品川",
+          "classification": "",
+          "kana": "け",
+          "number": "9159"
+        },
+        "old": {
+          "region": "品川",
+          "classification": "580",
+          "kana": "け",
+          "serial": "9159",
+          "confidence": 0.9668711423873901
+        },
+        "new": {
+          "region": "品川",
+          "classification": "580",
+          "kana": "け",
+          "serial": "9159",
+          "confidence": 0.9668711423873901
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "品川",
+              0.41765159368515015
+            ],
+            [
+              "品川",
+              0.36940664052963257
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/44ab36e07ccd62d023934aa0ecfe8f4d.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "そ",
+          "number": "3503"
+        },
+        "old": {
+          "region": "",
+          "classification": "580",
+          "kana": "",
+          "serial": "3503",
+          "confidence": 0.9405011534690857
+        },
+        "new": {
+          "region": "",
+          "classification": "580",
+          "kana": "",
+          "serial": "3503",
+          "confidence": 0.9405011534690857
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.6483877301216125
+            ],
+            [
+              "佐世保",
+              0.7004419565200806
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/71b5ddfff013e11910f976b5d06c1ff7.png",
+        "expected": {
+          "region": "山口",
+          "classification": "",
+          "kana": "あ",
+          "number": "154"
+        },
+        "old": {
+          "region": "山口",
+          "classification": "200",
+          "kana": "あ",
+          "serial": "154",
+          "confidence": 0.8937154412269592
+        },
+        "new": {
+          "region": "山口",
+          "classification": "200",
+          "kana": "あ",
+          "serial": "154",
+          "confidence": 0.8937154412269592
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "山梨",
+              0.2927079498767853
+            ],
+            [
+              "山梨",
+              0.29273471236228943
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/d880cf08552ac8d032b2aeed8f39fe51.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "9999"
+        },
+        "old": {
+          "region": "",
+          "classification": "430",
+          "kana": "ぬ",
+          "serial": "9999",
+          "confidence": 0.9932358860969543
+        },
+        "new": {
+          "region": "",
+          "classification": "430",
+          "kana": "ぬ",
+          "serial": "9999",
+          "confidence": 0.9932358860969543
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9672986268997192
+            ],
+            [
+              "福山",
+              0.9701598286628723
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/熊本/70a84bc5d963ecb4a21c9de4ab35d3ab.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "339",
+          "kana": "せ",
+          "number": "5588"
+        },
+        "old": {
+          "region": "熊本",
+          "classification": "339",
+          "kana": "せ",
+          "serial": "5588",
+          "confidence": 0.9575928449630737
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "339",
+          "kana": "せ",
+          "serial": "5588",
+          "confidence": 0.9575928449630737
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.2626882791519165
+            ],
+            [
+              "水戸",
+              0.13993071019649506
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/なにわ/531a860270c5b83ffb4f92171a310cf7.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "3388"
+        },
+        "old": {
+          "region": "",
+          "classification": "540",
+          "kana": "る",
+          "serial": "3388",
+          "confidence": 0.8480520844459534
+        },
+        "new": {
+          "region": "",
+          "classification": "540",
+          "kana": "る",
+          "serial": "3388",
+          "confidence": 0.8480520844459534
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.11544960737228394
+            ],
+            [
+              "長崎",
+              0.10964954644441605
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/f66bd828d26b93164264a8721868e7da.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "そ",
+          "number": "8182"
+        },
+        "old": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "そ",
+          "serial": "8182",
+          "confidence": 0.9402622580528259
+        },
+        "new": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "そ",
+          "serial": "8182",
+          "confidence": 0.9402622580528259
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.5906059741973877
+            ],
+            [
+              "福山",
+              0.6103703379631042
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/49ad438e55f35cf58106a751103fb9ce.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "て",
+          "number": "6773"
+        },
+        "old": {
+          "region": "",
+          "classification": "300",
+          "kana": "て",
+          "serial": "6773",
+          "confidence": 0.8950182795524597
+        },
+        "new": {
+          "region": "",
+          "classification": "300",
+          "kana": "て",
+          "serial": "6773",
+          "confidence": 0.8950182795524597
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9262759685516357
+            ],
+            [
+              "佐世保",
+              0.91036456823349
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/5df5498d06435bcf83d0ed99f2b2eb48.png",
+        "expected": {
+          "region": "福山",
+          "classification": "41",
+          "kana": "き",
+          "number": "8363"
+        },
+        "old": {
+          "region": "福山",
+          "classification": "41",
+          "kana": "き",
+          "serial": "8363",
+          "confidence": 0.9549071192741394
+        },
+        "new": {
+          "region": "福山",
+          "classification": "41",
+          "kana": "き",
+          "serial": "8363",
+          "confidence": 0.9549071192741394
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.4399431049823761
+            ],
+            [
+              "福山",
+              0.3111274838447571
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/557cc2a8db682c9bbb18b8bbd8f2d581.png",
+        "expected": {
+          "region": "",
+          "classification": "583",
+          "kana": "",
+          "number": "915"
+        },
+        "old": {
+          "region": "",
+          "classification": "583",
+          "kana": "ぬ",
+          "serial": "915",
+          "confidence": 0.9041277170181274
+        },
+        "new": {
+          "region": "",
+          "classification": "583",
+          "kana": "ぬ",
+          "serial": "915",
+          "confidence": 0.9041277170181274
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9428160786628723
+            ],
+            [
+              "長崎",
+              0.9183174967765808
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/f5fff92722932b821f705b9c39e65b1f.jpeg",
+        "expected": {
+          "region": "佐賀",
+          "classification": "50",
+          "kana": "ゆ",
+          "number": "3971"
+        },
+        "old": {
+          "region": "佐賀",
+          "classification": "50",
+          "kana": "ゆ",
+          "serial": "3971",
+          "confidence": 0.9390051364898682
+        },
+        "new": {
+          "region": "佐賀",
+          "classification": "50",
+          "kana": "ゆ",
+          "serial": "3971",
+          "confidence": 0.9390051364898682
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.33643871545791626
+            ],
+            [
+              "佐世保",
+              0.33185797929763794
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/33466878011927ad76533960e8472ddf.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "は",
+          "number": "918"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "は",
+          "serial": "918",
+          "confidence": 0.9385760426521301
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "は",
+          "serial": "918",
+          "confidence": 0.9385760426521301
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9724708199501038
+            ],
+            [
+              "佐世保",
+              0.9297449588775635
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/5704ae576f16ec7a99ea00c4228d95d4.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "あ",
+          "number": "7781"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "あ",
+          "serial": "7781",
+          "confidence": 0.8831036686897278
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "あ",
+          "serial": "7781",
+          "confidence": 0.8831036686897278
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.7117332220077515
+            ],
+            [
+              "佐世保",
+              0.6909322142601013
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/35e50472b0a7b594c72f31abd00eed1e.jpg",
+        "expected": {
+          "region": "神戸",
+          "classification": "483",
+          "kana": "あ",
+          "number": "193"
+        },
+        "old": {
+          "region": "神戸",
+          "classification": "483",
+          "kana": "あ",
+          "serial": "193",
+          "confidence": 0.9393645524978638
+        },
+        "new": {
+          "region": "神戸",
+          "classification": "483",
+          "kana": "あ",
+          "serial": "193",
+          "confidence": 0.9393645524978638
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "神戸",
+              0.5945796370506287
+            ],
+            [
+              "神戸",
+              0.5427098274230957
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/宇都宮/454d0de4f7c0a7d35ddfc6017955329e.png",
+        "expected": {
+          "region": "宇都宮",
+          "classification": "338",
+          "kana": "は",
+          "number": "1203"
+        },
+        "old": {
+          "region": "宇都宮",
+          "classification": "338",
+          "kana": "は",
+          "serial": "1203",
+          "confidence": 0.9362026453018188
+        },
+        "new": {
+          "region": "宇都宮",
+          "classification": "338",
+          "kana": "は",
+          "serial": "1203",
+          "confidence": 0.9362026453018188
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "宇都宮",
+              0.5144831538200378
+            ],
+            [
+              "宇都宮",
+              0.4773988425731659
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/b5fbfbb9576808e955e9d4a46293d132.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "230",
+          "kana": "す",
+          "number": "88"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "230",
+          "kana": "す",
+          "serial": "88",
+          "confidence": 0.9356721639633179
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "230",
+          "kana": "す",
+          "serial": "88",
+          "confidence": 0.9356721639633179
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "なにわ",
+              0.43117380142211914
+            ],
+            [
+              "なにわ",
+              0.447244256734848
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/0d59689a4739ac5ff2995c693fbf0fca.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "て",
+          "number": "6696"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "て",
+          "serial": "6696",
+          "confidence": 0.9442390203475952
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "て",
+          "serial": "6696",
+          "confidence": 0.9442390203475952
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.7313512563705444
+            ],
+            [
+              "佐世保",
+              0.7774590253829956
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/263fd1bf.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "よ",
+          "number": "3526"
+        },
+        "old": {
+          "region": "",
+          "classification": "580",
+          "kana": "よ",
+          "serial": "3526",
+          "confidence": 0.9232110977172852
+        },
+        "new": {
+          "region": "",
+          "classification": "580",
+          "kana": "よ",
+          "serial": "3526",
+          "confidence": 0.9232110977172852
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.6057526469230652
+            ],
+            [
+              "佐賀",
+              0.5717779397964478
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/ee165b742fd6566526a8aa0a08554854.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "と",
+          "number": "912"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "と",
+          "serial": "912",
+          "confidence": 0.915924608707428
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "300",
+          "kana": "と",
+          "serial": "912",
+          "confidence": 0.915924608707428
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8190367817878723
+            ],
+            [
+              "佐世保",
+              0.8341277241706848
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/25b455d4844746df77c6f1f771a31899.png",
+        "expected": {
+          "region": "足立",
+          "classification": "233",
+          "kana": "か",
+          "number": "168"
+        },
+        "old": {
+          "region": "",
+          "classification": "233",
+          "kana": "か",
+          "serial": "168",
+          "confidence": 0.9946869611740112
+        },
+        "new": {
+          "region": "足立",
+          "classification": "233",
+          "kana": "か",
+          "serial": "168",
+          "confidence": 0.9946869611740112
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "足立",
+              0.4058181941509247
+            ],
+            [
+              "足立",
+              0.38400059938430786
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/039a7226fb2c73210088b53573f1e6da.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "332",
+          "kana": "そ",
+          "number": "325"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "332",
+          "kana": "そ",
+          "serial": "325",
+          "confidence": 0.9302811026573181
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "332",
+          "kana": "そ",
+          "serial": "325",
+          "confidence": 0.9302811026573181
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.27133631706237793
+            ],
+            [
+              "佐世保",
+              0.28913646936416626
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/鹿児島/d7f3fa8f567c024cd2b511d0336a567c.png",
+        "expected": {
+          "region": "鹿児島",
+          "classification": "501",
+          "kana": "わ",
+          "number": "8990"
+        },
+        "old": {
+          "region": "鹿児島",
+          "classification": "501",
+          "kana": "わ",
+          "serial": "8990",
+          "confidence": 0.9537621736526489
+        },
+        "new": {
+          "region": "鹿児島",
+          "classification": "501",
+          "kana": "わ",
+          "serial": "8990",
+          "confidence": 0.9537621736526489
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "鹿児島",
+              0.9695394039154053
+            ],
+            [
+              "鹿児島",
+              0.9569699168205261
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/熊本/c4b682bc24063d4e4804b79616d02017.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "330",
+          "kana": "は",
+          "number": "1326"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "は",
+          "serial": "1326",
+          "confidence": 0.9306761026382446
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "は",
+          "serial": "1326",
+          "confidence": 0.9306761026382446
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.24872061610221863
+            ],
+            [
+              "熊本",
+              0.234216570854187
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/a789f8a862aafe2e33b83c90bc2915ed.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "",
+          "number": "8437"
+        },
+        "old": {
+          "region": "",
+          "classification": "400",
+          "kana": "そ",
+          "serial": "8437",
+          "confidence": 0.854653000831604
+        },
+        "new": {
+          "region": "",
+          "classification": "400",
+          "kana": "そ",
+          "serial": "8437",
+          "confidence": 0.854653000831604
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9842978119850159
+            ],
+            [
+              "福山",
+              0.9843147397041321
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福山/fd09fb709ddc37a2edd5309d644c81ae.png",
+        "expected": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "せ",
+          "number": "6328"
+        },
+        "old": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "",
+          "serial": "6328",
+          "confidence": 0.8387452363967896
+        },
+        "new": {
+          "region": "福山",
+          "classification": "400",
+          "kana": "",
+          "serial": "6328",
+          "confidence": 0.8387452363967896
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.7638121247291565
+            ],
+            [
+              "福山",
+              0.7577319145202637
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/熊本/21e552d165f9cffc881c7176b44ed463.jpg",
+        "expected": {
+          "region": "熊本",
+          "classification": "",
+          "kana": "は",
+          "number": "358"
+        },
+        "old": {
+          "region": "熊本",
+          "classification": "432",
+          "kana": "は",
+          "serial": "358",
+          "confidence": 0.9302265048027039
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "432",
+          "kana": "は",
+          "serial": "358",
+          "confidence": 0.9302265048027039
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.24451598525047302
+            ],
+            [
+              "相模",
+              0.3794329762458801
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/2856513040b9a4c487628726ce45dedf.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "と",
+          "number": "7899"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "と",
+          "serial": "7899",
+          "confidence": 0.9437835812568665
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "と",
+          "serial": "7899",
+          "confidence": 0.9437835812568665
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.813387930393219
+            ],
+            [
+              "佐世保",
+              0.7884405255317688
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/名古屋/f9da828e8540b402584a1f493d4754f8.png",
+        "expected": {
+          "region": "名古屋",
+          "classification": "332",
+          "kana": "て",
+          "number": "4488"
+        },
+        "old": {
+          "region": "名古屋",
+          "classification": "332",
+          "kana": "て",
+          "serial": "4488",
+          "confidence": 0.9625023007392883
+        },
+        "new": {
+          "region": "名古屋",
+          "classification": "332",
+          "kana": "て",
+          "serial": "4488",
+          "confidence": 0.9625023007392883
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "名古屋",
+              0.34477904438972473
+            ],
+            [
+              "名古屋",
+              0.3397551476955414
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/沖縄/48e2e36b7ea219ae5b929d07b9512230.jpg",
+        "expected": {
+          "region": "沖縄",
+          "classification": "530",
+          "kana": "さ",
+          "number": "8690"
+        },
+        "old": {
+          "region": "沖縄",
+          "classification": "530",
+          "kana": "さ",
+          "serial": "8690",
+          "confidence": 0.945086658000946
+        },
+        "new": {
+          "region": "沖縄",
+          "classification": "530",
+          "kana": "さ",
+          "serial": "8690",
+          "confidence": 0.945086658000946
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.27954474091529846
+            ],
+            [
+              "長崎",
+              0.20677481591701508
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/c5ef2f0a38608b7e7f47f540c4c05175.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "せ",
+          "number": "158"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "せ",
+          "serial": "158",
+          "confidence": 0.9574614763259888
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "せ",
+          "serial": "158",
+          "confidence": 0.9574614763259888
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9873176217079163
+            ],
+            [
+              "佐世保",
+              0.9813217520713806
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/練馬/666d556f538c5fbc8aca13ef9c2a8f66.png",
+        "expected": {
+          "region": "練馬",
+          "classification": "800",
+          "kana": "す",
+          "number": "5369"
+        },
+        "old": {
+          "region": "",
+          "classification": "800",
+          "kana": "す",
+          "serial": "5369",
+          "confidence": 0.9268057942390442
+        },
+        "new": {
+          "region": "",
+          "classification": "800",
+          "kana": "す",
+          "serial": "5369",
+          "confidence": 0.9268057942390442
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "練馬",
+              0.6020906567573547
+            ],
+            [
+              "練馬",
+              0.5828900337219238
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/bdad5d09e75e941d65e1008d8ca33465.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "ぬ",
+          "number": "763"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "ぬ",
+          "serial": "763",
+          "confidence": 0.9438895583152771
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "330",
+          "kana": "ぬ",
+          "serial": "763",
+          "confidence": 0.9438895583152771
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9962819218635559
+            ],
+            [
+              "佐世保",
+              0.9979002475738525
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "photo": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 19,
+          "accepted": 7,
+          "correct": 7
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 16,
+          "correct": 16
+        },
+        "kana": {
+          "n": 19,
+          "accepted": 9,
+          "correct": 9
+        },
+        "number": {
+          "n": 19,
+          "accepted": 17,
+          "correct": 17
+        },
+        "full": {
+          "n": 19,
+          "accepted": 4,
+          "correct": 4
+        }
+      },
+      "new": {
+        "region": {
+          "n": 19,
+          "accepted": 11,
+          "correct": 11
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 16,
+          "correct": 16
+        },
+        "kana": {
+          "n": 19,
+          "accepted": 9,
+          "correct": 9
+        },
+        "number": {
+          "n": 19,
+          "accepted": 17,
+          "correct": 17
+        },
+        "full": {
+          "n": 19,
+          "accepted": 7,
+          "correct": 7
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "crop-013.jpg",
+        "expected": {
+          "region": "横浜",
+          "classification": "342",
+          "kana": "そ",
+          "number": "156"
+        },
+        "old": {
+          "region": "横浜",
+          "classification": "342",
+          "kana": "",
+          "serial": "56",
+          "confidence": 0.43197140097618103
+        },
+        "new": {
+          "region": "横浜",
+          "classification": "342",
+          "kana": "",
+          "serial": "56",
+          "confidence": 0.43197140097618103
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.1602160632610321
+            ],
+            [
+              "熊本",
+              0.1279296725988388
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-014.jpg",
+        "expected": {
+          "region": "横浜",
+          "classification": "301",
+          "kana": "わ",
+          "number": "3448"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "3448",
+          "confidence": 0.9489124417304993
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "3448",
+          "confidence": 0.9489124417304993
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.18712982535362244
+            ],
+            [
+              "長崎",
+              0.1911996752023697
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-017.jpg",
+        "expected": {
+          "region": "なにわ",
+          "classification": "301",
+          "kana": "わ",
+          "number": "2357"
+        },
+        "old": {
+          "region": "なにわ",
+          "classification": "301",
+          "kana": "わ",
+          "serial": "2357",
+          "confidence": 0.8566462397575378
+        },
+        "new": {
+          "region": "なにわ",
+          "classification": "301",
+          "kana": "わ",
+          "serial": "2357",
+          "confidence": 0.8566462397575378
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "なにわ",
+              0.5210593342781067
+            ],
+            [
+              "なにわ",
+              0.6082348823547363
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-019.jpg",
+        "expected": {
+          "region": "横浜",
+          "classification": "301",
+          "kana": "わ",
+          "number": "5111"
+        },
+        "old": {
+          "region": "横浜",
+          "classification": "301",
+          "kana": "",
+          "serial": "5111",
+          "confidence": 0.6960964798927307
+        },
+        "new": {
+          "region": "横浜",
+          "classification": "301",
+          "kana": "",
+          "serial": "5111",
+          "confidence": 0.6960964798927307
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.3554656505584717
+            ],
+            [
+              "熊本",
+              0.39188459515571594
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-023.jpg",
+        "expected": {
+          "region": "湘南",
+          "classification": "200",
+          "kana": "か",
+          "number": "632"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "632",
+          "confidence": 0.9237883687019348
+        },
+        "new": {
+          "region": "湘南",
+          "classification": "200",
+          "kana": "",
+          "serial": "632",
+          "confidence": 0.9237883687019348
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.2029532790184021
+            ],
+            [
+              "静岡",
+              0.20955514907836914
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-024.jpg",
+        "expected": {
+          "region": "つくば",
+          "classification": "200",
+          "kana": "か",
+          "number": "813"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "813",
+          "confidence": 0.7708896994590759
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "813",
+          "confidence": 0.7708896994590759
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "山梨",
+              0.24382607638835907
+            ],
+            [
+              "福岡",
+              0.3303436040878296
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-025.jpg",
+        "expected": {
+          "region": "つくば",
+          "classification": "200",
+          "kana": "か",
+          "number": "1189"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "1189",
+          "confidence": 0.748354971408844
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "1189",
+          "confidence": 0.748354971408844
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.5233893394470215
+            ],
+            [
+              "福岡",
+              0.5282544493675232
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-026.jpg",
+        "expected": {
+          "region": "横浜",
+          "classification": "200",
+          "kana": "か",
+          "number": "3646"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "3646",
+          "confidence": 0.865094780921936
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "3646",
+          "confidence": 0.865094780921936
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.7004390358924866
+            ],
+            [
+              "横浜",
+              0.7426860332489014
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-027.jpg",
+        "expected": {
+          "region": "横浜",
+          "classification": "301",
+          "kana": "わ",
+          "number": "3869"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "8879",
+          "confidence": 0.2816370129585266
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "8879",
+          "confidence": 0.2816370129585266
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.07824401557445526
+            ],
+            [
+              "福山",
+              0.0865313932299614
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-028.jpg",
+        "expected": {
+          "region": "和泉",
+          "classification": "230",
+          "kana": "あ",
+          "number": "1901"
+        },
+        "old": {
+          "region": "",
+          "classification": "230",
+          "kana": "あ",
+          "serial": "1901",
+          "confidence": 0.7699667811393738
+        },
+        "new": {
+          "region": "和泉",
+          "classification": "230",
+          "kana": "あ",
+          "serial": "1901",
+          "confidence": 0.7699667811393738
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.2415137141942978
+            ],
+            [
+              "福岡",
+              0.2522874176502228
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-030.jpg",
+        "expected": {
+          "region": "和泉",
+          "classification": "230",
+          "kana": "え",
+          "number": "2001"
+        },
+        "old": {
+          "region": "",
+          "classification": "230",
+          "kana": "え",
+          "serial": "2001",
+          "confidence": 0.7120753526687622
+        },
+        "new": {
+          "region": "和泉",
+          "classification": "230",
+          "kana": "え",
+          "serial": "2001",
+          "confidence": 0.7120753526687622
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.38268840312957764
+            ],
+            [
+              "熊本",
+              0.21558302640914917
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-031.jpg",
+        "expected": {
+          "region": "三河",
+          "classification": "55",
+          "kana": "う",
+          "number": "3597"
+        },
+        "old": {
+          "region": "三河",
+          "classification": "55",
+          "kana": "う",
+          "serial": "3597",
+          "confidence": 0.8845359086990356
+        },
+        "new": {
+          "region": "三河",
+          "classification": "55",
+          "kana": "う",
+          "serial": "3597",
+          "confidence": 0.8845359086990356
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.38479599356651306
+            ],
+            [
+              "苫小牧",
+              0.4993969798088074
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-033.jpg",
+        "expected": {
+          "region": "熊本",
+          "classification": "532",
+          "kana": "や",
+          "number": "914"
+        },
+        "old": {
+          "region": "熊本",
+          "classification": "532",
+          "kana": "や",
+          "serial": "914",
+          "confidence": 0.9557740688323975
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "532",
+          "kana": "や",
+          "serial": "914",
+          "confidence": 0.9557740688323975
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "習志野",
+              0.19194525480270386
+            ],
+            [
+              "習志野",
+              0.16457659006118774
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-034.jpg",
+        "expected": {
+          "region": "堺",
+          "classification": "200",
+          "kana": "か",
+          "number": "828"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "828",
+          "confidence": 0.823907196521759
+        },
+        "new": {
+          "region": "堺",
+          "classification": "200",
+          "kana": "か",
+          "serial": "828",
+          "confidence": 0.823907196521759
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "堺",
+              0.25843340158462524
+            ],
+            [
+              "堺",
+              0.32683560252189636
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-037.jpg",
+        "expected": {
+          "region": "八戸",
+          "classification": "500",
+          "kana": "ち",
+          "number": "2856"
+        },
+        "old": {
+          "region": "八戸",
+          "classification": "500",
+          "kana": "ち",
+          "serial": "2856",
+          "confidence": 0.9399667382240295
+        },
+        "new": {
+          "region": "八戸",
+          "classification": "500",
+          "kana": "ち",
+          "serial": "2856",
+          "confidence": 0.9399667382240295
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "大分",
+              0.20221923291683197
+            ],
+            [
+              "大分",
+              0.2327515035867691
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-048.jpg",
+        "expected": {
+          "region": "練馬",
+          "classification": "200",
+          "kana": "か",
+          "number": "2466"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "2466",
+          "confidence": 0.9622107148170471
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "2466",
+          "confidence": 0.9622107148170471
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.24872621893882751
+            ],
+            [
+              "福岡",
+              0.19908100366592407
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-055.jpg",
+        "expected": {
+          "region": "岡山",
+          "classification": "200",
+          "kana": "さ",
+          "number": "2178"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "2178",
+          "confidence": 0.8403358459472656
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "2178",
+          "confidence": 0.8403358459472656
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.24015314877033234
+            ],
+            [
+              "福山",
+              0.21494868397712708
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-058.jpg",
+        "expected": {
+          "region": "神戸",
+          "classification": "831",
+          "kana": "ね",
+          "number": "119"
+        },
+        "old": {
+          "region": "神戸",
+          "classification": "",
+          "kana": "ね",
+          "serial": "119",
+          "confidence": 0.9444961547851562
+        },
+        "new": {
+          "region": "神戸",
+          "classification": "",
+          "kana": "ね",
+          "serial": "119",
+          "confidence": 0.9444961547851562
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "神戸",
+              0.4535291790962219
+            ],
+            [
+              "神戸",
+              0.40443405508995056
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-059.jpg",
+        "expected": {
+          "region": "宇都宮",
+          "classification": "200",
+          "kana": "か",
+          "number": "1783"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "1783",
+          "confidence": 0.825169563293457
+        },
+        "new": {
+          "region": "",
+          "classification": "200",
+          "kana": "",
+          "serial": "1783",
+          "confidence": 0.825169563293457
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "宇都宮",
+              0.47762030363082886
+            ],
+            [
+              "宇都宮",
+              0.46069785952568054
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "driving": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "classification": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "kana": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "number": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "full": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        }
+      },
+      "new": {
+        "region": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "classification": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "kana": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "number": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "full": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "WDuJABJWcXU-crops/00126.jpg",
+        "expected": {
+          "region": "品川",
+          "classification": "330",
+          "kana": "あ",
+          "number": "336"
+        },
+        "old": {
+          "region": "品川",
+          "classification": "330",
+          "kana": "あ",
+          "serial": "336",
+          "confidence": 0.9997571110725403
+        },
+        "new": {
+          "region": "品川",
+          "classification": "330",
+          "kana": "あ",
+          "serial": "336",
+          "confidence": 0.9997571110725403
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "品川",
+              0.7463113069534302
+            ],
+            [
+              "品川",
+              0.6877641081809998
+            ]
+          ]
+        }
+      },
+      {
+        "source": "WDuJABJWcXU-crops/00026.jpg",
+        "expected": {
+          "region": "品川",
+          "classification": "393",
+          "kana": "に",
+          "number": "9999"
+        },
+        "old": {
+          "region": "品川",
+          "classification": "393",
+          "kana": "に",
+          "serial": "9999",
+          "confidence": 0.9716737270355225
+        },
+        "new": {
+          "region": "品川",
+          "classification": "393",
+          "kana": "に",
+          "serial": "9999",
+          "confidence": 0.9716737270355225
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "品川",
+              0.8991395831108093
+            ],
+            [
+              "品川",
+              0.4512110948562622
+            ]
+          ]
+        }
+      },
+      {
+        "source": "WDuJABJWcXU-crops/00105.jpg",
+        "expected": {
+          "region": "品川",
+          "classification": "344",
+          "kana": "せ",
+          "number": "616"
+        },
+        "old": {
+          "region": "品川",
+          "classification": "344",
+          "kana": "せ",
+          "serial": "616",
+          "confidence": 0.890572726726532
+        },
+        "new": {
+          "region": "品川",
+          "classification": "344",
+          "kana": "せ",
+          "serial": "616",
+          "confidence": 0.890572726726532
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "品川",
+              0.7133966684341431
+            ],
+            [
+              "品川",
+              0.7503693103790283
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "real_night": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 6,
+          "accepted": 2,
+          "correct": 2
+        },
+        "classification": {
+          "n": 6,
+          "accepted": 6,
+          "correct": 6
+        },
+        "kana": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "number": {
+          "n": 6,
+          "accepted": 6,
+          "correct": 6
+        },
+        "full": {
+          "n": 3,
+          "accepted": 2,
+          "correct": 2
+        }
+      },
+      "new": {
+        "region": {
+          "n": 6,
+          "accepted": 4,
+          "correct": 4
+        },
+        "classification": {
+          "n": 6,
+          "accepted": 6,
+          "correct": 6
+        },
+        "kana": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        },
+        "number": {
+          "n": 6,
+          "accepted": 6,
+          "correct": 6
+        },
+        "full": {
+          "n": 3,
+          "accepted": 3,
+          "correct": 3
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "crop-002.png",
+        "expected": {
+          "region": "京都",
+          "classification": "530",
+          "kana": "あ",
+          "number": "2225"
+        },
+        "old": {
+          "region": "京都",
+          "classification": "530",
+          "kana": "あ",
+          "serial": "2225",
+          "confidence": 0.9432685375213623
+        },
+        "new": {
+          "region": "京都",
+          "classification": "530",
+          "kana": "あ",
+          "serial": "2225",
+          "confidence": 0.9432685375213623
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "函館",
+              0.18440861999988556
+            ],
+            [
+              "北九州",
+              0.3683784008026123
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-010.png",
+        "expected": {
+          "region": "横浜",
+          "classification": "500",
+          "kana": "",
+          "number": "2917"
+        },
+        "old": {
+          "region": "",
+          "classification": "500",
+          "kana": "",
+          "serial": "2917",
+          "confidence": 0.9581364393234253
+        },
+        "new": {
+          "region": "横浜",
+          "classification": "500",
+          "kana": "",
+          "serial": "2917",
+          "confidence": 0.9581364393234253
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "練馬",
+              0.3492233157157898
+            ],
+            [
+              "練馬",
+              0.37961170077323914
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-011.png",
+        "expected": {
+          "region": "横浜",
+          "classification": "500",
+          "kana": "",
+          "number": "9365"
+        },
+        "old": {
+          "region": "",
+          "classification": "500",
+          "kana": "あ",
+          "serial": "9365",
+          "confidence": 0.8627205491065979
+        },
+        "new": {
+          "region": "",
+          "classification": "500",
+          "kana": "あ",
+          "serial": "9365",
+          "confidence": 0.8627205491065979
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.7832868099212646
+            ],
+            [
+              "横浜",
+              0.8386181592941284
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-013.png",
+        "expected": {
+          "region": "横浜",
+          "classification": "500",
+          "kana": "",
+          "number": "4988"
+        },
+        "old": {
+          "region": "",
+          "classification": "500",
+          "kana": "い",
+          "serial": "4988",
+          "confidence": 0.9133455753326416
+        },
+        "new": {
+          "region": "",
+          "classification": "500",
+          "kana": "い",
+          "serial": "4988",
+          "confidence": 0.9133455753326416
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.939954400062561
+            ],
+            [
+              "横浜",
+              0.8798928260803223
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-016.png",
+        "expected": {
+          "region": "練馬",
+          "classification": "300",
+          "kana": "あ",
+          "number": "7331"
+        },
+        "old": {
+          "region": "練馬",
+          "classification": "300",
+          "kana": "あ",
+          "serial": "7331",
+          "confidence": 0.9369399547576904
+        },
+        "new": {
+          "region": "練馬",
+          "classification": "300",
+          "kana": "あ",
+          "serial": "7331",
+          "confidence": 0.9369399547576904
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "練馬",
+              0.9612122774124146
+            ],
+            [
+              "練馬",
+              0.9166287779808044
+            ]
+          ]
+        }
+      },
+      {
+        "source": "crop-017.png",
+        "expected": {
+          "region": "なにわ",
+          "classification": "800",
+          "kana": "せ",
+          "number": "2392"
+        },
+        "old": {
+          "region": "",
+          "classification": "800",
+          "kana": "せ",
+          "serial": "2392",
+          "confidence": 0.9527773261070251
+        },
+        "new": {
+          "region": "なにわ",
+          "classification": "800",
+          "kana": "せ",
+          "serial": "2392",
+          "confidence": 0.9527773261070251
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.8451328873634338
+            ],
+            [
+              "福山",
+              0.8239735960960388
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "simulated_dim": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 22,
+          "accepted": 18,
+          "correct": 18
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 17,
+          "correct": 17
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 13,
+          "correct": 13
+        }
+      },
+      "new": {
+        "region": {
+          "n": 22,
+          "accepted": 20,
+          "correct": 20
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 17,
+          "correct": 17
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 14,
+          "correct": 14
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "自家用/佐世保/fb97f9238d6fe14abd77af80eee8e639.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "number": "8314"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "serial": "8314",
+          "confidence": 0.9409701824188232
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "serial": "8314",
+          "confidence": 0.9409701824188232
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9076980948448181
+            ],
+            [
+              "佐世保",
+              0.9919215440750122
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e7011210178269d3d2ac21ae66dcc0a8.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "number": "1963"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "serial": "1963",
+          "confidence": 0.8845329284667969
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "serial": "1963",
+          "confidence": 0.8845329284667969
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.365713506937027
+            ],
+            [
+              "佐世保",
+              0.4185725450515747
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/北九州/c72d52c729ea0ca7aed975eb74c2c154.png",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "す",
+          "number": "1122"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9358651638031006
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9358651638031006
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "なにわ",
+              0.506436288356781
+            ],
+            [
+              "なにわ",
+              0.467367947101593
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/f5db8a2a6f2d279cb33c2282f77d48e5.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "number": "2525"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.9457176327705383
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.9457176327705383
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9713425040245056
+            ],
+            [
+              "長崎",
+              0.5346720814704895
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/431a2c07a5e5801b148da9e457197209.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "number": "2254"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9267459511756897
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9267459511756897
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.7710862755775452
+            ],
+            [
+              "長崎",
+              0.8247277736663818
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/98fc6cf3bc0b98ed5dc5d4ab669a70e1.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "か",
+          "number": "8008"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.902134895324707
+        },
+        "new": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.902134895324707
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.8952122926712036
+            ],
+            [
+              "福山",
+              0.8610843420028687
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/水戸/62e82a3482cfb3ee1982fd869a8b8418.png",
+        "expected": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "number": "9297"
+        },
+        "old": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "serial": "9297",
+          "confidence": 0.9446902871131897
+        },
+        "new": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "serial": "9297",
+          "confidence": 0.9446902871131897
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "水戸",
+              0.27060621976852417
+            ],
+            [
+              "大分",
+              0.18647785484790802
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/001be4bb8d5a0df034a1cdf9fb78f39e.png",
+        "expected": {
+          "region": "福山",
+          "classification": "483",
+          "kana": "あ",
+          "number": "1945"
+        },
+        "old": {
+          "region": "",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8247304558753967
+        },
+        "new": {
+          "region": "福山",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8247304558753967
+        },
+        "used": [
+          "region-normalized-model-agreement"
+        ],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9035239219665527
+            ],
+            [
+              "福山",
+              0.8544893860816956
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/3a9b0620fcd7b3df658a84a8b3be8075.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "9526"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.851826548576355
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.851826548576355
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.22278837859630585
+            ],
+            [
+              "佐世保",
+              0.8141720294952393
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐賀/4b423d09797640f94f49ab7630f902b7.jpeg",
+        "expected": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "number": "3854"
+        },
+        "old": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9621518850326538
+        },
+        "new": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9621518850326538
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.4267125129699707
+            ],
+            [
+              "佐賀",
+              0.4104820489883423
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/LI6Dbiz2pNhFfWRBHC2AmiAbC.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "number": "3519"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.926374077796936
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.926374077796936
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9498263597488403
+            ],
+            [
+              "佐世保",
+              0.9904630780220032
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/591dd1d118e43e119874ee7e6144d72d.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "number": "691"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8390976190567017
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8390976190567017
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.29265058040618896
+            ],
+            [
+              "熊本",
+              0.22782984375953674
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/b07215a3c731e628c4e37b6e7ef68995.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "number": "1215"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9249805808067322
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9249805808067322
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.42613983154296875
+            ],
+            [
+              "長崎",
+              0.353498250246048
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/6984069d8fa008030aff86b8f314df4d.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "number": "5937"
+        },
+        "old": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9062134027481079
+        },
+        "new": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9062134027481079
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.712479829788208
+            ],
+            [
+              "福山",
+              0.37734320759773254
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/uHyHEw3e0vKfCPrV82bwZ5Z2PDLJUrsdA0p2joWx.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "か",
+          "number": "1205"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9289860129356384
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9289860129356384
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "足立",
+              0.4403284788131714
+            ],
+            [
+              "足立",
+              0.5032115578651428
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/75a2aceb02cacb1f65e6ccdad2125c35.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "1755"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9276557564735413
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9276557564735413
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.7825654745101929
+            ],
+            [
+              "佐世保",
+              0.8968429565429688
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/b865f4d6ab1c8b64875f704b89375dd3.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "1590"
+        },
+        "old": {
+          "region": "",
+          "classification": "500",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.8283312916755676
+        },
+        "new": {
+          "region": "",
+          "classification": "500",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.8283312916755676
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "世田谷",
+              0.546014130115509
+            ],
+            [
+              "世田谷",
+              0.47204840183258057
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/bc78dca29ac2e045b730ed0212f2d728.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "い",
+          "number": "8476"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9232387542724609
+        },
+        "new": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9232387542724609
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9607429504394531
+            ],
+            [
+              "福山",
+              0.9550526142120361
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e25ca52c6f36073f3284ddad95faf855.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "number": "5733"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.9205511808395386
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.9205511808395386
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9857296943664551
+            ],
+            [
+              "佐世保",
+              0.9924395084381104
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/5e6f251011b78d73e225ab9733f2e15e.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "number": "1110"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9389311671257019
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9389311671257019
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.938803493976593
+            ],
+            [
+              "長崎",
+              0.8788021206855774
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福岡/f7707cca75bae94b07668a3bbe85aad9.jpeg",
+        "expected": {
+          "region": "福岡",
+          "classification": "",
+          "kana": "た",
+          "number": "2817"
+        },
+        "old": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.950369656085968
+        },
+        "new": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.950369656085968
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.25935259461402893
+            ],
+            [
+              "久留米",
+              0.22554481029510498
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/cfdac145516011f77224b38fd26bb7a6.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "も",
+          "number": "2311"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.7974742650985718
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.7974742650985718
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9371317028999329
+            ],
+            [
+              "長崎",
+              0.9039838910102844
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/4aff1d060a55105882b20b0a4754f1d9.jpeg",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "や",
+          "number": "7941"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9553625583648682
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9553625583648682
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.8079204559326172
+            ],
+            [
+              "北九州",
+              0.7539001703262329
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/c87ae705a88307c000e6c8a07ea82e29.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "2884"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9617550373077393
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9617550373077393
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8329251408576965
+            ],
+            [
+              "佐世保",
+              0.9520902037620544
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "simulated_uneven": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 22,
+          "accepted": 17,
+          "correct": 17
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 16,
+          "correct": 16
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 11,
+          "correct": 11
+        }
+      },
+      "new": {
+        "region": {
+          "n": 22,
+          "accepted": 20,
+          "correct": 20
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 16,
+          "correct": 16
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 12,
+          "correct": 12
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "自家用/佐世保/fb97f9238d6fe14abd77af80eee8e639.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "number": "8314"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "serial": "8314",
+          "confidence": 0.934055745601654
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "serial": "8314",
+          "confidence": 0.934055745601654
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8224846124649048
+            ],
+            [
+              "佐世保",
+              0.9356138706207275
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e7011210178269d3d2ac21ae66dcc0a8.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "number": "1963"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "",
+          "serial": "1963",
+          "confidence": 0.9243077039718628
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "",
+          "serial": "1963",
+          "confidence": 0.9243077039718628
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.46307024359703064
+            ],
+            [
+              "佐世保",
+              0.434638112783432
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/北九州/c72d52c729ea0ca7aed975eb74c2c154.png",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "す",
+          "number": "1122"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9357298016548157
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9357298016548157
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "なにわ",
+              0.5166894793510437
+            ],
+            [
+              "なにわ",
+              0.5975444316864014
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/f5db8a2a6f2d279cb33c2282f77d48e5.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "number": "2525"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.9492243528366089
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.9492243528366089
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9451271295547485
+            ],
+            [
+              "長崎",
+              0.705907940864563
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/431a2c07a5e5801b148da9e457197209.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "number": "2254"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9296022653579712
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9296022653579712
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9067984819412231
+            ],
+            [
+              "長崎",
+              0.8581482172012329
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/98fc6cf3bc0b98ed5dc5d4ab669a70e1.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "か",
+          "number": "8008"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.9138222932815552
+        },
+        "new": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.9138222932815552
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9342525601387024
+            ],
+            [
+              "福山",
+              0.9337407946586609
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/水戸/62e82a3482cfb3ee1982fd869a8b8418.png",
+        "expected": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "number": "9297"
+        },
+        "old": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "serial": "9297",
+          "confidence": 0.9494001269340515
+        },
+        "new": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "serial": "9297",
+          "confidence": 0.9494001269340515
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "水戸",
+              0.2596242427825928
+            ],
+            [
+              "熊本",
+              0.32063883543014526
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/001be4bb8d5a0df034a1cdf9fb78f39e.png",
+        "expected": {
+          "region": "福山",
+          "classification": "483",
+          "kana": "あ",
+          "number": "1945"
+        },
+        "old": {
+          "region": "",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8043745160102844
+        },
+        "new": {
+          "region": "福山",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8043745160102844
+        },
+        "used": [
+          "region-normalized-model-agreement"
+        ],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9406626224517822
+            ],
+            [
+              "福山",
+              0.9239274263381958
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/3a9b0620fcd7b3df658a84a8b3be8075.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "9526"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.8087455630302429
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.8087455630302429
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.5565228462219238
+            ],
+            [
+              "佐世保",
+              0.786492645740509
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐賀/4b423d09797640f94f49ab7630f902b7.jpeg",
+        "expected": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "number": "3854"
+        },
+        "old": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9563655257225037
+        },
+        "new": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9563655257225037
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.43731364607810974
+            ],
+            [
+              "佐賀",
+              0.4121517241001129
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/LI6Dbiz2pNhFfWRBHC2AmiAbC.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "number": "3519"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.927727222442627
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.927727222442627
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9344170093536377
+            ],
+            [
+              "佐世保",
+              0.9836920499801636
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/591dd1d118e43e119874ee7e6144d72d.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "number": "691"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8212336897850037
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8212336897850037
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.2725348472595215
+            ],
+            [
+              "熊本",
+              0.24219182133674622
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/b07215a3c731e628c4e37b6e7ef68995.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "number": "1215"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9417452216148376
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9417452216148376
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.550693690776825
+            ],
+            [
+              "長崎",
+              0.4671624004840851
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/6984069d8fa008030aff86b8f314df4d.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "number": "5937"
+        },
+        "old": {
+          "region": "",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9023261070251465
+        },
+        "new": {
+          "region": "",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9023261070251465
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.44791436195373535
+            ],
+            [
+              "福山",
+              0.39133375883102417
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/uHyHEw3e0vKfCPrV82bwZ5Z2PDLJUrsdA0p2joWx.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "か",
+          "number": "1205"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9352371692657471
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9352371692657471
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "足立",
+              0.3973236680030823
+            ],
+            [
+              "足立",
+              0.39044424891471863
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/75a2aceb02cacb1f65e6ccdad2125c35.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "1755"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9272451400756836
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9272451400756836
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.7841402888298035
+            ],
+            [
+              "佐世保",
+              0.7279442548751831
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/b865f4d6ab1c8b64875f704b89375dd3.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "1590"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.8445205092430115
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.8445205092430115
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "世田谷",
+              0.5761365294456482
+            ],
+            [
+              "世田谷",
+              0.6124664545059204
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/bc78dca29ac2e045b730ed0212f2d728.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "い",
+          "number": "8476"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9141141772270203
+        },
+        "new": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9141141772270203
+        },
+        "used": [
+          "region-normalized-model-agreement"
+        ],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9762021899223328
+            ],
+            [
+              "福山",
+              0.9503478407859802
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e25ca52c6f36073f3284ddad95faf855.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "number": "5733"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.9410353899002075
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.9410353899002075
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9886323809623718
+            ],
+            [
+              "佐世保",
+              0.9925795197486877
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/5e6f251011b78d73e225ab9733f2e15e.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "number": "1110"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9477099180221558
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9477099180221558
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9450123310089111
+            ],
+            [
+              "長崎",
+              0.9318661689758301
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福岡/f7707cca75bae94b07668a3bbe85aad9.jpeg",
+        "expected": {
+          "region": "福岡",
+          "classification": "",
+          "kana": "た",
+          "number": "2817"
+        },
+        "old": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.9483587741851807
+        },
+        "new": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.9483587741851807
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.2374987006187439
+            ],
+            [
+              "久留米",
+              0.293499231338501
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/cfdac145516011f77224b38fd26bb7a6.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "も",
+          "number": "2311"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.859821081161499
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.859821081161499
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9421099424362183
+            ],
+            [
+              "長崎",
+              0.8772640228271484
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/4aff1d060a55105882b20b0a4754f1d9.jpeg",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "や",
+          "number": "7941"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9415837526321411
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9415837526321411
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.7381581664085388
+            ],
+            [
+              "北九州",
+              0.7148952484130859
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/c87ae705a88307c000e6c8a07ea82e29.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "2884"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9524757266044617
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9524757266044617
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9146423935890198
+            ],
+            [
+              "佐世保",
+              0.9492231011390686
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "simulated_washed": {
+    "summary": {
+      "old": {
+        "region": {
+          "n": 22,
+          "accepted": 18,
+          "correct": 18
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 15,
+          "correct": 15
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 11,
+          "correct": 11
+        }
+      },
+      "new": {
+        "region": {
+          "n": 22,
+          "accepted": 20,
+          "correct": 20
+        },
+        "classification": {
+          "n": 19,
+          "accepted": 19,
+          "correct": 19
+        },
+        "kana": {
+          "n": 22,
+          "accepted": 15,
+          "correct": 15
+        },
+        "number": {
+          "n": 24,
+          "accepted": 24,
+          "correct": 24
+        },
+        "full": {
+          "n": 19,
+          "accepted": 12,
+          "correct": 12
+        }
+      }
+    },
+    "entries": [
+      {
+        "source": "自家用/佐世保/fb97f9238d6fe14abd77af80eee8e639.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "に",
+          "number": "8314"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "",
+          "serial": "8314",
+          "confidence": 0.9370651245117188
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "",
+          "serial": "8314",
+          "confidence": 0.9370651245117188
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8976582884788513
+            ],
+            [
+              "佐世保",
+              0.9715445637702942
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e7011210178269d3d2ac21ae66dcc0a8.jpg",
+        "expected": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "number": "1963"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "serial": "1963",
+          "confidence": 0.9229570627212524
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "480",
+          "kana": "え",
+          "serial": "1963",
+          "confidence": 0.9229570627212524
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.48928719758987427
+            ],
+            [
+              "佐世保",
+              0.49400192499160767
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/北九州/c72d52c729ea0ca7aed975eb74c2c154.png",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "す",
+          "number": "1122"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9548282027244568
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "368",
+          "kana": "す",
+          "serial": "1122",
+          "confidence": 0.9548282027244568
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "山口",
+              0.40823230147361755
+            ],
+            [
+              "なにわ",
+              0.4842366576194763
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/f5db8a2a6f2d279cb33c2282f77d48e5.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "number": "2525"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.944182276725769
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "343",
+          "kana": "も",
+          "serial": "2525",
+          "confidence": 0.944182276725769
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9795920252799988
+            ],
+            [
+              "長崎",
+              0.7804000377655029
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/431a2c07a5e5801b148da9e457197209.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "number": "2254"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9177331924438477
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "580",
+          "kana": "ほ",
+          "serial": "2254",
+          "confidence": 0.9177331924438477
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.8024134039878845
+            ],
+            [
+              "長崎",
+              0.8798995018005371
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/98fc6cf3bc0b98ed5dc5d4ab669a70e1.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "か",
+          "number": "8008"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.8936400413513184
+        },
+        "new": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8008",
+          "confidence": 0.8936400413513184
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.4163811504840851
+            ],
+            [
+              "福山",
+              0.9155077338218689
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/水戸/62e82a3482cfb3ee1982fd869a8b8418.png",
+        "expected": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "せ",
+          "number": "9297"
+        },
+        "old": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "",
+          "serial": "9297",
+          "confidence": 0.9426676630973816
+        },
+        "new": {
+          "region": "水戸",
+          "classification": "502",
+          "kana": "",
+          "serial": "9297",
+          "confidence": 0.9426676630973816
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "熊本",
+              0.20410799980163574
+            ],
+            [
+              "水戸",
+              0.3337748646736145
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/001be4bb8d5a0df034a1cdf9fb78f39e.png",
+        "expected": {
+          "region": "福山",
+          "classification": "483",
+          "kana": "あ",
+          "number": "1945"
+        },
+        "old": {
+          "region": "",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8168835043907166
+        },
+        "new": {
+          "region": "",
+          "classification": "483",
+          "kana": "",
+          "serial": "1945",
+          "confidence": 0.8168835043907166
+        },
+        "used": [],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.8857368230819702
+            ],
+            [
+              "福山",
+              0.847510576248169
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/3a9b0620fcd7b3df658a84a8b3be8075.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "9526"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.65389084815979
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9526",
+          "confidence": 0.65389084815979
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.12397463619709015
+            ],
+            [
+              "佐世保",
+              0.7773422002792358
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐賀/4b423d09797640f94f49ab7630f902b7.jpeg",
+        "expected": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "number": "3854"
+        },
+        "old": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9549861550331116
+        },
+        "new": {
+          "region": "佐賀",
+          "classification": "330",
+          "kana": "す",
+          "serial": "3854",
+          "confidence": 0.9549861550331116
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.5027813911437988
+            ],
+            [
+              "佐賀",
+              0.42703065276145935
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/LI6Dbiz2pNhFfWRBHC2AmiAbC.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "number": "3519"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.92368084192276
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "400",
+          "kana": "す",
+          "serial": "3519",
+          "confidence": 0.92368084192276
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8160582780838013
+            ],
+            [
+              "佐世保",
+              0.9803909063339233
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/591dd1d118e43e119874ee7e6144d72d.png",
+        "expected": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "number": "691"
+        },
+        "old": {
+          "region": "",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8893780708312988
+        },
+        "new": {
+          "region": "熊本",
+          "classification": "200",
+          "kana": "か",
+          "serial": "691",
+          "confidence": 0.8893780708312988
+        },
+        "used": [
+          "top-context"
+        ],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.40998172760009766
+            ],
+            [
+              "熊本",
+              0.2542388439178467
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/b07215a3c731e628c4e37b6e7ef68995.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "number": "1215"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9007893204689026
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "584",
+          "kana": "ち",
+          "serial": "1215",
+          "confidence": 0.9007893204689026
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.5382685661315918
+            ],
+            [
+              "長崎",
+              0.39678823947906494
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/6984069d8fa008030aff86b8f314df4d.jpg",
+        "expected": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "number": "5937"
+        },
+        "old": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9076911807060242
+        },
+        "new": {
+          "region": "福山",
+          "classification": "100",
+          "kana": "あ",
+          "serial": "5937",
+          "confidence": 0.9076911807060242
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.6611562967300415
+            ],
+            [
+              "福山",
+              0.34821316599845886
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/uHyHEw3e0vKfCPrV82bwZ5Z2PDLJUrsdA0p2joWx.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "か",
+          "number": "1205"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9322497844696045
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "483",
+          "kana": "",
+          "serial": "1205",
+          "confidence": 0.9322497844696045
+        },
+        "used": [],
+        "ocr_calls": 10,
+        "aux": {
+          "region": [
+            [
+              "足立",
+              0.5712028741836548
+            ],
+            [
+              "足立",
+              0.6059873104095459
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/75a2aceb02cacb1f65e6ccdad2125c35.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "1755"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9300103783607483
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "1755",
+          "confidence": 0.9300103783607483
+        },
+        "used": [],
+        "ocr_calls": 8,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.8264544010162354
+            ],
+            [
+              "佐世保",
+              0.934205949306488
+            ]
+          ]
+        }
+      },
+      {
+        "source": "事業用/b865f4d6ab1c8b64875f704b89375dd3.jpg",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": "1590"
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.7067484855651855
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "あ",
+          "serial": "1590",
+          "confidence": 0.7067484855651855
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "尾張小牧",
+              0.5434311032295227
+            ],
+            [
+              "世田谷",
+              0.6103805303573608
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/bc78dca29ac2e045b730ed0212f2d728.png",
+        "expected": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "い",
+          "number": "8476"
+        },
+        "old": {
+          "region": "",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9128294587135315
+        },
+        "new": {
+          "region": "福山",
+          "classification": "480",
+          "kana": "",
+          "serial": "8476",
+          "confidence": 0.9128294587135315
+        },
+        "used": [
+          "region-normalized-model-agreement"
+        ],
+        "ocr_calls": 13,
+        "aux": {
+          "region": [
+            [
+              "福山",
+              0.9549241065979004
+            ],
+            [
+              "福山",
+              0.974385678768158
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/e25ca52c6f36073f3284ddad95faf855.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "number": "5733"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.917215883731842
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "580",
+          "kana": "な",
+          "serial": "5733",
+          "confidence": 0.917215883731842
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.9860265254974365
+            ],
+            [
+              "佐世保",
+              0.9932725429534912
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/5e6f251011b78d73e225ab9733f2e15e.jpg",
+        "expected": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "number": "1110"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9446364641189575
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "533",
+          "kana": "や",
+          "serial": "1110",
+          "confidence": 0.9446364641189575
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.9443150162696838
+            ],
+            [
+              "長崎",
+              0.9284143447875977
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/福岡/f7707cca75bae94b07668a3bbe85aad9.jpeg",
+        "expected": {
+          "region": "福岡",
+          "classification": "",
+          "kana": "た",
+          "number": "2817"
+        },
+        "old": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.9417669177055359
+        },
+        "new": {
+          "region": "福岡",
+          "classification": "331",
+          "kana": "た",
+          "serial": "2817",
+          "confidence": 0.9417669177055359
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "福岡",
+              0.28070592880249023
+            ],
+            [
+              "久留米",
+              0.26147615909576416
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/長崎/cfdac145516011f77224b38fd26bb7a6.png",
+        "expected": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "も",
+          "number": "2311"
+        },
+        "old": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.7777417898178101
+        },
+        "new": {
+          "region": "長崎",
+          "classification": "500",
+          "kana": "",
+          "serial": "2311",
+          "confidence": 0.7777417898178101
+        },
+        "used": [],
+        "ocr_calls": 11,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.6057546734809875
+            ],
+            [
+              "長崎",
+              0.9285771250724792
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用(軽)/4aff1d060a55105882b20b0a4754f1d9.jpeg",
+        "expected": {
+          "region": "北九州",
+          "classification": "",
+          "kana": "や",
+          "number": "7941"
+        },
+        "old": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9595391750335693
+        },
+        "new": {
+          "region": "北九州",
+          "classification": "580",
+          "kana": "や",
+          "serial": "7941",
+          "confidence": 0.9595391750335693
+        },
+        "used": [],
+        "ocr_calls": 6,
+        "aux": {
+          "region": [
+            [
+              "北九州",
+              0.8266136050224304
+            ],
+            [
+              "北九州",
+              0.7969164848327637
+            ]
+          ]
+        }
+      },
+      {
+        "source": "自家用/佐世保/c87ae705a88307c000e6c8a07ea82e29.png",
+        "expected": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "number": "2884"
+        },
+        "old": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9678452610969543
+        },
+        "new": {
+          "region": "佐世保",
+          "classification": "500",
+          "kana": "ね",
+          "serial": "2884",
+          "confidence": 0.9678452610969543
+        },
+        "used": [],
+        "ocr_calls": 7,
+        "aux": {
+          "region": [
+            [
+              "佐世保",
+              0.609097421169281
+            ],
+            [
+              "佐世保",
+              0.9565405249595642
+            ]
+          ]
+        }
+      }
+    ]
+  },
+  "night_negatives": {
+    "n": 10,
+    "complete_plate_false_accepts": {
+      "old": 0,
+      "new": 0
+    },
+    "entries": [
+      {
+        "source": "night-commons/crop-000.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "7775",
+          "confidence": 0.23874594271183014
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "7775",
+          "confidence": 0.23874594271183014
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "八王子",
+              0.1946847289800644
+            ],
+            [
+              "八王子",
+              0.09490173310041428
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-001.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "7481",
+          "confidence": 0.5475386381149292
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "7481",
+          "confidence": 0.5475386381149292
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "相模",
+              0.18145914375782013
+            ],
+            [
+              "大分",
+              0.19145256280899048
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-006.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1929",
+          "confidence": 0.23752395808696747
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1929",
+          "confidence": 0.23752395808696747
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "相模",
+              0.676760733127594
+            ],
+            [
+              "相模",
+              0.7035048604011536
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-007.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "4313",
+          "confidence": 0.23405051231384277
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "4313",
+          "confidence": 0.23405051231384277
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "長崎",
+              0.078575998544693
+            ],
+            [
+              "長崎",
+              0.09927641600370407
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-008.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1881",
+          "confidence": 0.26165294647216797
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1881",
+          "confidence": 0.26165294647216797
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "相模",
+              0.12587425112724304
+            ],
+            [
+              "尾張小牧",
+              0.08333572000265121
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-014.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "8888",
+          "confidence": 0.37309136986732483
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "8888",
+          "confidence": 0.37309136986732483
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "愛媛",
+              0.1265266239643097
+            ],
+            [
+              "福山",
+              0.09619088470935822
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-commons/crop-015.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9309",
+          "confidence": 0.17946314811706543
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "9309",
+          "confidence": 0.17946314811706543
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "大阪",
+              0.144686758518219
+            ],
+            [
+              "大阪",
+              0.12234940379858017
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-driving/plate-0001.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1080",
+          "confidence": 0.2491712123155594
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1080",
+          "confidence": 0.2491712123155594
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.25139886140823364
+            ],
+            [
+              "福山",
+              0.5291022062301636
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-driving/plate-0002.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1108",
+          "confidence": 0.44784051179885864
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "1108",
+          "confidence": 0.44784051179885864
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "佐賀",
+              0.18166500329971313
+            ],
+            [
+              "佐賀",
+              0.45470258593559265
+            ]
+          ]
+        }
+      },
+      {
+        "source": "night-driving/plate-0003.png",
+        "expected": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "number": ""
+        },
+        "old": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "251",
+          "confidence": 0.3346722424030304
+        },
+        "new": {
+          "region": "",
+          "classification": "",
+          "kana": "",
+          "serial": "251",
+          "confidence": 0.3346722424030304
+        },
+        "used": [],
+        "ocr_calls": 9,
+        "aux": {
+          "region": [
+            [
+              "横浜",
+              0.23703092336654663
+            ],
+            [
+              "尾張小牧",
+              0.39649146795272827
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -23,11 +23,69 @@ const (
 	plateBackfillRecords = 50 // two times per record, within the broker's limit of 100
 	plateBackfillRetry   = 10 * time.Minute
 	plateBackfillMaxWait = 6 * time.Hour
+	plateLiveFixWindow   = 20 * time.Second
 )
 
 type plateBackfillState struct {
 	next  time.Time
 	tries int
+}
+
+// plateDashboardPositions reads the DriveRec NMEA fix already exposed by the
+// local owner dashboard. A fix is returned only when its timestamp is close to
+// the detection, preventing a current position from being attached to an old
+// sighting during later backfill passes.
+func plateDashboardPositions(client *http.Client, endpoint string) func(context.Context, []time.Time) ([]*plate.Location, error) {
+	return func(ctx context.Context, at []time.Time) ([]*plate.Location, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, errors.New("dashboard position lookup failed: " + resp.Status)
+		}
+		var body struct {
+			Timestamp int64 `json:"timestamp"`
+			GPS       struct {
+				Fix       bool     `json:"fix"`
+				Age       *float64 `json:"age"`
+				Latitude  *float64 `json:"latitude"`
+				Longitude *float64 `json:"longitude"`
+				HDOP      *float64 `json:"hdop"`
+			} `json:"gps"`
+		}
+		if err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body); err != nil {
+			return nil, err
+		}
+		if !body.GPS.Fix || body.Timestamp <= 0 || body.GPS.Age == nil || *body.GPS.Age < 0 ||
+			body.GPS.Latitude == nil || body.GPS.Longitude == nil ||
+			*body.GPS.Latitude < -90 || *body.GPS.Latitude > 90 ||
+			*body.GPS.Longitude < -180 || *body.GPS.Longitude > 180 {
+			return make([]*plate.Location, len(at)), nil
+		}
+		fixAt := time.Unix(body.Timestamp, 0).UTC().Add(-time.Duration(*body.GPS.Age * float64(time.Second)))
+		var accuracy *float64
+		if body.GPS.HDOP != nil && *body.GPS.HDOP > 0 {
+			value := *body.GPS.HDOP * 5
+			accuracy = &value
+		}
+		out := make([]*plate.Location, len(at))
+		for i, detectionAt := range at {
+			difference := detectionAt.Sub(fixAt)
+			if difference < 0 {
+				difference = -difference
+			}
+			if difference <= plateLiveFixWindow {
+				out[i] = &plate.Location{At: fixAt, Lat: *body.GPS.Latitude, Lon: *body.GPS.Longitude, AccuracyM: accuracy}
+			}
+		}
+		return out, nil
+	}
 }
 
 // plateBrokerPositions asks the broker for the logged position nearest to each time.
