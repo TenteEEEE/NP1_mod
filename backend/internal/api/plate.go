@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/config"
+	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/plate"
 	"github.com/np1-control-center/ncc/internal/platespeech"
 )
@@ -122,7 +123,11 @@ func newPlateService(stateDir string, sensor *http.Client) *plateService {
 		}
 	}
 	if b, e := os.ReadFile(filepath.Join(dir, "settings.json")); e == nil {
-		var s plate.Settings
+		// Decode over defaults so settings written by older/minimal deployments
+		// keep their explicit fields while newly introduced fields receive safe
+		// defaults. Decoding into a zero value made {"enabled":true} invalid and
+		// silently disabled collection.
+		s := plate.DefaultSettings()
 		if json.Unmarshal(b, &s) == nil {
 			if valid, e := plate.ValidateSettings(s); e == nil {
 				p.settings = valid
@@ -131,6 +136,16 @@ func newPlateService(stateDir string, sensor *http.Client) *plateService {
 	}
 	voice.Configure(p.settings)
 	return p
+}
+
+// RunPlateCollector persists confirmed readings from the already-running
+// plate sensor without opening the management web listeners. This is used on
+// installations whose owner dashboard occupies ports 80/443 but still need
+// the local record store for NumberShare's offline queue.
+func RunPlateCollector(ctx context.Context, stateDir, positionURL string) {
+	p := newPlateService(stateDir, unixClient(PlateSensorSocketPath()))
+	p.positions = plateDashboardPositions(&http.Client{Timeout: 4 * time.Second}, positionURL)
+	p.collect(ctx)
 }
 
 func (p *plateService) currentSettings() plate.Settings {
@@ -216,6 +231,7 @@ func (p *plateService) poll(ctx context.Context) int {
 		p.recordPoll("invalid-sensor-cursor")
 		return 0
 	}
+	p.attachLocations(ctx, batch.Detections)
 	count := 0
 	code := ""
 	for _, d := range batch.Detections {
@@ -246,6 +262,32 @@ func (p *plateService) poll(ctx context.Context) int {
 	}
 	p.recordPoll(code)
 	return count
+}
+
+func (p *plateService) attachLocations(ctx context.Context, detections []plate.Detection) {
+	if p.positions == nil {
+		return
+	}
+	indices := make([]int, 0, len(detections))
+	at := make([]time.Time, 0, len(detections))
+	for i := range detections {
+		if detections[i].Location == nil {
+			indices = append(indices, i)
+			at = append(at, detections[i].At)
+		}
+	}
+	if len(at) == 0 {
+		return
+	}
+	found, err := p.positions(ctx, at)
+	if err != nil || len(found) != len(at) {
+		return
+	}
+	for i, location := range found {
+		if location != nil {
+			detections[indices[i]].Location = location
+		}
+	}
 }
 
 func (p *plateService) rule(id string) (plate.Rule, bool) {
@@ -440,10 +482,15 @@ func (s *Server) registerPlate() {
 			fail(w, 400, "INVALID_QUERY", e.Error())
 			return
 		}
+		shared := numbershare.Results(filepath.Dir(p.dir))
 		out := make([]map[string]any, 0, len(records))
 		for _, record := range records {
 			_, imageErr := p.store.ImagePath(record.ID)
-			out = append(out, map[string]any{"record": record, "imageAvailable": record.ImageID != "" && imageErr == nil})
+			item := map[string]any{"record": record, "imageAvailable": record.ImageID != "" && imageErr == nil}
+			if result, ok := shared[record.ID]; ok {
+				item["numberShare"] = result
+			}
+			out = append(out, item)
 		}
 		reason := ""
 		if e != nil {

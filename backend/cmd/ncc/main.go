@@ -11,6 +11,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/modem"
+	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/otaguard"
 	"github.com/np1-control-center/ncc/internal/otapolicy"
 	"github.com/np1-control-center/ncc/internal/radio"
@@ -33,12 +34,46 @@ func main() {
 	otaAction := flag.String("ota-action", "status", "fixed OTA policy action")
 	apnRevision := flag.Int("apn-revision", 0, "private APN editor revision for fixed worker child")
 	trialSeconds := flag.Int("trial-seconds", 90, "sta-outage-trial: seconds without Wi-Fi")
+	numberShareConfig := flag.String("numbershare-config", "/overlay/owner-apps/np1-control/private/numbershare.json", "NumberShare sync configuration")
+	numberShareStateDir := flag.String("numbershare-state-dir", "/overlay/owner-apps/np1-control/state", "NumberShare sync state directory")
+	numberShareRecovery := flag.String("numbershare-recovery", "/overlay/owner-apps/np1-control/private/numbershare-recovery.json", "NumberShare recovery output")
+	numberShareBootstrapKey := flag.String("numbershare-bootstrap-key", "/overlay/owner-apps/np1-control/private/numbershare-bootstrap.key", "NumberShare user registration key file")
+	numberShareUserKey := flag.String("numbershare-user-key", "/overlay/owner-apps/np1-control/private/numbershare-user.key", "existing NumberShare user device key for adding this NP1")
+	numberShareInternalUserID := flag.String("numbershare-internal-user-id", "", "optional internal user ID file; defaults to local Tailscale UserID")
+	numberShareDeviceName := flag.String("numbershare-device-name", "", "NumberShare device display name; defaults to hostname")
+	platePositionURL := flag.String("plate-position-url", "http://127.0.0.1/api/status", "local dashboard position endpoint")
 	radioRepairApply := flag.Bool("radio-repair-apply", false, "apply measured GPS associations; stop the NCC logger and back up history first")
 	radioRepairStateDir := flag.Bool("radio-repair-state-dir", false, "print the configured radio history directory without reading GPS or writing files")
 	radioRepairCheck := flag.Bool("radio-repair-check", false, "fail if any GPS associations remain to be applied")
 	radioRepairTrack := flag.String("radio-repair-track", "", "private measured recording-track export to supplement retained SD fixes")
 	flag.Parse()
 	switch *mode {
+	case "numbershare-register":
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		options := numbershare.RegistrationOptions{
+			ConfigPath: *numberShareConfig, RecoveryPath: *numberShareRecovery,
+			BootstrapKeyPath: *numberShareBootstrapKey, ExistingUserKeyPath: *numberShareUserKey,
+			InternalUserIDPath: *numberShareInternalUserID, DeviceName: *numberShareDeviceName,
+		}
+		if e := runNumberShareRegister(ctx, options); e != nil {
+			log.Fatal(e)
+		}
+		return
+	case "numbershare-check":
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		if e := runNumberShareCheck(ctx, *numberShareStateDir, *numberShareConfig); e != nil {
+			log.Fatal(e)
+		}
+		return
+	case "numbershare-sync":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if e := runNumberShareSync(ctx, *numberShareStateDir, *numberShareConfig, *platePositionURL); e != nil {
+			log.Fatal(e)
+		}
+		return
 	case "radio-history-repair":
 		c, err := config.Load(*conf)
 		if err != nil {

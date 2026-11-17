@@ -137,7 +137,7 @@ if test -f experimental/ncc-native-setting-helper; then
 fi
 # Plate recognition: engine and models under our tree, sensor unit, post-boot
 # start. The sensor stays idle until the owner enables recording in the UI.
-if test -f plate/plate-engine && test -f plate/models/detector.tflite && test -f plate/models/ocr.tflite && test -f plate/models/plate-model.json; then
+if test -f plate/plate-engine && test -f plate/libonnxruntime.so.1.30.0 && test -f plate/models/detector.tflite && test -f plate/models/ocr.tflite && test -f plate/models/ocr-kana.tflite && test -f plate/models/ocr-classification.tflite && test -f plate/models/ppocrv6_rec.onnx && test -f plate/models/plate-model.json; then
     mkdir -p "$BASE/plate"
     chmod 0755 "$BASE/plate"
     rm -rf "$BASE/plate/models.new" "$BASE/plate/licenses.new"
@@ -154,6 +154,9 @@ if test -f plate/plate-engine && test -f plate/models/detector.tflite && test -f
     cp plate/plate-engine "$BASE/plate/plate-engine.new"
     chmod 0750 "$BASE/plate/plate-engine.new"
     mv -f "$BASE/plate/plate-engine.new" "$BASE/plate/plate-engine"
+    cp plate/libonnxruntime.so.1.30.0 "$BASE/plate/libonnxruntime.so.1.30.0.new"
+    chmod 0644 "$BASE/plate/libonnxruntime.so.1.30.0.new"
+    mv -f "$BASE/plate/libonnxruntime.so.1.30.0.new" "$BASE/plate/libonnxruntime.so.1.30.0"
     cp systemd/np1-control-plate.service /etc/systemd/system/np1-control-plate.service
     python3 tools/postboot.py add-plate
 fi

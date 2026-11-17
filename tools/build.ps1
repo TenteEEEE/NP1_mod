@@ -55,10 +55,12 @@ if (Test-Path "$repo/artifacts/stock-start-helper/ncc-stock-start-helper") {
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null
-foreach ($f in 'detector.tflite','ocr.tflite','plate-model.json','README.md','LICENSING.md') { Copy-Item -Force "$repo/models/plate/$f" "$repo/artifacts/ncc/plate/models/" }
+foreach ($f in 'detector.tflite','ocr.tflite','ocr-kana.tflite','ocr-classification.tflite','ppocrv6_rec.onnx','plate-model.json','ppocr-dictionary.json','model-manifest.json','README.md','LICENSING.md','ONNX_RUNTIME_LICENSE.txt','PPOCR_MODEL_CARD.md') { Copy-Item -Force "$repo/models/plate/$f" "$repo/artifacts/ncc/plate/models/" }
 Copy-Item -Recurse -Force "$repo/models/plate/notices" "$repo/artifacts/ncc/plate/models/"
 $engine = if (Test-Path "$repo/artifacts/plate/plate-engine-aarch64") { "$repo/artifacts/plate/plate-engine-aarch64" } else { "$repo/prebuilt/plate-engine/plate-engine-aarch64" }
 Copy-Item -Force $engine "$repo/artifacts/ncc/plate/plate-engine"
+$ort = if (Test-Path "$repo/artifacts/plate/libonnxruntime.so.1.30.0") { "$repo/artifacts/plate/libonnxruntime.so.1.30.0" } else { "$repo/prebuilt/plate-engine/libonnxruntime.so.1.30.0" }
+Copy-Item -Force $ort "$repo/artifacts/ncc/plate/libonnxruntime.so.1.30.0"
 Copy-Item -Force "$repo/prebuilt/plate-engine/licenses/*" "$repo/artifacts/ncc/plate/licenses/"
 python "$repo/tools/sbom.py"
 Check

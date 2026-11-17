@@ -2,11 +2,34 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/plate"
 )
+
+func TestPlateDashboardPositionsOnlyUsesFixNearDetection(t *testing.T) {
+	now := time.Date(2026, 11, 16, 11, 30, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"timestamp":%d,"gps":{"fix":true,"age":2,"latitude":35.0,"longitude":139.0,"hdop":1.4}}`, now.Unix())
+	}))
+	defer server.Close()
+
+	lookup := plateDashboardPositions(server.Client(), server.URL)
+	positions, err := lookup(context.Background(), []time.Time{now.Add(-3 * time.Second), now.Add(-5 * time.Minute)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if positions[0] == nil || positions[0].Lat != 35.0 || positions[0].Lon != 139.0 || positions[0].AccuracyM == nil || *positions[0].AccuracyM != 7.0 {
+		t.Fatalf("near position = %+v", positions[0])
+	}
+	if positions[1] != nil {
+		t.Fatalf("old detection received current position: %+v", positions[1])
+	}
+}
 
 func TestPlateBackfillFillsRecordsWithoutPosition(t *testing.T) {
 	dir := t.TempDir()
