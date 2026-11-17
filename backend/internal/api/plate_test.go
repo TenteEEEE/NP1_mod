@@ -178,6 +178,22 @@ func TestPlateEmptySettingsRulesRemainJSONArray(t *testing.T) {
 	}
 }
 
+func TestPlateMinimalLegacySettingsInheritDefaults(t *testing.T) {
+	dir := t.TempDir()
+	plateDir := filepath.Join(dir, "plate")
+	if e := os.MkdirAll(plateDir, 0o700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.WriteFile(filepath.Join(plateDir, "settings.json"), []byte(`{"enabled":true}`), 0o600); e != nil {
+		t.Fatal(e)
+	}
+	p := newPlateService(dir, nil)
+	settings := p.currentSettings()
+	if !settings.Enabled || settings.RetentionDays != plate.DefaultSettings().RetentionDays || settings.MinSightings != plate.DefaultSettings().MinSightings || settings.InstantConfidence != plate.DefaultInstantConfidence {
+		t.Fatalf("legacy settings did not inherit defaults: %+v", settings)
+	}
+}
+
 func TestLEDRuleNotifiesWithoutSpeechOrAPIKey(t *testing.T) {
 	srv, _, _, _ := plateFixture(t, &fakeSensor{instance: "led"})
 	r := plate.Rule{ID: "r1", Name: "LED only", Enabled: true, Number: "42"}
@@ -299,6 +315,48 @@ func TestPlatePollRecordsImageAndUnsupportedSpeech(t *testing.T) {
 	}
 	if !spoken {
 		t.Fatalf("record not marked spoken after playback: %+v", body.Records)
+	}
+}
+
+func TestPlateRecordsExposeOnlyUserVisibleNumberShareResult(t *testing.T) {
+	srv, ts, client, _ := plateFixture(t, &fakeSensor{instance: "numbershare"})
+	now := time.Date(2026, 11, 17, 3, 30, 0, 0, time.UTC)
+	record := plate.Record{ID: "pnumbershare-0001", FirstSeen: now, LastSeen: now, Sightings: 2, Reading: plate.Reading{Number: "1234"}, Display: "12-34", Matches: []plate.Match{}}
+	recordDir := filepath.Join(srv.cfg.StateDir, "plate", "records")
+	if err := os.MkdirAll(recordDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	line, _ := json.Marshal(record)
+	if err := os.WriteFile(filepath.Join(recordDir, plate.Day(now)+".jsonl"), append(line, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := `{"version":2,"items":{"pnumbershare-0001":{"eventId":"remote-event-must-not-escape","sent":true,"result":{"status":"exact","category":"危険","comment":"共有コメント","metadataPresent":true,"checkedAt":"2026-11-17T03:31:00Z"}}}}`
+	if err := os.WriteFile(filepath.Join(srv.cfg.StateDir, "plate", "numbershare-sync.json"), []byte(state), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res := request(t, client, ts, "GET", "/plate/records?from=2026-11-17&to=2026-11-17", "", nil)
+	raw, err := io.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil || res.StatusCode != http.StatusOK {
+		t.Fatalf("records response %d: %v", res.StatusCode, err)
+	}
+	var body struct {
+		Records []struct {
+			NumberShare struct {
+				Status, Category, Comment string
+				MetadataPresent           bool
+			} `json:"numberShare"`
+		} `json:"records"`
+	}
+	if err = json.Unmarshal(raw, &body); err != nil || len(body.Records) != 1 {
+		t.Fatalf("records = %s, %v", raw, err)
+	}
+	shared := body.Records[0].NumberShare
+	if shared.Status != "exact" || shared.Category != "危険" || shared.Comment != "共有コメント" || !shared.MetadataPresent {
+		t.Fatalf("numberShare = %+v", shared)
+	}
+	if strings.Contains(string(raw), "remote-event-must-not-escape") || strings.Contains(string(raw), "apiKey") {
+		t.Fatalf("operational/private NumberShare state escaped: %s", raw)
 	}
 }
 

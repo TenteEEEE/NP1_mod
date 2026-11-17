@@ -90,6 +90,7 @@
 /* Each record: the plate drawn like a Japanese number plate on the left, details and actions on the right. */
 .plate-item { --plate-w: 132px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 4px 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); min-width: 0; }
 .plate-item.hit { background: var(--plate-hit-soft); border-color: var(--plate-hit-border); border-left: 5px solid var(--plate-hit); }
+.plate-item.shared-danger { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 38%, var(--line)); border-left: 5px solid var(--danger); }
 .plate-item.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
 .plate-item-main { display: block; padding: 0; background: transparent; border-radius: 7px; min-height: 44px; }
 /* A plate is 330 x 165 mm. Character heights follow the real layout: the serial is about half
@@ -113,6 +114,9 @@
 .plate-item-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .plate-item-extra .text-button { min-height: 32px; font-size: 12px; }
 .plate-rule-tag { font-size: 11px; font-weight: 650; color: #fff; background: var(--plate-hit-line); border-radius: 4px; padding: 3px 8px; }
+.plate-shared-tag { font-size: 11px; font-weight: 650; color: var(--accent); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--line)); border-radius: 4px; padding: 3px 8px; }
+.plate-shared-tag.danger { color: #fff; background: var(--danger); border-color: var(--danger); }
+.plate-shared-comment { flex: 1 1 100%; font-size: 11px; line-height: 1.6; color: var(--text); overflow-wrap: anywhere; }
 [data-theme=dark] .plate-rule-tag { color: #2a160c; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme=light]):not([data-theme=dark]) .plate-rule-tag { color: #2a160c; } }
 .plate-speech { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }

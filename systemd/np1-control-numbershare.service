@@ -1,0 +1,35 @@
+[Unit]
+Description=NP1 NumberShare plate-event sync
+After=network-online.target np1-dashboard.service np1-control-plate.service np1-control-numbershare-register.service
+Wants=network-online.target np1-dashboard.service np1-control-plate.service
+Requires=np1-control-numbershare-register.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nobody
+Group=ncc
+RuntimeDirectory=np1-control-numbershare
+RuntimeDirectoryMode=0750
+ExecStartPre=/bin/cp /overlay/owner-apps/np1-control/bin/ncc /run/np1-control-numbershare/ncc
+ExecStartPre=/bin/chmod 0750 /run/np1-control-numbershare/ncc
+ExecStart=/run/np1-control-numbershare/ncc --mode numbershare-sync --numbershare-config /overlay/owner-apps/np1-control/private/numbershare.json --numbershare-state-dir /overlay/owner-apps/np1-control/state
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/overlay/owner-apps/np1-control/private
+ReadWritePaths=/overlay/owner-apps/np1-control/state/plate
+UMask=0007
+Nice=12
+CPUQuota=20%
+MemoryLimit=48M
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

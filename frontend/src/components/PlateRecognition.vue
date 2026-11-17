@@ -121,7 +121,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
      <p v-if="!loading&&!records.length" class="plate-empty">この期間の記録はありません。</p>
      <template v-for="group in recordGroups" :key="group.day">
      <h3 class="plate-day-heading"><time :datetime="group.day">{{group.label}}</time><span>{{group.items.length.toLocaleString()}} 件</span></h3>
-     <article v-for="{record,imageAvailable} in group.items" :key="record.id" :data-record="record.id" :class="['plate-item',{hit:record.matches.length,selected:record.id===selectedId}]">
+     <article v-for="{record,imageAvailable,numberShare} in group.items" :key="record.id" :data-record="record.id" :class="['plate-item',{hit:record.matches.length,'shared-danger':numberShare?.status==='exact'&&numberShare.category==='危険',selected:record.id===selectedId}]">
       <!-- The plate is drawn like a Japanese number plate; details and actions sit to its right. -->
       <button class="plate-item-main" :aria-pressed="record.id===selectedId" :aria-label="plateDisplay(record)" @click="select(record.id,true)">
        <span class="plate-badge" :class="{hit:record.matches.length}" :title="plateMissing(record)?'グレーの部分は読み取れなかった項目です':undefined" aria-hidden="true"><span class="plate-top"><span :class="{missing:!record.reading.region}">{{record.reading.region||'？？'}}</span> <span :class="{missing:!record.reading.class}">{{record.reading.class||'？？？'}}</span></span><span class="plate-kana" :class="{missing:!record.reading.kana}">{{record.reading.kana||'？'}}</span><span class="plate-serial">{{plateSerial(record.reading.number)}}</span></span>
@@ -130,6 +130,10 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
        <span class="plate-meta" @click="select(record.id,true)"><time :datetime="record.firstSeen">{{time(record.firstSeen)}}</time><span>{{record.sightings}}回検出</span><span>精度 {{Math.round(record.reading.confidence*100)}}%</span><span :class="{'plate-nofix':!record.location,'plate-estimated':record.location?.estimated}" :title="plateLocationNote(record)">{{plateLocationLabel(record)}}</span></span>
       <div class="plate-item-extra">
        <span v-for="m in record.matches" :key="m.ruleId" class="plate-rule-tag">{{m.ruleName}}</span>
+       <template v-if="numberShare?.status==='exact'">
+        <span class="plate-shared-tag" :class="{danger:numberShare.category==='危険'}">NumberShare: {{numberShare.category||'登録済み'}}</span>
+        <span v-if="numberShare.comment" class="plate-shared-comment">{{numberShare.comment}}</span>
+       </template>
        <button class="text-button" :aria-label="`${plateDisplay(record)} の録画を再生`" @click="clipFor=record"><Play :size="14"/>録画を再生</button>
        <button v-if="imageAvailable" class="text-button" @click="imageFor=record"><ImageIcon :size="14"/>画像を見る</button>
        <span v-else-if="record.imageId" class="muted plate-small">画像は保存期間・容量上限により削除済み</span>

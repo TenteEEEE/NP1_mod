@@ -1,0 +1,31 @@
+[Unit]
+Description=Register this NP1 with NumberShare
+After=network-online.target np1-control-tailscale.service
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+RuntimeDirectory=np1-control-numbershare-register
+RuntimeDirectoryMode=0700
+ExecStartPre=/bin/cp /overlay/owner-apps/np1-control/bin/ncc /run/np1-control-numbershare-register/ncc
+ExecStartPre=/bin/chmod 0700 /run/np1-control-numbershare-register/ncc
+ExecStart=/run/np1-control-numbershare-register/ncc --mode numbershare-register --numbershare-config /overlay/owner-apps/np1-control/private/numbershare.json --numbershare-recovery /overlay/owner-apps/np1-control/private/numbershare-recovery.json --numbershare-bootstrap-key /overlay/owner-apps/np1-control/private/numbershare-bootstrap.key --numbershare-user-key /overlay/owner-apps/np1-control/private/numbershare-user.key
+ExecStartPost=/bin/chown root:ncc /overlay/owner-apps/np1-control/private/numbershare.json
+ExecStartPost=/bin/chmod 0640 /overlay/owner-apps/np1-control/private/numbershare.json
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=20
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/overlay/owner-apps/np1-control/private
+UMask=0077
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
