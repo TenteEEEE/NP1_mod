@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test'
+import {test,expect,type Locator,type Page} from '@playwright/test'
 const url=process.env.NCC_UI_REVIEW_URL
 const obs=(data:unknown)=>({status:'available',data,source:'synthetic-wifi-ui-fixture',observedAt:new Date().toISOString(),verified:false,refreshSeconds:2})
 async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellular';waiting?:boolean;clients?:any[]}={}){
@@ -25,6 +25,9 @@ async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellu
  return requests
 }
 async function fits(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)}
+async function compactCheckbox(locator:Locator){
+ const box=await locator.boundingBox();expect(box).not.toBeNull();expect(box!.width).toBe(18);expect(box!.height).toBe(18)
+}
 test.describe('Wi-Fi/AP typed control UI (synthetic fixture)',()=>{
  test.skip(!url,'Set NCC_UI_REVIEW_URL to local static UI.')
  test('deferred upstream preference stays out of the hotspot UI',async({page})=>{
@@ -51,20 +54,24 @@ test.describe('Wi-Fi/AP typed control UI (synthetic fixture)',()=>{
  test('saved Wi-Fi and hotspot passwords stay masked until explicitly shown',async({page})=>{
   await open(page)
   const saved=page.getByRole('button',{name:/Saved NCC LAN/})
+  const savedToggle=page.getByLabel('保存済みパスワードを表示する',{exact:true})
+  const wifiToggle=page.locator('.wifi-connect-form').getByLabel('パスワードを表示する',{exact:true})
+  const apToggle=page.locator('#wifi-ap-settings').getByLabel('パスワードを表示する',{exact:true})
   await expect(saved).toContainText('••••••••')
   await expect(saved).not.toContainText('fixture-wifi-password')
   const apPassword=page.getByLabel('ホットスポットのパスワード',{exact:true})
   await expect(apPassword).toHaveAttribute('type','password')
   await expect(apPassword).toHaveValue('fixture-ap-passphrase')
-  await page.getByLabel('保存済みパスワードを表示する',{exact:true}).check()
+  await compactCheckbox(savedToggle);await compactCheckbox(wifiToggle);await compactCheckbox(apToggle)
+  await savedToggle.check()
   await expect(saved).toContainText('fixture-wifi-password')
-  await page.locator('#wifi-ap-settings').getByLabel('パスワードを表示する',{exact:true}).check()
+  await apToggle.check()
   await expect(apPassword).toHaveAttribute('type','text')
  })
  test('AP update omits unchanged secret and rejects unverified old-state response',async({page})=>{
   const requests=await open(page,{badAP:true});await page.getByRole('textbox',{name:'ホットスポットのSSID',exact:true}).fill('Changed test AP');await page.getByRole('button',{name:'ホットスポットに反映',exact:true}).click();await expect(page.getByRole('alert')).toContainText('ホットスポットの反映を確認できません');await expect(page.getByRole('status')).toHaveCount(0);expect(requests.find(r=>r.path.endsWith('/hotspot'))?.body).toEqual({expectedRevision:1,settings:{enabled:true,ssid:'Changed test AP'}})
  })
- for(const width of [320,390])test(`mobile ${width}px network and AP forms fit`,async({page},info)=>{await page.setViewportSize({width,height:844});await open(page);await page.getByRole('button',{name:'周辺を検索',exact:true}).click();await page.getByRole('button',{name:/Nearby LAN/}).click();await fits(page);await page.screenshot({path:info.outputPath(`wifi-ap-${width}.png`),fullPage:true})})
+ for(const width of [320,390])test(`mobile ${width}px network and AP forms fit`,async({page},info)=>{await page.setViewportSize({width,height:844});await open(page);await page.getByRole('button',{name:'周辺を検索',exact:true}).click();await page.getByRole('button',{name:/Nearby LAN/}).click();await compactCheckbox(page.locator('.wifi-connect-form').getByLabel('パスワードを表示する',{exact:true}));await compactCheckbox(page.locator('#wifi-ap-settings').getByLabel('パスワードを表示する',{exact:true}));await fits(page);await page.screenshot({path:info.outputPath(`wifi-ap-${width}.png`),fullPage:true})})
  for(const kind of ['wifi','cellular'] as const)test(`hotspot shows the actual ${kind} upstream`,async({page})=>{await open(page,{sharingKind:kind});const hotspot=page.locator('#wifi-ap-settings');await expect(hotspot).toContainText(kind==='cellular'?'4G経由':'Wi-Fi経由');await expect(hotspot).toContainText(kind==='cellular'?'4G回線を共有しています':'Wi-Fi接続を共有しています');await expect(hotspot).not.toContainText('管理LAN専用');await fits(page)})
  test('upstream unavailable keeps hotspot information available',async({page})=>{await open(page,{waiting:true});const hotspot=page.locator('#wifi-ap-settings');await expect(hotspot).toContainText('上流接続待ち');await expect(hotspot).toContainText('ホットスポットへの接続は継続できます');await expect(hotspot).not.toContainText('4G経由')})
 })
