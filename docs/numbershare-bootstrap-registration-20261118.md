@@ -26,3 +26,13 @@
 - Go全パッケージの `go test ./...` と `go vet ./...` に合格した。
 - Vue型検査・本番ビルド、arm64バイナリ生成、第三者ライセンス検査、331ファイルの配布マニフェスト生成に合格した。
 - postboot単体試験143件に合格した。
+
+## 実機導入
+
+- コミット `242aef1` を利用者指定のTailscale接続先へ `tools/device/web-worker-update.sh` で導入した。接続先IPや端末識別子は公開記録へ含めない。
+- 最初の配布物はWindows作業コピーの `run.sh` がCRLFだったため、自己テストやバイナリ置換より前に実行を停止した。Git blobからLFのスクリプトを取り出して再梱包し、全ファイルのSHA-256検証後に更新した。
+- 配布したarm64バイナリ、永続バイナリ、実行中バイナリのSHA-256は `b5d7582aa034888e84de97ce317a8369892c56dc4db78730da6f1ed7c43f7415` で一致した。
+- 既存のNumberShare設定ファイルは更新前後のSHA-256が一致した。初回登録、既存の機器用キー・管理画面用キー・匿名IDの変更は行っていない。
+- 復旧スナップショットは `/overlay/owner-apps/np1-control/recovery/web-worker-20261117T155300Z`。更新失敗時は旧バイナリへ自動復元する手順を使用した。
+- Web、broker、AP、modem、native、plateと、純正Communication、DriveRec、ImageRecog、Voice、QMMFは `active/running`、`Result=success`、`NRestarts=0`。純正5サービスは更新前後のPID・InvocationIDが一致した。
+- HTTP/HTTPS、パスワードなしの所有者セッション、UIシェルを端末内から確認し、管理ネットワーク側からHTTPS 200を確認した。転送用HTTPサーバーと端末側の一時配布物は削除した。
