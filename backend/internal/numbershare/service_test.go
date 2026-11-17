@@ -268,6 +268,10 @@ func TestLegacyConfigMigratesOnceIntoManagedAPISettings(t *testing.T) {
 	if err != nil || !managed.Enabled || managed.Endpoint != "https://share.example/api/" || managed.APIKey != "legacy-device-key-0123456789" || managed.UserHandle != "legacy_owner" || managed.RecoveryCode != "legacy-recovery-secret" {
 		t.Fatalf("managed config = %+v, %v", managed, err)
 	}
+	status := New(filepath.Join(root, "state"), nil).Status()
+	if !status.Config.KeyConfigured || status.Config.UserHandle != "legacy_owner" {
+		t.Fatalf("migrated main config was not treated as initialized: %+v", status.Config)
+	}
 	managed.Endpoint = "https://owner.example/api/"
 	if err = config.Atomic(ManagedConfigPath(filepath.Join(root, "state")), managed); err != nil {
 		t.Fatal(err)
