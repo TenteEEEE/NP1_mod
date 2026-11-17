@@ -95,6 +95,12 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
    return false
   })
   await page.getByRole('tab',{name:'共有',exact:true}).click()
+  await expect(page.locator('.plate-share .panel')).toHaveCount(5)
+  expect(await page.locator('.plate-share .panel').evaluateAll(panels=>panels.map(panel=>({
+   panelTop:getComputedStyle(panel).paddingTop,
+   headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
+   bodyTop:getComputedStyle(panel.querySelector('.share-panel-body')!).paddingTop,
+  })))).toEqual(Array(5).fill({panelTop:'0px',headingTop:'16px',bodyTop:'18px'}))
   await expect(page.getByText('リアルタイム送信中')).toBeVisible()
   await expect(page.getByText('API 422: bad plate')).toBeVisible()
   await expect(page.locator('.share-item.mine')).toContainText('自分')
@@ -124,6 +130,12 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await page.getByRole('button',{name:'接続を確認'}).click()
   await expect(page.getByText('接続しました（匿名ID: fixture_user）')).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await page.setViewportSize({width:1440,height:900})
+  expect(await page.locator('.plate-share .panel').evaluateAll(panels=>panels.map(panel=>({
+   panelTop:getComputedStyle(panel).paddingTop,
+   headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
+   bodyTop:getComputedStyle(panel.querySelector('.share-panel-body')!).paddingTop,
+  })))).toEqual(Array(5).fill({panelTop:'0px',headingTop:'18px',bodyTop:'18px'}))
   expect(errors).toEqual([])
  })
 

@@ -65,6 +65,7 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
   <div v-if="notice" class="banner success" role="status"><CheckCircle2 :size="16"/>{{notice}}</div>
   <section class="panel share-config">
    <div class="panel-head"><h2><Cloud :size="18"/>NumberShare API</h2><span v-if="status" class="share-state" :class="status.config.enabled?'on':'off'">{{status.config.enabled?'リアルタイム送信中':'送信停止中'}}</span></div>
+   <div class="share-panel-body">
    <div class="share-config-grid">
     <label class="share-endpoint">APIエンドポイント<input v-model.trim="endpoint" type="url" placeholder="https://example.jp/api/" autocomplete="off" spellcheck="false"></label>
     <label>認証キー<input v-model="key" :type="showKey?'text':'password'" placeholder="APIキーを入力" :disabled="clearKey" autocomplete="off" spellcheck="false"></label>
@@ -74,25 +75,31 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
    </div>
    <p class="hint">保存済みの認証キーを読み込み、通常は伏せ字で表示します。「認証キーを表示する」を選んだときだけ平文表示します。HTTPS証明書の検証は常に有効です。</p>
    <div class="share-actions"><button class="secondary" :disabled="!status?.config.keyConfigured||checking" @click="check"><RefreshCw :size="14"/>{{checking?'確認中…':'接続を確認'}}</button><button class="primary" :disabled="!status||saving" @click="saveConfig">{{saving?'保存中…':'設定を保存'}}</button></div>
+   </div>
   </section>
 
   <section class="panel share-queue">
    <div class="panel-head"><h2>送信状況</h2><button class="text-button" @click="loadStatus"><RefreshCw :size="14"/>更新</button></div>
+   <div class="share-panel-body">
    <dl v-if="status" class="share-counts"><div><dt>送信待ち</dt><dd>{{status.pending}}</dd></div><div><dt>送信済み</dt><dd>{{status.sent}}</dd></div><div><dt>確認が必要</dt><dd :class="{warn:status.blocked}">{{status.blocked}}</dd></div></dl>
    <div v-if="status?.items.length" class="share-queue-list">
     <article v-for="item in status.items" :key="item.eventId"><div><strong>{{display(item.payload.plate)}}</strong><span>{{time(item.payload.observed_at)}} · {{item.state==='sent'?'送信済み':item.state==='blocked'?'自動再送を停止':'再送待ち'}} · {{item.attempts}}回試行</span><small v-if="item.lastError">{{item.lastError}}</small></div><button v-if="item.state==='blocked'" class="secondary compact" @click="retry(item.eventId)"><RotateCcw :size="13"/>再送</button></article>
    </div>
    <p v-else class="plate-empty">送信対象はまだありません。</p>
+   </div>
   </section>
 
   <section class="panel share-upload">
    <div class="panel-head"><h2><Upload :size="18"/>期間を指定してアップロード</h2></div>
+   <div class="share-panel-body">
    <div class="plate-toolbar"><label>開始日<input v-model="uploadFrom" type="date"></label><label>終了日<input v-model="uploadTo" type="date"></label><button class="primary" :disabled="uploading||!status?.config.keyConfigured||!uploadFrom||!uploadTo" @click="uploadRange"><Upload :size="14"/>{{uploading?'追加中…':'この期間をアップロード'}}</button></div>
    <p class="hint">端末に保存された期間内の検知をすべて永続キューへ追加します。同じローカル記録は重複追加せず、リアルタイム送信が停止中でもこの手動アップロードは送信されます。</p>
+   </div>
   </section>
 
   <section class="panel share-history">
    <div class="panel-head"><h2>APIの全検知履歴</h2></div>
+   <div class="share-panel-body">
    <div class="plate-toolbar">
     <label class="plate-search">ナンバーで検索<input v-model="query" type="search" placeholder="番号・地域・分類・かな"></label>
     <label>表示<select v-model="scope"><option value="all">すべて</option><option value="mine">自分の検知</option><option value="others">他の利用者</option></select></label>
@@ -105,13 +112,16 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
     <div class="plate-map-wrap"><div class="plate-map-frame"><div ref="mapEl" class="plate-map share-map" role="region" aria-label="共有されたナンバーの地図"></div><div v-if="!loading&&!located.length" class="plate-map-placeholder"><MapPin :size="24"/><strong>位置のある共有情報はありません</strong></div></div><div class="plate-legend"><span><i class="dot share-other"></i>他の利用者</span><span><i class="dot share-own"></i>自分</span></div></div>
     <div class="plate-list share-list"><button v-for="item in items" :key="item.event_id" :class="['share-item',{mine:item.mine,selected:item.event_id===selected}]" @click="select(item)"><strong>{{display(item.plate)}}</strong><span><b>{{item.mine?'自分':'他の利用者'}}</b> · {{time(item.observed_at)}} · {{item.match_status==='exact'?'確定一致':item.match_status==='candidate'?'候補':'一致なし'}}</span><small>{{item.location?'位置あり':'位置なし'}}</small></button><p v-if="!loading&&!items.length" class="plate-empty">条件に一致する共有情報はありません。</p></div>
    </div>
+   </div>
   </section>
 
   <section class="panel share-vehicles">
    <div class="panel-head"><h2>登録車両を検索</h2></div>
+   <div class="share-panel-body">
    <div class="plate-toolbar"><label class="plate-search">地域・コメント<input v-model="vehicleQuery" type="search" placeholder="部分一致"></label><label>一連指定番号<input v-model="serial" placeholder="12-34"></label><label>カテゴリ<select v-model="category"><option value="">すべて</option><option v-for="value in categories" :key="value">{{value}}</option></select></label><button class="secondary compact" :disabled="!status?.config.keyConfigured" @click="searchVehicles"><Search :size="14"/>検索</button></div>
    <div class="share-vehicle-grid"><article v-for="vehicle in vehicles" :key="vehicle.id"><strong>{{display(vehicle)}}</strong><span>{{vehicle.category}} · 検知 {{vehicle.sightings}}回 · 最終 {{time(vehicle.last_seen)}}</span><p v-if="vehicle.comment">{{vehicle.comment}}</p></article></div>
    <p v-if="!vehicles.length" class="plate-empty">条件に一致する登録車両はありません。</p>
+   </div>
   </section>
  </div>
 </template>
