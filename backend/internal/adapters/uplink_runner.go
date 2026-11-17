@@ -93,7 +93,7 @@ var helperWire = regexp.MustCompile(`(?m)^wifi-sta-wire=([12])$`)
 // exit status is only advisory: its strict shared-memory reference check can fail when
 // another stock process maps the same region at that moment, even though the request
 // completed (seen in the 2026-11-13 trial).
-func requestSTA(on bool) error {
+func requestSTA(ctx context.Context, on bool) error {
 	pid, e := communicationPID()
 	if e != nil {
 		return e
@@ -102,7 +102,7 @@ func requestSTA(on bool) error {
 	if !on {
 		expected, next = "1", "2"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, uplinkHelper, "--apply", pid, expected, next)
 	cmd.Env = []string{"PATH=/usr/bin:/bin", "LD_LIBRARY_PATH=/usr/local/lib", "NCC_NATIVE_WIFI_STA_TRIAL=1"}
@@ -111,44 +111,27 @@ func requestSTA(on bool) error {
 		log.Printf("uplink helper: %v", runErr)
 	}
 	deadline := time.Now().Add(15 * time.Second)
-	for time.Now().Before(deadline) {
+	for ctx.Err() == nil && time.Now().Before(deadline) {
 		if state, e := stockSTAOn(); e == nil && state == on {
 			return nil
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	return errors.New("UPLINK_REQUEST_UNCONFIRMED")
 }
 
-func savedSSIDs() []string {
-	raw, e := vendorWPA("LIST_NETWORKS")
-	if e != nil {
-		return nil
-	}
-	networks, e := parseWiFiNetworks(raw)
-	if e != nil {
-		return nil
-	}
-	out := []string{}
-	for _, n := range networks {
-		if n.SSID != "" {
-			out = append(out, n.SSID)
-		}
-	}
-	return out
-}
-
 // scanForSaved asks the supplicant (if it still runs with the mode off) for a scan and
 // reports whether a saved SSID is heard at a usable level.
-func scanForSaved(saved []string) (known, seen bool) {
+func scanForSaved(ctx context.Context, saved []string) (known, seen bool) {
 	if len(saved) == 0 {
 		return false, false
 	}
-	if reply, e := vendorWPA("SCAN"); e != nil || !strings.HasPrefix(strings.TrimSpace(reply), "OK") && !strings.Contains(reply, "FAIL-BUSY") {
-		return false, false
-	}
-	time.Sleep(5 * time.Second)
-	raw, e := vendorWPA("SCAN_RESULTS")
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel()
+	result, e := wifiController.Scan(ctx)
 	if e != nil {
 		return false, false
 	}
@@ -156,13 +139,8 @@ func scanForSaved(saved []string) (known, seen bool) {
 	for _, s := range saved {
 		want[s] = true
 	}
-	for _, line := range strings.Split(strings.TrimSpace(raw), "\n")[1:] {
-		f := strings.Split(line, "\t")
-		if len(f) < 5 {
-			continue
-		}
-		level, _ := strconv.Atoi(f[2])
-		if ssid, e := decodeWPASSID(f[4]); e == nil && want[ssid] && level >= -80 {
+	for _, found := range result.Results {
+		if want[found.SSID] && found.SignalDBm >= -80 {
 			return true, true
 		}
 	}
@@ -210,17 +188,30 @@ func wifiCarries() bool {
 	return stationLinkUp(strings.TrimSpace(string(operstate)), strings.TrimSpace(string(carrier)), carrierErr == nil)
 }
 
+func wifiDefaultRouteWorking() bool {
+	return currentUplink() == "wifi" && wifiCarries()
+}
+
 func currentUplink() string {
-	switch defaultIface() {
+	iface := defaultIface()
+	switch iface {
 	case "wlan0":
 		return "wifi"
 	case "":
 		return "none"
 	}
-	if strings.HasPrefix(defaultIface(), "usb0") || strings.HasPrefix(defaultIface(), "rmnet") {
+	if strings.HasPrefix(iface, "usb0") || strings.HasPrefix(iface, "rmnet") {
 		return "cellular"
 	}
 	return "other"
+}
+
+func readUplinkState() UplinkState {
+	var state UplinkState
+	if raw, e := os.ReadFile(uplinkStateFile); e == nil {
+		_ = json.Unmarshal(raw, &state)
+	}
+	return state
 }
 
 // RunUplinkSupervisor ticks every 10 seconds until ctx ends.
@@ -228,10 +219,7 @@ func RunUplinkSupervisor(ctx context.Context) error {
 	if e := os.MkdirAll(uplinkPrivate, 0700); e != nil {
 		return e
 	}
-	var state UplinkState
-	if raw, e := os.ReadFile(uplinkStateFile); e == nil {
-		_ = json.Unmarshal(raw, &state)
-	}
+	state := readUplinkState()
 	var saved []string
 	if raw, e := os.ReadFile(filepath.Join(uplinkPrivate, "saved.json")); e == nil {
 		_ = json.Unmarshal(raw, &saved)
@@ -243,69 +231,119 @@ func RunUplinkSupervisor(ctx context.Context) error {
 		status := UplinkStatusView{At: time.Now().UTC(), Mode: mode}
 		_, helperErr := os.Stat(uplinkHelper)
 		status.HelperSeen = helperErr == nil
-		on, e := stockSTAOn()
-		if e != nil {
-			status.Error = e.Error()
-		} else {
-			status.STAOn = &on
-			now := time.Now()
-			if mode != previousMode {
-				manualRetry = time.Time{}
-				// Entering automatic mode with the STA mode off (for example after manual 4G)
-				// lets the automation bring Wi-Fi back near a saved network.
-				if mode == UplinkModeAuto && previousMode != "" && !on && state.AutoOffAt == nil {
-					t := now
-					state.AutoOffAt = &t
-					// The owner just asked for automatic: try the station at once
-					// instead of waiting for the blind-retry interval.
-					state.NextProbeAt = &t
+		wait, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		unlock, lockErr := lockUplinkWiFi(wait)
+		cancel()
+		if lockErr == nil {
+			// Read the mode again inside the lock, alongside manual setup and PUT.
+			mode = uplinkMode()
+			status.Mode = mode
+			on, stockErr := stockSTAOn()
+			use, useErr := readUplinkWiFiUse()
+			if stockErr == nil && useErr == nil {
+				status.STAOn = &on
+				now := time.Now()
+				if mode != previousMode {
+					manualRetry = time.Time{}
+					// Entering automatic mode with the STA mode off (for example after manual 4G)
+					// lets the automation bring Wi-Fi back near a saved network.
+					if mode == UplinkModeAuto && previousMode != "" && !on && state.AutoOffAt == nil {
+						t := now
+						state.AutoOffAt = &t
+						// The owner just asked for automatic: try the station at once
+						// instead of waiting for the blind-retry interval.
+						state.NextProbeAt = &t
+					}
+					previousMode = mode
 				}
-				previousMode = mode
-			}
-			if on {
-				status.WPAState = wpaState()
-				if list := savedSSIDs(); len(list) > 0 {
-					saved = list
-					_ = config.Atomic(filepath.Join(uplinkPrivate, "saved.json"), saved)
+				if on {
+					status.WPAState = wpaState()
 				}
-			}
-			action, reason, next := UplinkNone, "", state
-			switch mode {
-			case UplinkModeWiFi, UplinkModeCellular:
-				// Manual: hold the chosen mode; automatic markers do not apply.
-				want := mode == UplinkModeWiFi
-				next.AutoOffAt, next.UnconnectedSince, next.RetryAfter = nil, nil, nil
-				if want != on && status.HelperSeen && now.After(manualRetry) {
-					action, reason = UplinkOff, "owner-manual"
-					if want {
-						action = UplinkOn
+				if use.Confirmed {
+					state.AutoOffAt, state.RetryAfter, state.NextProbeAt, state.ProbeUntil, state.UnconnectedSince = nil, nil, nil, nil, nil
+				}
+				setupActive := now.Before(use.Until)
+				restoreOff := !setupActive && use.RestoreOff && !use.Confirmed && mode == UplinkModeAuto
+				if on && !setupActive && !restoreOff {
+					restore, stop := context.WithTimeout(ctx, 6*time.Second)
+					list, err := wifiController.restoreProfiles(restore)
+					stop()
+					if err == nil {
+						saved = list
+						_ = config.Atomic(filepath.Join(uplinkPrivate, "saved.json"), saved)
 					}
 				}
-			default:
-				in := UplinkInputs{Now: now, STAOn: on, WPAState: status.WPAState, Working: on && currentUplink() == "wifi" && wifiCarries(), Enabled: status.HelperSeen}
-				if fix, e := liveGNSS.LatestWithin(ctx, now, uplinkFixMaxAge); e == nil && fix != nil {
-					in.Position = &UplinkPosition{At: fix.At, Lat: fix.Lat, Lon: fix.Lon}
+				action, reason, next := UplinkNone, "", state
+				switch {
+				case setupActive:
+					// The broker owns STA during scan/association and rollback.
+				case restoreOff:
+					if on && status.HelperSeen && now.After(manualRetry) {
+						action, reason = UplinkOff, "wifi-setup-ended"
+					}
+					if state.AutoOffAt != nil || state.ProbeUntil != nil {
+						probe := now.Add(uplinkProbeEvery)
+						next.AutoOffAt, next.NextProbeAt = &now, &probe
+					}
+					next.ProbeUntil = nil
+				case mode == UplinkModeWiFi || mode == UplinkModeCellular:
+					// Manual: hold the chosen mode; automatic markers do not apply.
+					want := mode == UplinkModeWiFi
+					next.AutoOffAt, next.UnconnectedSince, next.RetryAfter = nil, nil, nil
+					next.NextProbeAt, next.ProbeUntil = nil, nil
+					if want != on && status.HelperSeen && now.After(manualRetry) {
+						action, reason = UplinkOff, "owner-manual"
+						if want {
+							action = UplinkOn
+						}
+					}
+				default:
+					in := UplinkInputs{Now: now, STAOn: on, Working: on && wifiDefaultRouteWorking(), Enabled: status.HelperSeen}
+					if fix, e := liveGNSS.LatestWithin(ctx, now, uplinkFixMaxAge); e == nil && fix != nil {
+						in.Position = &UplinkPosition{At: fix.At, Lat: fix.Lat, Lon: fix.Lon}
+					}
+					if !on && state.AutoOffAt != nil && (state.RetryAfter == nil || !now.Before(*state.RetryAfter)) {
+						in.ScanKnown, in.SavedSeen = scanForSaved(ctx, saved)
+						status.ScanKnown, status.SavedSeen = in.ScanKnown, in.SavedSeen
+					}
+					if now.After(manualRetry) {
+						action, reason, next = DecideUplink(in, state)
+					}
 				}
-				if !on && state.AutoOffAt != nil {
-					in.ScanKnown, in.SavedSeen = scanForSaved(saved)
-					status.ScanKnown, status.SavedSeen = in.ScanKnown, in.SavedSeen
+				if action != UplinkNone {
+					if e := requestSTA(ctx, action == UplinkOn); e != nil {
+						status.Error = e.Error()
+						// Keep the previous state so the decision is retried later.
+						next = state
+						manualRetry = now.Add(time.Minute)
+					} else {
+						on = action == UplinkOn
+						if on && next.ProbeUntil != nil {
+							// The probe begins after the stock request has applied.
+							until := time.Now().Add(uplinkProbeWindow)
+							next.ProbeUntil = &until
+						}
+						next.Switches++
+						next.LastAction, next.LastReason = string(action), reason
+						log.Printf("uplink: STA %s (%s)", action, reason)
+					}
 				}
-				action, reason, next = DecideUplink(in, state)
+				state = next
+				if err := config.Atomic(uplinkStateFile, state); err == nil && !setupActive && !use.Until.IsZero() && (!restoreOff || !on) {
+					_ = os.Remove(uplinkWiFiUseFile)
+				}
+			} else if stockErr != nil {
+				status.Error = "UPLINK_STOCK_STATE_UNAVAILABLE"
+			} else {
+				status.Error = "UPLINK_WIFI_SETUP_UNAVAILABLE"
 			}
-			if action != UplinkNone {
-				if e := requestSTA(action == UplinkOn); e != nil {
-					status.Error = e.Error()
-					// Keep the previous state so the decision is retried later.
-					next = state
-					manualRetry = now.Add(time.Minute)
-				} else {
-					next.Switches++
-					next.LastAction, next.LastReason = string(action), reason
-					log.Printf("uplink: STA %s (%s)", action, reason)
-				}
+			unlock()
+		} else {
+			// A request is starting Wi-Fi or waiting for a scan. Continue showing
+			// the actual uplink without blocking the status API.
+			if on, err := stockSTAOn(); err == nil {
+				status.STAOn = &on
 			}
-			state = next
-			_ = config.Atomic(uplinkStateFile, state)
 		}
 		status.State = state
 		status.Uplink = currentUplink()
@@ -343,6 +381,18 @@ func HandleUplink(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ValidUplinkMode(body.Mode) {
 		nativeError(w, 400, "INVALID_UPLINK_MODE", "回線の切替方法を選んでください")
+		return
+	}
+	wait, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	unlock, err := lockUplinkWiFi(wait)
+	if err != nil {
+		wifiHTTPError(w, errors.New("WIFI_SETUP_PENDING"))
+		return
+	}
+	defer unlock()
+	if wifiController.hasPending() {
+		wifiHTTPError(w, errors.New("WIFI_TRANSACTION_PENDING"))
 		return
 	}
 	if e := config.Atomic(UplinkSettings, body); e != nil {

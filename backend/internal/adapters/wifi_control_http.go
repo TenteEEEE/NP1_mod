@@ -30,6 +30,9 @@ func wifiHTTPError(w http.ResponseWriter, e error) {
 	if strings.Contains(code, "PENDING") || strings.Contains(code, "CONFLICT") || strings.Contains(code, "NOT_CONNECTED") || strings.Contains(code, "NOT_FOUND") {
 		status = 409
 	}
+	if code == "WIFI_CELLULAR_FIXED" {
+		status = 409
+	}
 	nativeError(w, status, code, code)
 }
 

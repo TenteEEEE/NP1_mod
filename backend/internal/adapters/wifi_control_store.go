@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/np1-control-center/ncc/internal/config"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/np1-control-center/ncc/internal/config"
 )
 
 func (c *WiFiController) readPrivate(name string, out any) error {
@@ -84,6 +86,66 @@ func (c *WiFiController) loadProfiles() ([]wifiProfile, error) {
 		seen[p.ID] = true
 	}
 	return profiles, nil
+}
+
+func (c *WiFiController) profileNetwork(ctx context.Context, networks []WiFiNetwork, profile wifiProfile) (WiFiNetwork, bool, error) {
+	for _, network := range networks {
+		if network.SSID == profile.SSID {
+			owner, err := c.request(ctx, "GET_NETWORK "+strconv.Itoa(network.ID)+" id_str")
+			if err != nil && err.Error() != "WIFI_COMMAND_REJECTED" {
+				return WiFiNetwork{}, false, err
+			}
+			if owner == strconv.Quote(profile.ID) {
+				return network, true, nil
+			}
+		}
+	}
+	return WiFiNetwork{}, false, nil
+}
+
+// The stock supplicant may be restarted when moving to 4G. Repopulate only
+// NCC profiles from our private store, without saving the stock configuration.
+// The caller holds the shared uplink lock and has checked for a pending change.
+func (c *WiFiController) restoreProfiles(ctx context.Context) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	profiles, err := c.loadProfiles()
+	if err != nil {
+		return nil, err
+	}
+	networks, err := c.networks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ssids := make([]string, 0, len(networks)+len(profiles))
+	for _, network := range networks {
+		if !network.Disabled && network.SSID != "" {
+			ssids = append(ssids, network.SSID)
+		}
+	}
+	for _, profile := range profiles {
+		network, exists, err := c.profileNetwork(ctx, networks, profile)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			id, err := c.addProfileNetwork(ctx, profile)
+			if err != nil {
+				return nil, err
+			}
+			network = WiFiNetwork{ID: id, Disabled: true}
+		}
+		if network.Disabled {
+			if err := c.ok(ctx, "ENABLE_NETWORK "+strconv.Itoa(network.ID)); err != nil {
+				if !exists {
+					c.removeProfileNetwork(network.ID, profile.ID)
+				}
+				return nil, err
+			}
+			ssids = append(ssids, profile.SSID)
+		}
+	}
+	return ssids, nil
 }
 func (c *WiFiController) storeProfile(profile wifiProfile) error {
 	profiles, e := c.loadProfiles()

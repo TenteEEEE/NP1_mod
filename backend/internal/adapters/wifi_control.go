@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/netip"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +22,7 @@ const WiFiDirectory = "/overlay/owner-apps/np1-control/private/wifi"
 // Tests supply an in-memory supplicant; production uses the stock control socket.
 type WPATransport interface {
 	Request(context.Context, string) (string, error)
+	Scan(context.Context) (string, error)
 }
 type vendorWPATransport struct{}
 
@@ -27,7 +30,7 @@ func (vendorWPATransport) Request(ctx context.Context, command string) (string, 
 	if ctx.Err() != nil {
 		return "", ctx.Err()
 	}
-	return vendorWPA(command)
+	return vendorWPAContext(ctx, command)
 }
 
 type WiFiNetwork struct {
@@ -54,6 +57,7 @@ type WiFiScanView struct {
 	ScanRequested    bool             `json:"scanRequested"`
 	Results          []WiFiScanResult `json:"results"`
 	ResultsAreCached bool             `json:"resultsAreCached"`
+	ScannedAt        time.Time        `json:"scannedAt"`
 }
 type WiFiSavedProfile struct {
 	ID                 string `json:"id"`
@@ -75,6 +79,7 @@ type WiFiView struct {
 	Networks    []WiFiNetwork      `json:"networks"`
 	Saved       []WiFiSavedProfile `json:"saved"`
 	Transaction *WiFiTransaction   `json:"transaction"`
+	LastScan    *WiFiScanView      `json:"lastScan,omitempty"`
 }
 type WiFiNewConnection struct {
 	SSID     string `json:"ssid"`
@@ -88,12 +93,15 @@ type wifiProfile struct {
 	Password string `json:"password"`
 }
 type wifiPending struct {
-	Public    WiFiTransaction `json:"public"`
-	OldID     *int            `json:"oldID"`
-	OldSSID   string          `json:"oldSSID"`
-	TargetID  int             `json:"targetID"`
-	CreatedID *int            `json:"createdID"`
-	Profile   *wifiProfile    `json:"profile,omitempty"`
+	Public            WiFiTransaction `json:"public"`
+	OldID             *int            `json:"oldID"`
+	OldSSID           string          `json:"oldSSID"`
+	TargetID          int             `json:"targetID"`
+	CreatedID         *int            `json:"createdID"`
+	Profile           *wifiProfile    `json:"profile,omitempty"`
+	Enabled           []WiFiNetwork   `json:"enabled,omitempty"`
+	TargetWasDisabled bool            `json:"targetWasDisabled,omitempty"`
+	RestoreStationOff bool            `json:"restoreStationOff,omitempty"`
 }
 type WiFiController struct {
 	mu        sync.Mutex
@@ -101,6 +109,7 @@ type WiFiController struct {
 	directory string
 	pending   *wifiPending
 	last      *WiFiTransaction
+	lastScan  *WiFiScanView
 	timer     *time.Timer
 	timeout   time.Duration
 }
@@ -115,25 +124,52 @@ func NewWiFiController(directory string, transport WPATransport) *WiFiController
 var wifiController = NewWiFiController(WiFiDirectory, nil)
 
 func WiFiNetworks(ctx context.Context) (WiFiView, error) { return wifiController.List(ctx) }
-func WiFiScan(ctx context.Context) (WiFiScanView, error) { return wifiController.Scan(ctx) }
+func WiFiScan(ctx context.Context) (WiFiScanView, error) {
+	return withUplinkWiFi(ctx, func(ctx context.Context, _ *uplinkWiFiUse) (WiFiScanView, error) {
+		return wifiController.Scan(ctx)
+	})
+}
 func WiFiConnectSaved(ctx context.Context, networkID int) (WiFiTransaction, error) {
-	return wifiController.ConnectSaved(ctx, networkID)
+	return connectWithUplink(ctx, func(ctx context.Context) (WiFiTransaction, error) {
+		return wifiController.ConnectSaved(ctx, networkID)
+	})
 }
 func WiFiConnectNew(ctx context.Context, change WiFiNewConnection) (WiFiTransaction, error) {
-	return wifiController.ConnectNew(ctx, change)
+	if !validWiFiConnection(change) {
+		return WiFiTransaction{}, errors.New("WIFI_CONNECTION_INVALID")
+	}
+	return connectWithUplink(ctx, func(ctx context.Context) (WiFiTransaction, error) {
+		return wifiController.ConnectNew(ctx, change)
+	})
 }
 func WiFiConnectProfile(ctx context.Context, profileID string) (WiFiTransaction, error) {
-	return wifiController.ConnectProfile(ctx, profileID)
+	return connectWithUplink(ctx, func(ctx context.Context) (WiFiTransaction, error) {
+		return wifiController.ConnectProfile(ctx, profileID)
+	})
 }
 func WiFiConfirm(ctx context.Context, id string) (WiFiTransaction, error) {
-	return wifiController.Confirm(ctx, id)
+	return finishWiFiUse(ctx, id, true)
 }
 func WiFiRollback(ctx context.Context, id string) (WiFiTransaction, error) {
-	return wifiController.Rollback(ctx, id)
+	return finishWiFiUse(ctx, id, false)
 }
 
 // RecoverWiFi rolls back an interrupted transaction before allowing mutations.
-func RecoverWiFi(ctx context.Context) error { return wifiController.Recover(ctx) }
+func RecoverWiFi(ctx context.Context) error {
+	wait, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	unlock, err := lockUplinkWiFi(wait)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return wifiController.Recover(ctx)
+}
+
+func (c *WiFiController) usesStockStation() bool {
+	_, stock := c.transport.(vendorWPATransport)
+	return stock
+}
 
 func (c *WiFiController) request(ctx context.Context, command string) (string, error) {
 	raw, e := c.transport.Request(ctx, command)
@@ -327,14 +363,6 @@ func (c *WiFiController) List(ctx context.Context) (WiFiView, error) {
 	if e := c.recoverIfNeeded(ctx); e != nil {
 		return WiFiView{}, e
 	}
-	connection, e := c.connection(ctx)
-	if e != nil {
-		return WiFiView{}, e
-	}
-	networks, e := c.networks(ctx)
-	if e != nil {
-		return WiFiView{}, e
-	}
 	profiles, e := c.loadProfiles()
 	if e != nil {
 		return WiFiView{}, e
@@ -342,6 +370,22 @@ func (c *WiFiController) List(ctx context.Context) (WiFiView, error) {
 	saved := []WiFiSavedProfile{}
 	for _, p := range profiles {
 		saved = append(saved, WiFiSavedProfile{ID: p.ID, SSID: p.SSID, Security: p.Security, PasswordConfigured: p.Password != "", Password: p.Password})
+	}
+	if c.lastScan != nil && time.Since(c.lastScan.ScannedAt) > 2*time.Minute {
+		c.lastScan = nil
+	}
+	if c.usesStockStation() && c.pending == nil {
+		if on, err := stockSTAOn(); err == nil && !on {
+			return WiFiView{WiFiConnection{State: "STA_OFF"}, []WiFiNetwork{}, saved, c.last, c.lastScan}, nil
+		}
+	}
+	connection, e := c.connection(ctx)
+	if e != nil {
+		return WiFiView{}, e
+	}
+	networks, e := c.networks(ctx)
+	if e != nil {
+		return WiFiView{}, e
 	}
 	for i := range networks {
 		if c.pending != nil && c.pending.CreatedID != nil && networks[i].ID == *c.pending.CreatedID {
@@ -351,24 +395,33 @@ func (c *WiFiController) List(ctx context.Context) (WiFiView, error) {
 	transaction := c.last
 	if c.pending != nil {
 		view := c.pending.Public
-		view.CanConfirm = connection.State == "COMPLETED" && connection.NetworkID != nil && *connection.NetworkID == c.pending.TargetID
+		view.CanConfirm = targetWiFiConnected(connection, c.pending)
 		transaction = &view
 	}
-	return WiFiView{connection, networks, saved, transaction}, nil
+	return WiFiView{connection, networks, saved, transaction, c.lastScan}, nil
 }
 func (c *WiFiController) Scan(ctx context.Context) (WiFiScanView, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e := c.ok(ctx, "SCAN"); e != nil {
-		return WiFiScanView{}, e
-	}
-	raw, e := c.request(ctx, "SCAN_RESULTS")
+	raw, e := c.transport.Scan(ctx)
 	if e != nil {
 		return WiFiScanView{}, e
 	}
+	results, e := parseWiFiScan(raw)
+	if e != nil {
+		return WiFiScanView{}, e
+	}
+	view := WiFiScanView{ScanRequested: true, Results: results, ScannedAt: time.Now().UTC()}
+	cached := view
+	cached.ResultsAreCached = true
+	c.lastScan = &cached
+	return view, nil
+}
+
+func parseWiFiScan(raw string) ([]WiFiScanResult, error) {
 	lines := strings.Split(raw, "\n")
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "bssid / frequency") {
-		return WiFiScanView{}, errors.New("WIFI_SCAN_INVALID")
+		return nil, errors.New("WIFI_SCAN_INVALID")
 	}
 	out := []WiFiScanResult{}
 	for _, line := range lines[1:] {
@@ -377,15 +430,15 @@ func (c *WiFiController) Scan(ctx context.Context) (WiFiScanView, error) {
 		}
 		p := strings.SplitN(line, "\t", 5)
 		if len(p) != 5 || len(out) >= 256 {
-			return WiFiScanView{}, errors.New("WIFI_SCAN_INVALID")
+			continue
 		}
 		frequency, e := strconv.Atoi(p[1])
 		if e != nil || frequency < 2000 || frequency > 7200 {
-			return WiFiScanView{}, errors.New("WIFI_SCAN_INVALID")
+			continue
 		}
 		signal, e := strconv.Atoi(p[2])
 		if e != nil || signal < -150 || signal > 0 {
-			return WiFiScanView{}, errors.New("WIFI_SCAN_INVALID")
+			continue
 		}
 		ssid, e := decodeWPASSID(p[4])
 		if e != nil || !wifiSSID(ssid) {
@@ -393,14 +446,26 @@ func (c *WiFiController) Scan(ctx context.Context) (WiFiScanView, error) {
 		}
 		security := "unsupported"
 		switch {
-		case strings.Contains(p[3], "WPA2-PSK") && !strings.Contains(p[3], "SAE"):
+		case strings.Contains(p[3], "WPA2-PSK"):
 			security = "wpa2"
-		case !strings.Contains(p[3], "WPA") && !strings.Contains(p[3], "WEP") && !strings.Contains(p[3], "SAE") && !strings.Contains(p[3], "EAP"):
+		case !strings.Contains(p[3], "WPA") && !strings.Contains(p[3], "WEP") && !strings.Contains(p[3], "SAE") && !strings.Contains(p[3], "EAP") && !strings.Contains(p[3], "OWE"):
 			security = "open"
 		}
 		out = append(out, WiFiScanResult{ssid, p[0], frequency, signal, security})
 	}
-	return WiFiScanView{true, out, true}, nil
+	return out, nil
+}
+
+func (c *WiFiController) hasPending() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pending != nil
+}
+
+func targetWiFiConnected(connection WiFiConnection, pending *wifiPending) bool {
+	ip, err := netip.ParseAddr(connection.IPv4)
+	return connection.State == "COMPLETED" && connection.NetworkID != nil && *connection.NetworkID == pending.TargetID &&
+		connection.SSID == pending.Public.TargetSSID && err == nil && ip.Is4() && ip.IsGlobalUnicast() && !ip.IsLinkLocalUnicast()
 }
 
 func (c *WiFiController) begin(ctx context.Context, target int, ssid string, created *int, profile *wifiProfile) (WiFiTransaction, error) {
@@ -413,11 +478,25 @@ func (c *WiFiController) begin(ctx context.Context, target int, ssid string, cre
 		return WiFiTransaction{}, errors.New("WIFI_RANDOM_UNAVAILABLE")
 	}
 	pending := &wifiPending{Public: WiFiTransaction{ID: id, State: "pending", ExpiresAt: time.Now().Add(c.timeout), TargetSSID: ssid}, OldID: connection.NetworkID, TargetID: target, CreatedID: created, Profile: profile}
-	if pending.OldID != nil {
-		networks, e := c.networks(ctx)
-		if e != nil {
-			return WiFiTransaction{}, e
+	if c.usesStockStation() {
+		use, err := readUplinkWiFiUse()
+		if err != nil {
+			return WiFiTransaction{}, errors.New("WIFI_SETUP_UNAVAILABLE")
 		}
+		pending.RestoreStationOff = use.RestoreOff
+	}
+	networks, e := c.networks(ctx)
+	if e != nil {
+		return WiFiTransaction{}, e
+	}
+	for _, network := range networks {
+		if network.ID == target {
+			pending.TargetWasDisabled = network.Disabled && created == nil
+		} else if !network.Disabled {
+			pending.Enabled = append(pending.Enabled, network)
+		}
+	}
+	if pending.OldID != nil {
 		found := false
 		for _, network := range networks {
 			if network.ID == *pending.OldID {
@@ -493,71 +572,98 @@ func (c *WiFiController) ConnectProfile(ctx context.Context, profileID string) (
 	}
 	for _, p := range profiles {
 		if p.ID == profileID {
+			if e := c.ready(ctx); e != nil {
+				return WiFiTransaction{}, e
+			}
+			networks, e := c.networks(ctx)
+			if e != nil {
+				return WiFiTransaction{}, e
+			}
+			network, ok, e := c.profileNetwork(ctx, networks, p)
+			if e != nil {
+				return WiFiTransaction{}, e
+			}
+			if ok {
+				return c.begin(ctx, network.ID, p.SSID, nil, nil)
+			}
 			return c.connectNewLocked(ctx, WiFiNewConnection{p.SSID, p.Security, p.Password}, p.ID)
 		}
 	}
 	return WiFiTransaction{}, errors.New("WIFI_SAVED_PROFILE_NOT_FOUND")
 }
 func (c *WiFiController) connectNewLocked(ctx context.Context, change WiFiNewConnection, profileID string) (WiFiTransaction, error) {
-	if !wifiSSID(change.SSID) || !(change.Security == "open" && change.Password == "" || change.Security == "wpa2" && wifiPassword(change.Password)) {
+	if !validWiFiConnection(change) {
 		return WiFiTransaction{}, errors.New("WIFI_CONNECTION_INVALID")
 	}
 	if e := c.ready(ctx); e != nil {
 		return WiFiTransaction{}, e
 	}
-	uuid, e := wifiUUID()
-	if e != nil {
-		return WiFiTransaction{}, errors.New("WIFI_RANDOM_UNAVAILABLE")
-	}
-	raw, e := c.request(ctx, "ADD_NETWORK")
-	if e != nil {
-		return WiFiTransaction{}, e
-	}
-	id, e := wifiID(raw)
-	if e != nil {
-		return WiFiTransaction{}, e
-	}
 	if profileID == "" {
+		uuid, e := wifiUUID()
+		if e != nil {
+			return WiFiTransaction{}, errors.New("WIFI_RANDOM_UNAVAILABLE")
+		}
 		profileID = "ncc-" + uuid
 	}
 	profile := wifiProfile{ID: profileID, SSID: change.SSID, Security: change.Security, Password: change.Password}
+	id, e := c.addProfileNetwork(ctx, profile)
+	if e != nil {
+		return WiFiTransaction{}, e
+	}
+	transaction, e := c.begin(ctx, id, change.SSID, &id, &profile)
+	if e != nil && c.pending == nil {
+		c.removeProfileNetwork(id, profile.ID)
+	}
+	return transaction, e
+}
+
+func validWiFiConnection(change WiFiNewConnection) bool {
+	return wifiSSID(change.SSID) && (change.Security == "open" && change.Password == "" || change.Security == "wpa2" && wifiPassword(change.Password))
+}
+
+func (c *WiFiController) removeProfileNetwork(id int, profileID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	owner, e := c.request(ctx, "GET_NETWORK "+strconv.Itoa(id)+" id_str")
+	if e == nil && owner == strconv.Quote(profileID) {
+		_ = c.ok(ctx, "REMOVE_NETWORK "+strconv.Itoa(id))
+	}
+}
+
+func (c *WiFiController) addProfileNetwork(ctx context.Context, profile wifiProfile) (int, error) {
+	raw, e := c.request(ctx, "ADD_NETWORK")
+	if e != nil {
+		return 0, e
+	}
+	id, e := wifiID(raw)
+	if e != nil {
+		return 0, e
+	}
 	if e = c.ok(ctx, "SET_NETWORK "+strconv.Itoa(id)+" id_str "+strconv.Quote(profile.ID)); e != nil {
 		background, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		_ = c.ok(background, "REMOVE_NETWORK "+strconv.Itoa(id)) // ID is the freshly returned ADD_NETWORK object.
-		return WiFiTransaction{}, e
+		return 0, e
 	}
-	cleanup := func() {
-		background, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-		owner, e := c.request(background, "GET_NETWORK "+strconv.Itoa(id)+" id_str")
-		if e == nil && owner == strconv.Quote(profile.ID) {
-			_ = c.ok(background, "REMOVE_NETWORK "+strconv.Itoa(id))
-		}
-	}
-	commands := []string{"ssid " + hex.EncodeToString([]byte(change.SSID))}
-	if change.Security == "open" {
+	commands := []string{"ssid " + hex.EncodeToString([]byte(profile.SSID))}
+	if profile.Security == "open" {
 		commands = append(commands, "key_mgmt NONE")
 	} else {
 		// Stock wpa_config_parse_psk copies bytes between the first and last quote;
 		// it does not unescape Go/JSON backslashes. Printable ASCII was validated.
-		psk := "\"" + change.Password + "\""
-		if len(change.Password) == 64 {
-			psk = change.Password
+		psk := "\"" + profile.Password + "\""
+		if len(profile.Password) == 64 {
+			psk = profile.Password
 		}
 		commands = append(commands, "key_mgmt WPA-PSK", "proto RSN", "psk "+psk)
 	}
 	for _, command := range commands {
 		if e = c.ok(ctx, "SET_NETWORK "+strconv.Itoa(id)+" "+command); e != nil {
-			cleanup()
-			return WiFiTransaction{}, e
+			c.removeProfileNetwork(id, profile.ID)
+			return 0, e
 		}
 	}
-	transaction, e := c.begin(ctx, id, change.SSID, &id, &profile)
-	if e != nil && c.pending == nil {
-		cleanup()
-	}
-	return transaction, e
+	return id, nil
 }
 func (c *WiFiController) Confirm(ctx context.Context, id string) (WiFiTransaction, error) {
 	c.mu.Lock()
@@ -575,7 +681,7 @@ func (c *WiFiController) Confirm(ctx context.Context, id string) (WiFiTransactio
 	if e != nil {
 		return WiFiTransaction{}, e
 	}
-	if connection.State != "COMPLETED" || connection.NetworkID == nil || *connection.NetworkID != c.pending.TargetID || connection.SSID != c.pending.Public.TargetSSID {
+	if !targetWiFiConnected(connection, c.pending) {
 		return WiFiTransaction{}, errors.New("WIFI_TARGET_NOT_CONNECTED")
 	}
 	if c.pending.CreatedID != nil {
@@ -583,6 +689,9 @@ func (c *WiFiController) Confirm(ctx context.Context, id string) (WiFiTransactio
 		if e != nil || c.pending.Profile == nil || owner != strconv.Quote(c.pending.Profile.ID) {
 			return WiFiTransaction{}, errors.New("WIFI_TARGET_OWNERSHIP_MISMATCH")
 		}
+	}
+	if e = c.restoreEnabled(ctx, c.pending); e != nil {
+		return WiFiTransaction{}, e
 	}
 	if c.pending.Profile != nil {
 		if e = c.storeProfile(*c.pending.Profile); e != nil {
@@ -620,6 +729,15 @@ func (c *WiFiController) rollbackLocked(reason string) (WiFiTransaction, error) 
 	p := c.pending
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
+	if p.RestoreStationOff && c.usesStockStation() {
+		// After an interrupted setup, the supervisor may already have
+		// restored OFF and the in-memory supplicant network has disappeared.
+		if on, err := stockSTAOn(); err == nil && !on {
+			if _, err := c.transport.Request(ctx, "PING"); errors.Is(err, os.ErrNotExist) {
+				return c.completeRollback(p, reason)
+			}
+		}
+	}
 	command := "DISCONNECT"
 	if p.OldID != nil {
 		networks, e := c.networks(ctx)
@@ -640,6 +758,20 @@ func (c *WiFiController) rollbackLocked(reason string) (WiFiTransaction, error) 
 	}
 	if e := c.ok(ctx, command); e != nil {
 		return WiFiTransaction{}, errors.New("WIFI_ROLLBACK_RESTORE_FAILED")
+	}
+	if p.TargetWasDisabled {
+		networks, err := c.networks(ctx)
+		if err != nil {
+			return WiFiTransaction{}, errors.New("WIFI_ROLLBACK_RESTORE_FAILED")
+		}
+		for _, network := range networks {
+			if network.ID == p.TargetID && network.SSID == p.Public.TargetSSID && !network.Disabled {
+				if err := c.ok(ctx, "DISABLE_NETWORK "+strconv.Itoa(network.ID)); err != nil {
+					return WiFiTransaction{}, errors.New("WIFI_ROLLBACK_RESTORE_FAILED")
+				}
+				break
+			}
+		}
 	}
 	if p.CreatedID != nil {
 		owner, e := c.request(ctx, "GET_NETWORK "+strconv.Itoa(*p.CreatedID)+" id_str")
@@ -687,6 +819,13 @@ func (c *WiFiController) rollbackLocked(reason string) (WiFiTransaction, error) 
 	if !verified {
 		return WiFiTransaction{}, errors.New("WIFI_ROLLBACK_CONNECTION_UNVERIFIED")
 	}
+	if e := c.restoreEnabled(ctx, p); e != nil {
+		return WiFiTransaction{}, e
+	}
+	return c.completeRollback(p, reason)
+}
+
+func (c *WiFiController) completeRollback(p *wifiPending, reason string) (WiFiTransaction, error) {
 	result := p.Public
 	result.State = "rolled-back"
 	result.CanConfirm = false
@@ -700,4 +839,25 @@ func (c *WiFiController) rollbackLocked(reason string) (WiFiTransaction, error) 
 	c.pending = nil
 	c.last = &result
 	return result, nil
+}
+
+func (c *WiFiController) restoreEnabled(ctx context.Context, p *wifiPending) error {
+	if len(p.Enabled) == 0 {
+		return nil
+	}
+	networks, err := c.networks(ctx)
+	if err != nil {
+		return errors.New("WIFI_RESTORE_NETWORKS_UNAVAILABLE")
+	}
+	for _, original := range p.Enabled {
+		for _, current := range networks {
+			if current.ID == original.ID && current.SSID == original.SSID && current.Disabled {
+				if err := c.ok(ctx, "ENABLE_NETWORK "+strconv.Itoa(current.ID)); err != nil {
+					return errors.New("WIFI_RESTORE_NETWORKS_UNAVAILABLE")
+				}
+				break
+			}
+		}
+	}
+	return nil
 }

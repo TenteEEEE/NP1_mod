@@ -491,23 +491,24 @@ paths:
         '200': {description: metric、unit、thresholds、note。最小値以上・次の上位境界未満。}
   /network/wifi/networks:
     get:
-      summary: STA状態、稼働network、秘密を除いたNCC保存profile、接続確認transaction
+      summary: STA状態、稼働network、管理画面用のNCC保存profile、接続確認transaction
       responses:
-        '200': {description: 'status/networks/saved/transaction。networks.idはwpa数値ID、saved.idはNCC UUID。passwordは返さない。'}
+        '200': {description: 'status/networks/saved/transaction。STA停止中はstatus.state=STA_OFF、networksは空、savedは取得可能。networks.idはwpa数値ID、saved.idはNCC UUID。2分以内の検索結果があればlastScanを含む。'}
         '503': {description: '制御socket/状態/復旧journalを確認できない'}
   /network/wifi/scan:
     post:
-      summary: 既存supplicantへSCAN要求し直近の検出結果を返す
+      summary: 必要なら自動モード中のSTAを起動し、周辺スキャン完了後に結果を返す
       requestBody:
         required: true
         content:
           application/json:
             schema: {type: object, additionalProperties: false}
       responses:
-        '200': {description: 'scanRequested/results/resultsAreCached。直後の結果はcacheの場合がありscan完了を意味しない。'}
+        '200': {description: 'scanRequested/results/resultsAreCached/scannedAt。スキャン完了を確認してから取得した結果を返す。resultsAreCachedはfalse。'}
+        '409': {description: 4G固定、回線切り替え中、または別の接続確認中}
   /network/wifi/connect-new:
     post:
-      summary: NCC所有networkを追加して90秒の接続確認を開始
+      summary: 必要に応じてSTAを起動し、NCC所有networkを追加して90秒の接続確認を開始
       requestBody:
         required: true
         content:
@@ -522,7 +523,7 @@ paths:
                 password: {type: string, writeOnly: true, description: 'wpa2は8〜63 printable ASCIIまたは64hex。openは空。'}
       responses:
         '200': {description: 'pending transaction。確定前は保存profileを作成しない。'}
-        '409': {description: '別の接続確認中'}
+        '409': {description: '4G固定、回線切り替え中、または別の接続確認中'}
   /network/wifi/connect-saved:
     post:
       summary: 稼働中networkIDまたはprivate保存profileIDで接続確認開始
@@ -538,7 +539,7 @@ paths:
         '200': {description: 'pending transaction。ID種別は排他的、秘密の再取得不要。'}
   /network/wifi/confirm:
     post:
-      summary: 接続先ID/SSID/COMPLETED/所有権をread-backして確定・private保存
+      summary: 接続先ID・SSID・COMPLETED・IPv4アドレス・所有権を照会して確定・private保存
       requestBody:
         required: true
         content:
@@ -1117,6 +1118,7 @@ components:
         sizeBytes: {type: string, pattern: '^[0-9]+$'}
         durationSeconds: {type: number, exclusiveMinimum: 0, maximum: 86400}
         videoCodec: {type: string, description: MP4 sample entry。実機確認値avc1。}
+        videoBitrate: {type: integer, minimum: 1, description: 映像trackのサンプルサイズ合計とtrackの長さから求めた平均bps。計算できる場合のみ。}
         audioCodec: {type: string, description: 音声trackがある場合のみ。実機確認値mp4a。}
         width: {type: integer}
         height: {type: integer}

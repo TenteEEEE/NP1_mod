@@ -9,17 +9,17 @@ func TestUplinkSwitchesToCellularOnlyAfterAPersistentOutage(t *testing.T) {
 	t0 := time.Date(2026, 11, 14, 1, 0, 0, 0, time.UTC)
 	home := &UplinkPosition{At: t0, Lat: 35.48, Lon: 139.41}
 	var s UplinkState
-	a, _, s := DecideUplink(UplinkInputs{Now: t0, STAOn: true, WPAState: "COMPLETED", Enabled: true, Position: home}, s)
+	a, _, s := DecideUplink(UplinkInputs{Now: t0, STAOn: true, Working: true, Enabled: true, Position: home}, s)
 	if a != UplinkNone || s.LastConnectedPos == nil {
 		t.Fatalf("connected: %v %+v", a, s)
 	}
 	// Leaving home: scanning for two minutes is not yet an outage.
 	for _, d := range []time.Duration{10, 60, 120, 170} {
-		if a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(d * time.Second), STAOn: true, WPAState: "SCANNING", Enabled: true}, s); a != UplinkNone {
+		if a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(d * time.Second), STAOn: true, Enabled: true}, s); a != UplinkNone {
 			t.Fatalf("switched too early at %ds", d)
 		}
 	}
-	a, reason, s := DecideUplink(UplinkInputs{Now: t0.Add(200 * time.Second), STAOn: true, WPAState: "SCANNING", Enabled: true}, s)
+	a, reason, s := DecideUplink(UplinkInputs{Now: t0.Add(200 * time.Second), STAOn: true, Enabled: true}, s)
 	if a != UplinkOff || reason != "wifi-unavailable" || s.AutoOffAt == nil {
 		t.Fatalf("expected OFF: %v %s %+v", a, reason, s)
 	}
@@ -51,7 +51,7 @@ func TestUplinkPrefersAScanAndBacksOffAfterAFailedReturn(t *testing.T) {
 	now := t0.Add(time.Minute)
 	for i := 0; i < 30 && a != UplinkOff; i++ {
 		now = now.Add(10 * time.Second)
-		a, _, s = DecideUplink(UplinkInputs{Now: now, STAOn: true, WPAState: "SCANNING", Enabled: true}, s)
+		a, _, s = DecideUplink(UplinkInputs{Now: now, STAOn: true, Enabled: true}, s)
 	}
 	if a != UplinkOff {
 		t.Fatalf("expected OFF after a failed return, got %v", a)
@@ -67,7 +67,7 @@ func TestUplinkKeepsWorkingWiFiWhenTheSupplicantReadsStale(t *testing.T) {
 	var s UplinkState
 	var a UplinkAction
 	for i := 0; i < 40; i++ {
-		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 10 * time.Second), STAOn: true, WPAState: "DISCONNECTED", Working: true, Enabled: true}, s)
+		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 10 * time.Second), STAOn: true, Working: true, Enabled: true}, s)
 		if a != UplinkNone {
 			t.Fatalf("switched off while Wi-Fi carried the default route at %ds", i*10)
 		}
@@ -76,7 +76,7 @@ func TestUplinkKeepsWorkingWiFiWhenTheSupplicantReadsStale(t *testing.T) {
 	s = UplinkState{}
 	a = UplinkNone
 	for i := 0; i <= 20 && a != UplinkOff; i++ {
-		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 10 * time.Second), STAOn: true, WPAState: "DISCONNECTED", Enabled: true}, s)
+		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 10 * time.Second), STAOn: true, Enabled: true}, s)
 	}
 	if a != UplinkOff {
 		t.Fatalf("expected OFF without a working uplink, got %v", a)
@@ -114,7 +114,7 @@ func TestUplinkNeverOverridesTheOwner(t *testing.T) {
 	var s UplinkState
 	for i := 0; i < 10; i++ {
 		var a UplinkAction
-		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 30 * time.Second), STAOn: true, WPAState: "SCANNING", Enabled: false}, s)
+		a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(time.Duration(i) * 30 * time.Second), STAOn: true, Enabled: false}, s)
 		if a != UplinkNone {
 			t.Fatal("disabled automation switched")
 		}
@@ -124,7 +124,7 @@ func TestUplinkNeverOverridesTheOwner(t *testing.T) {
 		t.Fatalf("disabling must restore Wi-Fi: %v %s", a, reason)
 	}
 	// The owner switched it back on: the marker is dropped.
-	if _, _, s := DecideUplink(UplinkInputs{Now: t0, STAOn: true, WPAState: "COMPLETED", Enabled: true}, UplinkState{AutoOffAt: &off}); s.AutoOffAt != nil {
+	if _, _, s := DecideUplink(UplinkInputs{Now: t0, STAOn: true, Working: true, Enabled: true}, UplinkState{AutoOffAt: &off}); s.AutoOffAt != nil {
 		t.Fatal("marker kept after ON")
 	}
 }
@@ -153,12 +153,12 @@ func TestUplinkBlindProbeGivesTheRadioBackWhenNothingConnects(t *testing.T) {
 	}
 	// Inside the window nothing is decided, even though the station looks unconnected.
 	for _, d := range []time.Duration{5, 20, 35} {
-		if a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(d * time.Second), STAOn: true, WPAState: "SCANNING", Enabled: true}, s); a != UplinkNone {
+		if a, _, s = DecideUplink(UplinkInputs{Now: t0.Add(d * time.Second), STAOn: true, Enabled: true}, s); a != UplinkNone {
 			t.Fatalf("gave up inside the probe window at %ds: %v", d, a)
 		}
 	}
 	// After the window the station goes back off at once, not after the outage delay.
-	a, reason, s = DecideUplink(UplinkInputs{Now: t0.Add(45 * time.Second), STAOn: true, WPAState: "SCANNING", Enabled: true}, s)
+	a, reason, s = DecideUplink(UplinkInputs{Now: t0.Add(45 * time.Second), STAOn: true, Enabled: true}, s)
 	if a != UplinkOff || reason != "probe-timeout" || s.AutoOffAt == nil || s.ProbeUntil != nil {
 		t.Fatalf("expected probe-timeout OFF: %v %s %+v", a, reason, s)
 	}

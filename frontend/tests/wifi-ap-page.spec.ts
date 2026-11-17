@@ -1,9 +1,11 @@
 import {test,expect,type Locator,type Page} from '@playwright/test'
 const url=process.env.NCC_UI_REVIEW_URL
 const obs=(data:unknown)=>({status:'available',data,source:'synthetic-wifi-ui-fixture',observedAt:new Date().toISOString(),verified:false,refreshSeconds:2})
-async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellular';waiting?:boolean;clients?:any[]}={}){
+async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellular';waiting?:boolean;clients?:any[];stationOff?:'auto'|'cellular';dropScanResponse?:boolean}={}){
  const requests:{path:string;body:any}[]=[]
  let transaction:any=null,current='Fixture LAN',apSettings={revision:1,enabled:true,ssid:'NP1 test AP',passphraseConfigured:true,passphrase:'fixture-ap-passphrase'}
+ const scanResult={scanRequested:true,scannedAt:new Date().toISOString(),resultsAreCached:false,results:[{ssid:'Nearby LAN',bssid:'00:11:22:33:44:55',frequency:2412,signalDBm:-61,security:'wpa2'}]}
+ let lastScan:typeof scanResult|undefined
  await page.route('**/api/v1/**',async route=>{
   const path=new URL(route.request().url()).pathname;let value:unknown={}
   if(path.endsWith('/events'))return route.fulfill({status:200,contentType:'text/event-stream',body:': fixture\n\n'})
@@ -13,8 +15,16 @@ async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellu
   if(path.endsWith('/system/summary'))value={}
   if(path.endsWith('/traffic/usage'))value=obs({networks:{wifi:{}},stale:true})
   if(route.request().method()!=='GET')requests.push({path,body:route.request().postDataJSON()})
-  if(path.endsWith('/network/wifi/networks'))value={status:{state:'COMPLETED',ssid:current,networkID:4,ipv4:'192.0.2.4'},networks:[{id:4,ssid:current,current:true,disabled:false,managed:false}],saved:[{id:'ncc-fixture-id',ssid:'Saved NCC LAN',security:'wpa2',passwordConfigured:true,password:'fixture-wifi-password'}],transaction}
-  if(path.endsWith('/network/wifi/scan'))value={scanRequested:true,resultsAreCached:true,results:[{ssid:'Nearby LAN',bssid:'00:11:22:33:44:55',frequency:2412,signalDBm:-61,security:'wpa2'}]}
+  if(path.endsWith('/network/uplink')&&options.stationOff)value={mode:options.stationOff,status:{mode:options.stationOff,staOn:false,uplink:'cellular',helperAvailable:true,state:{switches:1}}}
+  if(path.endsWith('/network/wifi/networks')){
+   const off=options.stationOff&&!transaction
+   value={status:off?{state:'STA_OFF',ssid:'',networkID:null,ipv4:''}:{state:'COMPLETED',ssid:current,networkID:4,ipv4:'192.0.2.4'},networks:off?[]:[{id:4,ssid:current,current:true,disabled:false,managed:false}],saved:[{id:'ncc-fixture-id',ssid:'Saved NCC LAN',security:'wpa2',passwordConfigured:true,password:'fixture-wifi-password'}],transaction,lastScan}
+  }
+  if(path.endsWith('/network/wifi/scan')){
+   lastScan={...scanResult,resultsAreCached:true}
+   if(options.dropScanResponse)return route.abort()
+   value=scanResult
+  }
   if(path.endsWith('/network/wifi/connect-new')||path.endsWith('/network/wifi/connect-saved')){const body=route.request().postDataJSON();current=body.ssid||'Saved NCC LAN';transaction={id:'fixture-transaction',state:'pending',expiresAt:new Date(Date.now()+90000).toISOString(),targetSSID:current,canConfirm:true};value=transaction}
   if(path.endsWith('/network/wifi/confirm')){transaction={...transaction,state:'confirmed'};value=transaction}
   if(path.endsWith('/network/wifi/rollback')){current='Fixture LAN';transaction={...transaction,state:'rolled-back'};value=transaction}
@@ -50,6 +60,32 @@ test.describe('Wi-Fi/AP typed control UI (synthetic fixture)',()=>{
  })
  test('NCC private saved profile uses its own ID; cancellation restores previous link',async({page})=>{
   const requests=await open(page);await page.getByRole('button',{name:/Saved NCC LAN/}).click();await expect(page.getByRole('heading',{name:'このWi-Fi接続を使いますか？'})).toBeVisible();await page.getByRole('button',{name:'元に戻す',exact:true}).click();await expect(page.getByRole('status')).toContainText('元のWi-Fi接続へ戻しました');expect(requests.find(r=>r.path.endsWith('connect-saved'))?.body).toEqual({profileID:'ncc-fixture-id'});await expect(page.locator('.wifi-current h3')).toHaveText('Fixture LAN')
+ })
+ test('automatic 4G leaves search, manual registration and saved profiles available',async({page})=>{
+  const requests=await open(page,{stationOff:'auto'})
+  await expect(page.getByText('Wi-Fi停止中',{exact:true})).toBeVisible()
+  await expect(page.getByRole('button',{name:/Saved NCC LAN/})).toBeEnabled()
+  await page.getByRole('button',{name:'周辺を検索',exact:true}).click()
+  await expect(page.getByRole('button',{name:/Nearby LAN/})).toBeVisible()
+  await page.getByRole('textbox',{name:'接続先SSID',exact:true}).fill('Manual LAN')
+  await page.getByRole('combobox',{name:'Wi-Fi認証方式'}).selectOption('open')
+  await page.getByRole('button',{name:'このWi-Fiへ接続',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'このWi-Fi接続を使いますか？'})).toBeVisible()
+  expect(requests.find(r=>r.path.endsWith('connect-new'))?.body).toEqual({ssid:'Manual LAN',security:'open',password:''})
+ })
+ test('fixed 4G disables search and association while keeping saved profile information',async({page})=>{
+  const requests=await open(page,{stationOff:'cellular'})
+  await expect(page.getByRole('button',{name:'周辺を検索',exact:true})).toBeDisabled()
+  await expect(page.getByRole('textbox',{name:'接続先SSID',exact:true})).toBeDisabled()
+  await expect(page.getByRole('button',{name:/Saved NCC LAN/})).toBeDisabled()
+  expect(requests).toEqual([])
+ })
+ test('search results are recovered after the 4G session is interrupted',async({page})=>{
+  const requests=await open(page,{stationOff:'auto',dropScanResponse:true})
+  await page.getByRole('button',{name:'周辺を検索',exact:true}).click()
+  await expect(page.getByRole('button',{name:/Nearby LAN/})).toBeVisible()
+  await expect(page.getByText(/検索中に接続が切れました/)).toHaveCount(0)
+  expect(requests.filter(request=>request.path.endsWith('/scan'))).toHaveLength(1)
  })
  test('saved Wi-Fi and hotspot passwords stay masked until explicitly shown',async({page})=>{
   await open(page)

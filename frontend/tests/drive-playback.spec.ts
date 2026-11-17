@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 const reviewURL=process.env.NCC_UI_REVIEW_URL
 const mediaPath='../tmp/drive-test-fixture.mp4'
 const observation=(data:unknown)=>({status:'available',data,source:'browser-test-fixture',observedAt:'2026-11-11T08:00:00Z',refreshSeconds:15,verified:false})
-const clip=(id:string,camera:string,startAt:string,endAt:string)=>({id,camera,name:`synthetic-${id}.mp4`,kind:'normal',startAt,endAt,durationSeconds:20,sizeBytes:'120000',videoCodec:'avc1',audioCodec:'mp4a',width:320,height:180})
+const clip=(id:string,camera:string,startAt:string,endAt:string)=>({id,camera,name:`synthetic-${id}.mp4`,kind:'normal',startAt,endAt,durationSeconds:20,sizeBytes:'120000',videoCodec:'avc1',videoBitrate:camera==='front'?9_500_000:3_250_000,audioCodec:'mp4a',width:320,height:180})
 const clips=[clip('front-a','front','2026-11-11T03:00:00Z','2026-11-11T03:00:20Z'),clip('cabin-a','in','2026-11-11T03:00:00Z','2026-11-11T03:00:20Z'),clip('front-b','front','2026-11-11T03:00:19Z','2026-11-11T03:00:39Z'),clip('cabin-later','in','2026-11-11T04:00:00Z','2026-11-11T04:00:20Z')]
 async function open(page:Page,linkedAt?:string){
  await page.clock.install({time:new Date('2026-11-11T08:00:00Z')})
@@ -85,6 +85,32 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
   const lane=page.getByRole('slider',{name:'前方カメラの録画時間バー'})
   await lane.focus();await page.keyboard.press('ArrowRight')
   await expect(lane).toHaveAttribute('aria-valuetext','12:00:10')
+ })
+ test('recording settings apply one camera preset and playback shows both measured rates',async({page})=>{
+  await page.setViewportSize({width:320,height:780})
+  await open(page)
+  const quality=[{value:1,label:'高画質 1080p'},{value:2,label:'長時間 720p'}]
+  const groups=[{id:'recorder',label:'ドライブレコーダー',items:[
+   {id:'recorder-front',label:'前方カメラの録画品質',field:'field1',writable:true,options:quality},
+   {id:'recorder-cabin',label:'車内・後方カメラの録画品質',field:'field2',writable:true,options:quality},
+   {id:'recorder-audio',label:'録画に車内の音声を含める',field:'field3',writable:true,options:[{value:1,label:'OFF'},{value:2,label:'ON'}]},
+  ]}]
+  await page.route('**/api/v1/device/native-operations',route=>route.fulfill({json:{available:true,groups}}))
+  await page.route('**/api/v1/device/native-operations/state/recorder',route=>route.fulfill({json:{observedAt:'2026-11-11T08:00:00Z',values:{field1:1,field2:1,field3:2}}}))
+  await page.route('**/api/v1/device/native-operations/settings/recorder-front',route=>{
+   expect(route.request().postDataJSON()).toEqual({expectedValue:1,value:2})
+   return route.fulfill({json:{observedAt:'2026-11-11T08:00:00Z',values:{field1:2,field2:1,field3:2},readback:true}})
+  })
+  await page.getByRole('button',{name:'録画設定',exact:true}).click()
+  await page.getByLabel('前方カメラの録画品質').selectOption('2')
+  await page.locator('.native-operation-row').filter({hasText:'前方カメラの録画品質'}).getByRole('button',{name:'変更を適用'}).click()
+  await expect(page.getByRole('status').filter({hasText:'本体から再取得'})).toBeVisible()
+  await expect(page.getByLabel('車内・後方カメラの録画品質')).toHaveValue('1')
+  await expect(page.getByLabel('録画に車内の音声を含める')).toHaveValue('2')
+  await page.getByRole('button',{name:'並べて表示',exact:true}).click()
+  await expect(page.locator('.drive-video-label').nth(0)).toContainText('平均 9.50 Mbps')
+  await expect(page.locator('.drive-video-label').nth(1)).toContainText('平均 3.25 Mbps')
+  await noOverflow(page)
  })
  test('native MP4 seek starts at requested second',async({page})=>{
   test.skip(!existsSync(mediaPath),'Generate optional synthetic MP4 with tools/create-playback-test-media.ps1')

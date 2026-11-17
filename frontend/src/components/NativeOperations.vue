@@ -10,6 +10,7 @@ type Group={id:string;label:string;items:Item[]}
 type Values=Record<string,number>
 type State={values:Values;observedAt:string;readback?:boolean}
 type Preview={token:string;expiresAt:string;capacityBytes:number}
+const props=defineProps<{recorderOnly?:boolean}>()
 const groups=ref<Group[]>([]),states=ref<Record<string,State>>({}),drafts=ref<Record<string,number>>({}),errors=ref<Record<string,string>>({})
 const loading=ref(false),busy=ref(''),available=ref(false),notice=ref(''),error=ref(''),preview=ref<Preview>(),confirmed=ref(false),phrase=ref(''),checking=ref(false),pending=ref(false)
 const ready=ref(false)
@@ -34,7 +35,20 @@ async function loadGroup(group:string){
   catch(e){if(message(e).startsWith('409:')&&attempt<19){await new Promise(resolve=>setTimeout(resolve,300));continue}if(alive){delete states.value[group];errors.value[group]=message(e)}return}
  }
 }
-async function load(){if(loading.value||busy.value||actionBusy.value||audioBusy.value)return;loading.value=true;error.value='';try{const catalog=await api<{groups:Group[];actions?:NativeAction[];available:boolean}>(base);if(!alive)return;groups.value=catalog.groups||[];actions.value=catalog.actions||[];available.value=catalog.available===true;if(available.value){for(const group of ['storage',...groups.value.map(g=>g.id)]){if(!alive)break;await loadGroup(group)}}else error.value='本体操作のサービスを利用できません。'}catch(e){error.value=message(e);available.value=false;states.value={}}finally{loading.value=false;ready.value=true}}
+async function load(){
+ if(loading.value||busy.value||actionBusy.value||audioBusy.value)return
+ loading.value=true;error.value=''
+ try{
+  const catalog=await api<{groups:Group[];actions?:NativeAction[];available:boolean}>(base)
+  if(!alive)return
+  groups.value=(catalog.groups||[]).filter(group=>!props.recorderOnly||group.id==='recorder')
+  actions.value=catalog.actions||[]
+  available.value=catalog.available===true&&(!props.recorderOnly||groups.value.length>0)
+  if(!available.value){error.value=props.recorderOnly?'本体の録画設定を利用できません。':'本体操作のサービスを利用できません。';return}
+  if(!props.recorderOnly)await loadGroup('storage')
+  for(const group of groups.value){if(!alive)break;await loadGroup(group.id)}
+ }catch(e){error.value=message(e);available.value=false;states.value={}}finally{loading.value=false;ready.value=true}
+}
 async function apply(group:Group,item:Item){if(!writable(item,group.id)||drafts.value[item.id]===states.value[group.id]?.values[item.field])return;const value=drafts.value[item.id];busy.value=item.id;notice.value='';error.value='';try{const state=await api<State>(base+'/settings/'+item.id,'PUT',{expectedValue:states.value[group.id]!.values[item.field],value});if(state.readback!==true||state.values[item.field]!==value)throw new Error('変更後の値を確認できません');receive(group.id,state);notice.value=item.label+'を変更し、本体から再取得しました。'}catch(e){delete states.value[group.id];errors.value[group.id]=message(e);error.value='変更結果を確認できません。状態を更新して確認してください。'}finally{busy.value=''}}
 async function prepareFormat(){if(!canFormat.value)return;checking.value=true;error.value='';notice.value='';try{preview.value=await api<Preview>(base+'/sd-format/prepare','POST',{});confirmed.value=false;phrase.value=''}catch(e){error.value=message(e);await loadGroup('storage')}finally{checking.value=false}}
 function closeFormat(){if(!busy.value)preview.value=undefined}
@@ -44,15 +58,15 @@ onMounted(()=>{clock=setInterval(()=>now.value=Date.now(),1000);void load()})
 onUnmounted(()=>{alive=false;if(poll)clearTimeout(poll);if(clock)clearInterval(clock)})
 </script>
 <template>
- <div class="native-operations" aria-label="純正アプリの本体操作">
-  <div class="native-operations-head"><div><h2>本体の操作</h2><p>録画・取付調整・接続・診断など、本体の機能を操作します。</p></div><button class="secondary" :disabled="loading||!!busy||checking||actionBusy||audioBusy" @click="load"><RefreshCw :size="16"/>{{loading?'取得中…':'本体の状態を更新'}}</button></div>
+ <div class="native-operations" :aria-label="recorderOnly?'録画設定':'純正アプリの本体操作'">
+  <div class="native-operations-head"><div v-if="!recorderOnly"><h2>本体の操作</h2><p>録画・取付調整・接続・診断など、本体の機能を操作します。</p></div><button class="secondary" :disabled="loading||!!busy||checking||actionBusy||audioBusy" @click="load"><RefreshCw :size="16"/>{{loading?'取得中…':recorderOnly?'録画設定を再取得':'本体の状態を更新'}}</button></div>
   <p v-if="error" class="banner error" role="alert">{{error}}</p><p v-if="notice" class="banner success" role="status">{{notice}}</p>
-  <div class="native-operation-grid">
-  <section class="panel native-operation-group" aria-label="SDカードの操作"><div class="panel-head"><h2><HardDrive :size="18"/>SDカード</h2><span class="muted">{{statusLabel}}</span></div><div class="native-operation-storage"><div><strong>{{storage?.inserted===1?'SDカード挿入済み':storage?.inserted===0?'SDカード未挿入':'SDカードの状態を確認中'}}</strong><p>フォーマットすると、SDカード内の録画・写真・走行位置情報など、すべてのデータが消えます。</p><p v-if="errors.storage" class="native-operation-error">{{errors.storage}}</p></div><button class="danger" :disabled="!canFormat||checking" @click="prepareFormat">{{checking?'対象を確認中…':'SDカードをフォーマット'}}</button></div></section>
+  <div :class="{'native-operation-grid':!recorderOnly}">
+  <section v-if="!recorderOnly" class="panel native-operation-group" aria-label="SDカードの操作"><div class="panel-head"><h2><HardDrive :size="18"/>SDカード</h2><span class="muted">{{statusLabel}}</span></div><div class="native-operation-storage"><div><strong>{{storage?.inserted===1?'SDカード挿入済み':storage?.inserted===0?'SDカード未挿入':'SDカードの状態を確認中'}}</strong><p>フォーマットすると、SDカード内の録画・写真・走行位置情報など、すべてのデータが消えます。</p><p v-if="errors.storage" class="native-operation-error">{{errors.storage}}</p></div><button class="danger" :disabled="!canFormat||checking" @click="prepareFormat">{{checking?'対象を確認中…':'SDカードをフォーマット'}}</button></div></section>
   <section v-for="group in groups" :key="group.id" class="panel native-operation-group" :aria-label="group.label+'の本体操作'"><div class="panel-head"><h2>{{group.label}}</h2><span class="muted">{{states[group.id]?'本体から取得':'未取得'}}</span></div><p v-if="errors[group.id]" class="native-operation-error">{{errors[group.id]}}</p><div v-for="item in group.items" :key="item.id" class="native-operation-row"><label :for="'operation-'+item.id">{{item.label}}</label><div v-if="item.options&&item.writable"><select :id="'operation-'+item.id" v-model="drafts[item.id]" :disabled="!writable(item,group.id)"><option v-if="!item.options.some(o=>o.value===states[group.id]?.values[item.field])" :value="states[group.id]?.values[item.field]">{{show(item,group.id)}}</option><option v-for="option in item.options" :key="option.value" :value="option.value">{{option.label}}</option></select><button class="primary" :disabled="!writable(item,group.id)||drafts[item.id]===states[group.id]?.values[item.field]" @click="apply(group,item)">{{busy===item.id?'確認中…':'変更を適用'}}</button></div><strong v-else>{{show(item,group.id)}}</strong></div></section>
-  <NativeAudioSettings v-if="ready" @busy="audioBusy=$event"/>
-  <NativeActionCards :actions="actions" :disabled="!available||loading||!!busy||audioBusy" @busy="actionBusy=$event"/>
-  <section v-for="group in nativeAppFeatures" :key="group.group" class="panel native-operation-features" :aria-label="group.group"><div class="panel-head"><h2><Smartphone :size="18"/>{{group.group}}</h2></div><div class="native-operation-feature-group"><a v-for="item in group.items" :key="item.name" :href="item.href" :target="item.app?'_blank':undefined" :rel="item.app?'noopener noreferrer':undefined"><div><strong>{{item.name}}</strong><p>{{item.description}}</p></div><span>{{item.app?'My NP1の操作方法':'画面を開く'}}<ArrowUpRight :size="14"/></span></a></div></section>
+  <NativeAudioSettings v-if="ready&&!recorderOnly" @busy="audioBusy=$event"/>
+  <NativeActionCards v-if="!recorderOnly" :actions="actions" :disabled="!available||loading||!!busy||audioBusy" @busy="actionBusy=$event"/>
+  <section v-for="group in recorderOnly?[]:nativeAppFeatures" :key="group.group" class="panel native-operation-features" :aria-label="group.group"><div class="panel-head"><h2><Smartphone :size="18"/>{{group.group}}</h2></div><div class="native-operation-feature-group"><a v-for="item in group.items" :key="item.name" :href="item.href" :target="item.app?'_blank':undefined" :rel="item.app?'noopener noreferrer':undefined"><div><strong>{{item.name}}</strong><p>{{item.description}}</p></div><span>{{item.app?'My NP1の操作方法':'画面を開く'}}<ArrowUpRight :size="14"/></span></a></div></section>
   </div>
   <div v-if="preview" class="modal-backdrop" @click.self="closeFormat"><section class="modal native-format-modal" role="dialog" aria-modal="true" aria-labelledby="sd-format-title"><h2 id="sd-format-title"><AlertTriangle :size="22"/>SDカードをフォーマット</h2><p>対象：NP1に挿入されているSDカード（{{bytes(preview.capacityBytes)}}）</p><p class="native-format-warning">SDカードのすべてのデータを消去します。録画・写真・走行位置情報は元に戻せません。必要なデータを先に保存してください。</p><p>処理中は電源を切ったり、SDカードを抜いたりしないでください。本体内に独立して保存した走行履歴やNP1modの設定は、この操作の消去対象ではありません。</p><label class="native-format-ack"><input type="checkbox" v-model="confirmed">必要なデータを保存し、SDカードの全データ消去を確認しました</label><label class="native-format-phrase">確認のため「SDカードを消去」と入力してください<input v-model="phrase" autocomplete="off" placeholder="SDカードを消去"></label><p class="muted">確認の有効期限は1分です。カードを交換した場合は確認し直してください。</p><div class="modal-actions"><button class="secondary" @click="closeFormat">キャンセル</button><button class="danger" :disabled="!canExecute" @click="executeFormat">SDカードの全データを消去してフォーマット</button></div></section></div>
  </div>
