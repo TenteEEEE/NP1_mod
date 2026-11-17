@@ -12,3 +12,11 @@
 - 集計ロジック試験で、未走行区間をまたいでも距離・時間の累計値が保持されることを確認した。
 - 7日表示の累計SVGパスが1本の連続線になり、未計測日の前後で別パスへ分断されないことを確認した。
 - 1440px / 320px、light / dark / systemの各表示で累計線、棒、未計測表示、キーボード操作、横幅を確認した。
+
+## 実機導入
+
+- コミット `fe94c4e` を利用者指定のTailscale接続先へ `tools/device/web-worker-update.sh` で導入した。接続先IPや端末識別子は公開記録へ含めない。
+- 復旧スナップショットは `/overlay/owner-apps/np1-control/recovery/web-worker-20261117T152758Z`。更新失敗時は旧バイナリへ自動復元する手順を使用した。
+- 配布物、永続バイナリ、実行中バイナリのSHA-256は `40275200946303905e650520a2683123a820c8e48677af0e8d85b29fdb2543c5` で一致した。
+- 実機の7日データには未計測日3日と、計測日の間にある未計測日1日が含まれている。修正対象となる実データ条件が存在することをread-backした。
+- Web、broker、AP、modem、native、plateと、純正Communication、DriveRec、ImageRecog、Voice、QMMFは `active/running`、`Result=success`、`NRestarts=0`。Webとbroker以外のPIDは更新前から変化していない。
