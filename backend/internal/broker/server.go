@@ -102,6 +102,8 @@ func Serve(socket string, uid uint32) error {
 	mux.HandleFunc("GET /native-settings", adapters.HandleNativeSettings)
 	mux.HandleFunc("GET /native-operations", adapters.HandleNativeOperationsCatalog)
 	mux.HandleFunc("/native-operations/", adapters.HandleNativeOperationsRemote)
+	mux.HandleFunc("GET /recorder-advanced", adapters.HandleRecorderAdvanced)
+	mux.HandleFunc("PUT /recorder-advanced", adapters.HandleRecorderAdvanced)
 	mux.HandleFunc("GET /native-audio", adapters.HandleNativeAudioRemote)
 	mux.HandleFunc("PUT /native-audio/{id}", adapters.HandleNativeAudioRemote)
 	mux.HandleFunc("GET /trips", adapters.HandleTrips)

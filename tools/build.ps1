@@ -52,6 +52,10 @@ if (Test-Path "$repo/artifacts/stock-start-helper/ncc-stock-start-helper") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/stock-start-helper/ncc-stock-start-helper" "$repo/artifacts/ncc/experimental/"
 }
+if (Test-Path "$repo/artifacts/recorder-hook/libncc-driverec-hook.so") {
+    New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
+    Copy-Item -Force "$repo/artifacts/recorder-hook/libncc-driverec-hook.so" "$repo/artifacts/ncc/experimental/"
+}
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null

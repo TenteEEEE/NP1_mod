@@ -313,6 +313,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/trips/archive", s.journeys.status)
 	s.mux.HandleFunc("GET /api/v1/device/native-settings", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-settings") })
 	s.mux.HandleFunc("GET /api/v1/device/native-operations", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/native-operations") })
+	s.mux.HandleFunc("GET /api/v1/device/recorder-advanced", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/recorder-advanced") })
+	s.mux.HandleFunc("PUT /api/v1/device/recorder-advanced", func(w http.ResponseWriter, r *http.Request) {
+		s.forwardControlLimit(w, r, "/recorder-advanced", "recorder.advanced", 4096)
+	})
 	s.mux.HandleFunc("GET /api/v1/device/native-operations/state/{group}", func(w http.ResponseWriter, r *http.Request) {
 		s.proxy(w, r, "/native-operations/state/"+url.PathEscape(r.PathValue("group")))
 	})

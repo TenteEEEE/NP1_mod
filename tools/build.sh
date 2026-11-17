@@ -45,6 +45,10 @@ if test -f "$ROOT/artifacts/stock-start-helper/ncc-stock-start-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/stock-start-helper/ncc-stock-start-helper" "$ROOT/artifacts/ncc/experimental/"
 fi
+if test -f "$ROOT/artifacts/recorder-hook/libncc-driverec-hook.so"; then
+    mkdir -p "$ROOT/artifacts/ncc/experimental"
+    cp "$ROOT/artifacts/recorder-hook/libncc-driverec-hook.so" "$ROOT/artifacts/ncc/experimental/"
+fi
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 mkdir -p "$ROOT/artifacts/ncc/plate/models" "$ROOT/artifacts/ncc/plate/licenses"

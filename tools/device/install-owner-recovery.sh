@@ -22,6 +22,11 @@ rollback() {
         unit=${file##*/}
         if test -e "$UNITS/$unit"; then cmp -s "$file" "$UNITS/$unit" || return 1; fi
     done
+    recorder_dropin=$UNITS/app-@DriveRec.service.d/90-ncc-recorder-hook.conf
+    if test -f "$BASE/recorder-hook/90-ncc-recorder-hook.conf" && test -e "$recorder_dropin"; then
+        cmp "$BASE/recorder-hook/90-ncc-recorder-hook.conf" "$recorder_dropin" || return 1
+        rm "$recorder_dropin" || return 1
+    fi
     for file in "$BASE"/units/*.path "$BASE"/units/*.service; do
         test -f "$file" || continue
         unit=${file##*/}
@@ -67,7 +72,7 @@ chmod 0755 bin/ncc
 bin/ncc --mode self-test
 mkdir -p -m 0755 "${BASE%/*}"
 mkdir -m 0755 "$BASE"
-mkdir "$BASE/recovery" "$BASE/config" "$BASE/state" "$BASE/private" "$BASE/tools" "$BASE/units"
+mkdir "$BASE/recovery" "$BASE/config" "$BASE/state" "$BASE/private" "$BASE/tools" "$BASE/units" "$BASE/recorder-hook"
 touch "$BASE/recovery/owner-recovery-install"
 trap 'result=$?; if test "$result" -ne 0; then (rollback) || echo "Owner install rollback failed" >&2; fi' 0
 stock_units > "$BASE/recovery/stock-before.txt"
@@ -77,6 +82,18 @@ mkdir -m 0755 "$BASE/bin"
 cp bin/ncc "$BASE/bin/ncc"
 chmod 0755 "$BASE/bin/ncc"
 cp tools/*.sh tools/postboot.py tools/ap-channel.py tools/run-owner-web.py "$BASE/tools/"
+
+RECORDER_DROPIN_DIR=$UNITS/app-@DriveRec.service.d
+RECORDER_DROPIN=$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf
+if test -f experimental/libncc-driverec-hook.so; then
+    test ! -L "$RECORDER_DROPIN_DIR" && test ! -e "$RECORDER_DROPIN"
+    cp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
+    cp systemd/90-ncc-recorder-hook.conf "$BASE/recorder-hook/90-ncc-recorder-hook.conf"
+    chmod 0555 "$BASE/recorder-hook/libncc-driverec-hook.so"
+    chmod 0644 "$BASE/recorder-hook/90-ncc-recorder-hook.conf"
+    mkdir -p -m 0755 "$RECORDER_DROPIN_DIR"
+    cp -p "$BASE/recorder-hook/90-ncc-recorder-hook.conf" "$RECORDER_DROPIN"
+fi
 
 bin/ncc --mode setup --config-dir "$BASE/config"
 chown "$NCC_ID:$NCC_ID" "$BASE/config" "$BASE/config/"* "$BASE/state"
@@ -130,6 +147,11 @@ for name in web $workers; do
 done
 
 systemctl daemon-reload
+if test -f experimental/libncc-driverec-hook.so; then
+    cmp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
+    cmp systemd/90-ncc-recorder-hook.conf "$RECORDER_DROPIN"
+    systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=$BASE/recorder-hook/libncc-driverec-hook.so"
+fi
 touch /run/xtables.lock
 systemctl start $start_units
 systemctl is-active --quiet np1-control-firewall.service

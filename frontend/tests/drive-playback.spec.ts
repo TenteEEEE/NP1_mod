@@ -101,12 +101,25 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
    expect(route.request().postDataJSON()).toEqual({expectedValue:1,value:2})
    return route.fulfill({json:{observedAt:'2026-11-11T08:00:00Z',values:{field1:2,field2:1,field3:2},readback:true}})
   })
+  let advanced={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:3,settings:{frontBitrateKbps:4000,cabinBitrateKbps:2000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true}}
+  await page.route('**/api/v1/device/recorder-advanced',route=>{
+   if(route.request().method()==='PUT'){
+    const body=route.request().postDataJSON();expect(body.expectedGeneration).toBe(3);expect(body.settings.frontBitrateKbps).toBe(8123);expect(body.settings.cabinRecording).toBe(false);expect(body.acknowledgeRecordingGap).toBe(true)
+    advanced={...advanced,generation:4,settings:body.settings};return route.fulfill({json:{...advanced,applied:true,message:'録画サービスを再起動し、起動時フックと設定世代の読込みを確認しました。'}})
+   }
+   return route.fulfill({json:advanced})
+  })
   await page.getByRole('button',{name:'録画設定',exact:true}).click()
   await page.getByLabel('前方カメラの録画品質').selectOption('2')
   await page.locator('.native-operation-row').filter({hasText:'前方カメラの録画品質'}).getByRole('button',{name:'変更を適用'}).click()
   await expect(page.getByRole('status').filter({hasText:'本体から再取得'})).toBeVisible()
   await expect(page.getByLabel('車内・後方カメラの録画品質')).toHaveValue('1')
   await expect(page.getByLabel('録画に車内の音声を含める')).toHaveValue('2')
+  await page.getByRole('group',{name:'前方カメラ'}).getByLabel('ビットレート（kbps）').fill('8123')
+  await page.getByRole('group',{name:'車内・後方カメラ'}).getByLabel('録画する').uncheck()
+  await page.getByLabel('録画サービスの再起動を許可する').check()
+  await page.getByRole('button',{name:'保存して録画サービスを再起動'}).click()
+  await expect(page.getByRole('status').filter({hasText:'起動時フック'})).toBeVisible()
   await page.getByRole('button',{name:'並べて表示',exact:true}).click()
   await expect(page.locator('.drive-video-label').nth(0)).toContainText('平均 9.50 Mbps')
   await expect(page.locator('.drive-video-label').nth(1)).toContainText('平均 3.25 Mbps')
