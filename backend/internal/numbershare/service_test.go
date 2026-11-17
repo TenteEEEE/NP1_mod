@@ -406,7 +406,12 @@ func TestManualRangeUploadRequeuesOnlySelectedBlockedRecords(t *testing.T) {
 }
 
 func TestSharedFetchesEveryCursorPage(t *testing.T) {
+	const adminKey = "admin-test-key-0123456789abcdef"
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-Key") != adminKey {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		page := 0
 		if cursor := r.URL.Query().Get("cursor"); cursor != "" {
 			page, _ = strconv.Atoi(strings.TrimPrefix(cursor, "page-"))
@@ -424,8 +429,33 @@ func TestSharedFetchesEveryCursorPage(t *testing.T) {
 	defer server.Close()
 	s := New(t.TempDir(), server.Client())
 	configureTest(t, s, server.URL+"/")
+	admin := adminKey
+	if _, err := s.ConfigureManagement(2, server.URL+"/", &admin); err != nil {
+		t.Fatal(err)
+	}
 	result, err := s.Shared(context.Background(), SharedQuery{})
 	if err != nil || len(result.Items) != 7 || result.Truncated {
 		t.Fatalf("all pages = %d truncated=%v err=%v", len(result.Items), result.Truncated, err)
+	}
+}
+
+func TestCheckKeepsUsingDeviceKeyWhenAdminKeyIsConfigured(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/users/me" || r.Header.Get("X-API-Key") != "fictional-test-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"user_handle": "owner", "device_id": "device"})
+	}))
+	defer server.Close()
+	s := New(t.TempDir(), server.Client())
+	configureTest(t, s, server.URL+"/")
+	adminKey := "admin-test-key-0123456789abcdef"
+	if _, err := s.ConfigureManagement(2, server.URL+"/", &adminKey); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := s.Check(context.Background())
+	if err != nil || identity["device_id"] != "device" {
+		t.Fatalf("check = %+v, %v", identity, err)
 	}
 }

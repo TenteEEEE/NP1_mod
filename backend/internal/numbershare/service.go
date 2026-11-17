@@ -826,11 +826,15 @@ type SharedResponse struct {
 	SyncedAt  time.Time        `json:"syncedAt"`
 }
 
-func (s *Service) apiGET(ctx context.Context, relative string, query url.Values, into any) error {
+func (s *Service) apiGET(ctx context.Context, relative string, query url.Values, administrative bool, into any) error {
 	s.mu.Lock()
 	cfg := s.cfg
 	s.mu.Unlock()
-	if cfg.Endpoint == "" || cfg.APIKey == "" {
+	key := cfg.APIKey
+	if administrative && cfg.AdminAPIKey != "" {
+		key = cfg.AdminAPIKey
+	}
+	if cfg.Endpoint == "" || key == "" {
 		return errors.New("NumberShare APIが未設定です")
 	}
 	target, err := endpointURL(cfg.Endpoint, relative)
@@ -844,7 +848,7 @@ func (s *Service) apiGET(ctx context.Context, relative string, query url.Values,
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-API-Key", cfg.APIKey)
+	req.Header.Set("X-API-Key", key)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return errors.New("NumberShare APIへ接続できません")
@@ -906,7 +910,7 @@ func (s *Service) Shared(ctx context.Context, q SharedQuery) (SharedResponse, er
 			Items      []SharedSighting `json:"items"`
 			NextCursor *string          `json:"next_cursor"`
 		}
-		if err := s.apiGET(ctx, "sightings", values, &result); err != nil {
+		if err := s.apiGET(ctx, "sightings", values, true, &result); err != nil {
 			return out, err
 		}
 		for _, item := range result.Items {
@@ -961,13 +965,13 @@ func (s *Service) Vehicles(ctx context.Context, text, serial, category string) (
 		q.Set("category", category)
 	}
 	var out VehicleResponse
-	err := s.apiGET(ctx, "plates", q, &out)
+	err := s.apiGET(ctx, "plates", q, true, &out)
 	return out, err
 }
 
 func (s *Service) Check(ctx context.Context) (map[string]any, error) {
 	var out map[string]any
-	err := s.apiGET(ctx, "users/me", url.Values{}, &out)
+	err := s.apiGET(ctx, "users/me", url.Values{}, false, &out)
 	if err != nil {
 		return nil, err
 	}
