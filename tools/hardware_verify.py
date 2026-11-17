@@ -13,9 +13,11 @@ import urllib.request
 import uuid
 parser = argparse.ArgumentParser()
 parser.add_argument('--camera', action='store_true')
-args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parent.parent
-access = json.loads((root / 'tmp/device-access.json').read_text())
+parser.add_argument('--access-file', type=pathlib.Path, default=root / 'tmp/device-access.json')
+parser.add_argument('--report-file', type=pathlib.Path, default=root / 'tmp/hardware-smoke.json')
+args = parser.parse_args()
+access = json.loads(args.access_file.read_text(encoding='utf8'))
 url = access['url']
 host = urllib.parse.urlparse(url)
 import socket
@@ -83,5 +85,6 @@ with call('/backup/export', 'POST') as response:
 report['backup_redaction'] = 'PASS'
 with call('/auth/logout', 'POST'):
     pass
-(root / 'tmp/hardware-smoke.json').write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf8')
+args.report_file.parent.mkdir(parents=True, exist_ok=True)
+args.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding='utf8')
 print(json.dumps(report, indent=2, ensure_ascii=False))
