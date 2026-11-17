@@ -29,7 +29,7 @@ func TestEnsureRegistersFromInternalIDWithoutExposingBootstrapKey(t *testing.T) 
 	var requestedHandle string
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
-		case "/api/users":
+		case "/app/numbershare/api/users":
 			if r.Method != http.MethodPost || r.Header.Get("X-API-Key") != "bootstrap-user-key-0123456789abcdef" {
 				t.Fatal("registration auth mismatch")
 			}
@@ -37,7 +37,7 @@ func TestEnsureRegistersFromInternalIDWithoutExposingBootstrapKey(t *testing.T) 
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			requestedHandle = body["user_handle"]
 			return response(http.StatusCreated, `{"user_id":"u1","user_handle":"`+requestedHandle+`","device_id":"d1","api_key":"issued-device-key-0123456789abcdef","recovery_code":"recovery-code-0123456789abcdef"}`), nil
-		case "/api/users/me":
+		case "/app/numbershare/api/users/me":
 			if r.Header.Get("X-API-Key") != "issued-device-key-0123456789abcdef" {
 				t.Fatal("issued key mismatch")
 			}
@@ -79,13 +79,13 @@ func TestEnsureUsesExistingUserKeyForAdditionalDevice(t *testing.T) {
 	}
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		key := r.Header.Get("X-API-Key")
-		if r.URL.Path == "/api/users/me" && key == "existing-user-key-0123456789abcdef" {
+		if r.URL.Path == "/app/numbershare/api/users/me" && key == "existing-user-key-0123456789abcdef" {
 			return response(http.StatusOK, `{"user_id":"u1","user_handle":"owner","device_id":"old"}`), nil
 		}
-		if r.URL.Path == "/api/devices" && key == "existing-user-key-0123456789abcdef" {
+		if r.URL.Path == "/app/numbershare/api/devices" && key == "existing-user-key-0123456789abcdef" {
 			return response(http.StatusCreated, `{"device_id":"new","api_key":"new-device-key-0123456789abcdef"}`), nil
 		}
-		if r.URL.Path == "/api/users/me" && key == "new-device-key-0123456789abcdef" {
+		if r.URL.Path == "/app/numbershare/api/users/me" && key == "new-device-key-0123456789abcdef" {
 			return response(http.StatusOK, `{"user_id":"u1","user_handle":"owner","device_id":"new"}`), nil
 		}
 		t.Fatalf("unexpected request %s %s", r.URL.Path, key)
