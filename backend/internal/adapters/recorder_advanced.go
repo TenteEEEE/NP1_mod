@@ -7,6 +7,7 @@ import (
 	"errors"
 	"hash/crc32"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,10 +19,11 @@ import (
 )
 
 const (
-	recorderHookLibrary    = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
+	recorderHookSource     = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
+	recorderHookLibrary    = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
 	recorderHookConfig     = "/overlay/owner-apps/np1-control/recorder-hook/config"
 	recorderHookApplied    = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
-	recorderHookLibrarySHA = "6d7b913d5d72b58cd6bb898a84da18d3fa647ec89d6a4041e19d0eea83776786"
+	recorderHookLibrarySHA = "98c279221668719f3cba836147bb923a247424965fa8008562ef413490a9e41f"
 	recorderDriveRecSHA    = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
 	recorderConfigSize     = 64
 	recorderConfigVersion  = 1
@@ -57,12 +59,12 @@ type RecorderAdvancedState struct {
 var recorderAdvancedMu sync.Mutex
 var recorderAdvancedConfigPath = recorderHookConfig
 var recorderAdvancedAppliedPath = recorderHookApplied
-var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookLibrary, recorderHookLibrarySHA) }
+var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA) }
 var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
-	return RecorderAdvancedSettings{FrontBitrateKbps: 4000, CabinBitrateKbps: 2000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true}
+	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true}
 }
 
 func recorderRateValue(value string) (uint32, bool) {
@@ -223,26 +225,34 @@ func writeRecorderApplied(path string, generation uint32) error {
 }
 
 func recorderHookLoaded(ctx context.Context) bool {
-	text, err := command("systemctl", "show", "app-@DriveRec.service", "-p", "MainPID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
-	if err != nil || !strings.Contains(text, "ActiveState=active\n") || !strings.Contains(text, "SubState=running\n") || !strings.Contains(text, "Job=\n") {
+	if !nativeFirmwareMatches(recorderHookLibrary, recorderHookLibrarySHA) {
+		log.Printf("recorder-hook readback failed: runtime library identity mismatch")
 		return false
 	}
-	pidText := ""
+	text, err := command("systemctl", "show", "app-@DriveRec.service", "-p", "MainPID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
+	properties := make(map[string]string)
 	for _, line := range strings.Split(text, "\n") {
-		if strings.HasPrefix(line, "MainPID=") {
-			pidText = strings.TrimPrefix(line, "MainPID=")
+		if pair := strings.SplitN(line, "=", 2); len(pair) == 2 {
+			properties[pair[0]] = pair[1]
 		}
 	}
-	pid, err := strconv.ParseUint(pidText, 10, 31)
+	if err != nil || properties["ActiveState"] != "active" || properties["SubState"] != "running" || properties["Job"] != "" {
+		log.Printf("recorder-hook readback failed: unstable service state")
+		return false
+	}
+	pid, err := strconv.ParseUint(properties["MainPID"], 10, 31)
 	if err != nil || pid <= 1 {
+		log.Printf("recorder-hook readback failed: invalid service pid")
 		return false
 	}
 	proc := "/proc/" + strconv.FormatUint(pid, 10)
 	if !nativeFirmwareMatches(proc+"/exe", recorderDriveRecSHA) {
+		log.Printf("recorder-hook readback failed: executable identity mismatch")
 		return false
 	}
 	maps, err := os.ReadFile(proc + "/maps")
 	if err != nil {
+		log.Printf("recorder-hook readback failed: process maps unavailable")
 		return false
 	}
 	var imageBase, hookStart, hookEnd uint64
@@ -269,20 +279,24 @@ func recorderHookLoaded(ctx context.Context) bool {
 		}
 	}
 	if imageBase == 0 || hookStart == 0 || hookEnd <= hookStart {
+		log.Printf("recorder-hook readback failed: executable mapping unavailable")
 		return false
 	}
 	memory, err := os.Open(proc + "/mem")
 	if err != nil {
+		log.Printf("recorder-hook readback failed: process memory unavailable")
 		return false
 	}
 	defer memory.Close()
 	for _, offset := range []uint64{0x138378, 0x1384d8, 0x138658} {
 		var jump [16]byte
 		if _, err = memory.ReadAt(jump[:], int64(imageBase+offset)); err != nil || binary.LittleEndian.Uint32(jump[0:4]) != 0x58000050 || binary.LittleEndian.Uint32(jump[4:8]) != 0xd61f0200 {
+			log.Printf("recorder-hook readback failed: jump mismatch at %#x", offset)
 			return false
 		}
 		target := binary.LittleEndian.Uint64(jump[8:16])
 		if target < hookStart || target >= hookEnd {
+			log.Printf("recorder-hook readback failed: jump target mismatch at %#x", offset)
 			return false
 		}
 	}

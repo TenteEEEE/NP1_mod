@@ -13,7 +13,7 @@ class RecorderHookContractTests(unittest.TestCase):
         dropin = (ROOT / "systemd/90-ncc-recorder-hook.conf").read_text(encoding="utf8")
         self.assertEqual(
             dropin,
-            "[Service]\nEnvironment=LD_PRELOAD=/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so\n",
+            "[Service]\nRuntimeDirectory=np1-control-recorder-hook\nRuntimeDirectoryMode=0755\nExecStartPre=+/bin/cp /overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so /run/np1-control-recorder-hook/libncc-driverec-hook.so\nExecStartPre=+/bin/chmod 0555 /run/np1-control-recorder-hook/libncc-driverec-hook.so\nEnvironment=LD_PRELOAD=/run/np1-control-recorder-hook/libncc-driverec-hook.so\n",
         )
 
     def test_install_and_recovery_own_exact_hook_paths(self):
@@ -43,10 +43,60 @@ class RecorderHookContractTests(unittest.TestCase):
         for name in ("ncc", "np1-control-broker.service", "90-ncc-recorder-hook.conf", "libncc-driverec-hook.so"):
             self.assertIn(name, update)
 
+    def test_minimal_deployment_bundle_excludes_large_unrelated_material(self):
+        package = (ROOT / "tools/package-recorder-hook-update.py").read_text(encoding="utf8")
+        self.assertIn('"experimental/libncc-driverec-hook.so"', package)
+        self.assertIn('"tools/recorder-hook-update.sh"', package)
+        self.assertNotIn("plate/models", package)
+        bundle = ROOT / "artifacts/ncc-recorder-hook"
+        if bundle.is_dir():
+            size = sum(path.stat().st_size for path in bundle.rglob("*") if path.is_file())
+            self.assertLess(size, 20 * 1024 * 1024)
+            self.assertFalse((bundle / "plate").exists())
+
     def test_broker_can_write_only_the_hook_owner_directory(self):
         unit = (ROOT / "systemd/np1-control-broker.service").read_text(encoding="utf8")
         self.assertIn(
             "ReadWritePaths=/overlay/owner-apps/np1-control/recorder-hook", unit
+        )
+
+    def test_streamer_hook_uses_the_pinned_encode_property_layout(self):
+        source = (ROOT / "tools/native/recorder-hook.c").read_text(encoding="utf8")
+        fields = [
+            "double frame_rate;",
+            "u32 width;",
+            "u32 height;",
+            "u32 codec_type;",
+            "u32 abi_padding;",
+            "u32 bitrate_type;",
+            "u32 bitrate_bps;",
+            "u32 keyframe_interval_ms;",
+            "u32 tail_padding;",
+        ]
+        positions = [source.index(field) for field in fields]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn("property->width==1920u", source)
+        self.assertIn("property->height==1080u", source)
+        self.assertIn("property->codec_type==9u", source)
+        self.assertIn("property->bitrate_bps==10000000u", source)
+        self.assertIn("property->bitrate_bps==4000000u", source)
+        self.assertIn("front encoder bitrate applied=", source)
+        self.assertIn("cabin encoder bitrate applied=", source)
+        self.assertNotIn("property[6]", source)
+
+    def test_backend_defaults_match_observed_stock_encoders(self):
+        source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
+            encoding="utf8"
+        )
+        self.assertIn("FrontBitrateKbps: 10000", source)
+        self.assertIn("CabinBitrateKbps: 4000", source)
+
+    def test_loaded_readback_hashes_the_runtime_copy(self):
+        source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
+            encoding="utf8"
+        )
+        self.assertIn(
+            "nativeFirmwareMatches(recorderHookLibrary, recorderHookLibrarySHA)", source
         )
 
     @unittest.skipUnless(LIBRARY.is_file(), "recorder hook has not been built")

@@ -101,7 +101,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
    expect(route.request().postDataJSON()).toEqual({expectedValue:1,value:2})
    return route.fulfill({json:{observedAt:'2026-11-11T08:00:00Z',values:{field1:2,field2:1,field3:2},readback:true}})
   })
-  let advanced={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:3,settings:{frontBitrateKbps:4000,cabinBitrateKbps:2000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true}}
+  let advanced={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:3,settings:{frontBitrateKbps:10000,cabinBitrateKbps:4000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true}}
   await page.route('**/api/v1/device/recorder-advanced',route=>{
    if(route.request().method()==='PUT'){
     const body=route.request().postDataJSON();expect(body.expectedGeneration).toBe(3);expect(body.settings.frontBitrateKbps).toBe(8123);expect(body.settings.cabinRecording).toBe(false);expect(body.acknowledgeRecordingGap).toBe(true)

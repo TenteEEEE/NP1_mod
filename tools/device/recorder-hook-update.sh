@@ -11,25 +11,33 @@ DROPIN_DIR=/etc/systemd/system/app-@DriveRec.service.d
 DROPIN=$DROPIN_DIR/90-ncc-recorder-hook.conf
 HOOK_DIR=$BASE/recorder-hook
 HOOK=$HOOK_DIR/libncc-driverec-hook.so
+RUNTIME_HOOK=/run/np1-control-recorder-hook/libncc-driverec-hook.so
 
 test "$(id -u)" = 0
-test -f "$BASE/recovery/owner-recovery-install"
-test -f "$BASE/worker-uid" && test -f "$UNIT" && test -f "$OWNER_UNIT"
+test -f "$UNIT"
 test ! -L "$BASE" && test ! -L "$HOOK_DIR" && test ! -L "$DROPIN_DIR" && test ! -L "$DROPIN" && test ! -L "$HOOK"
-cmp "$OWNER_UNIT" "$UNIT"
+OWNER_LAYOUT=0
+if test -f "$BASE/recovery/owner-recovery-install"; then
+    OWNER_LAYOUT=1
+    test -f "$BASE/worker-uid" && test -f "$OWNER_UNIT"
+    cmp "$OWNER_UNIT" "$UNIT"
+    NCC_UID=$(cat "$BASE/worker-uid")
+else
+    id ncc >/dev/null 2>&1
+    NCC_UID=$(id -u ncc)
+fi
 cd "$STAGE"
 sha256sum -c SHA256SUMS >/dev/null
 test -f experimental/libncc-driverec-hook.so
 /bin/chmod 0755 bin/ncc
 bin/ncc --mode self-test
-NCC_UID=$(cat "$BASE/worker-uid")
 case "$NCC_UID" in ''|*[!0-9]*) exit 1 ;; esac
 test "$NCC_UID" -gt 0
 
 BACKUP=$(mktemp -d "$BASE/recovery/recorder-hook-XXXXXXXX")
 cp -p "$BASE/bin/ncc" "$BACKUP/ncc"
 cp -p "$UNIT" "$BACKUP/np1-control-broker.service"
-cp -p "$OWNER_UNIT" "$BACKUP/owner-np1-control-broker.service"
+if test "$OWNER_LAYOUT" = 1; then cp -p "$OWNER_UNIT" "$BACKUP/owner-np1-control-broker.service"; fi
 if test -f "$DROPIN"; then cp -p "$DROPIN" "$BACKUP/90-ncc-recorder-hook.conf"; else touch "$BACKUP/dropin.absent"; fi
 if test -f "$HOOK"; then cp -p "$HOOK" "$BACKUP/libncc-driverec-hook.so"; else touch "$BACKUP/hook.absent"; fi
 
@@ -57,7 +65,7 @@ finish() {
     if test "$COMPLETED" != 1; then
         restore_file "$BACKUP/ncc" "$BASE/bin/ncc" || result=1
         restore_file "$BACKUP/np1-control-broker.service" "$UNIT" || result=1
-        restore_file "$BACKUP/owner-np1-control-broker.service" "$OWNER_UNIT" || result=1
+        if test "$OWNER_LAYOUT" = 1; then restore_file "$BACKUP/owner-np1-control-broker.service" "$OWNER_UNIT" || result=1; fi
         if test -f "$BACKUP/90-ncc-recorder-hook.conf"; then restore_file "$BACKUP/90-ncc-recorder-hook.conf" "$DROPIN" || result=1; elif test -f "$BACKUP/dropin.absent"; then rm -f "$DROPIN" || result=1; fi
         if test -f "$BACKUP/libncc-driverec-hook.so"; then restore_file "$BACKUP/libncc-driverec-hook.so" "$HOOK" || result=1; elif test -f "$BACKUP/hook.absent"; then rm -f "$HOOK" || result=1; fi
         systemctl daemon-reload || result=1
@@ -78,16 +86,20 @@ restore_file systemd/90-ncc-recorder-hook.conf "$DROPIN"
 chmod 0644 "$DROPIN"
 
 BROKER_NEW=$BACKUP/np1-control-broker.service.new
-sed -e 's/^Group=ncc$/Group=root/' -e "s/@NCC_UID@/$NCC_UID/g" systemd/np1-control-broker.service > "$BROKER_NEW"
-sed -i "/^RuntimeDirectoryMode=/a ExecStartPre=+/bin/chown root:$NCC_UID /run/np1-control\nExecStartPre=+/bin/chmod g+s /run/np1-control" "$BROKER_NEW"
+if test "$OWNER_LAYOUT" = 1; then
+    sed -e 's/^Group=ncc$/Group=root/' -e "s/@NCC_UID@/$NCC_UID/g" systemd/np1-control-broker.service > "$BROKER_NEW"
+    sed -i "/^RuntimeDirectoryMode=/a ExecStartPre=+/bin/chown root:$NCC_UID /run/np1-control\nExecStartPre=+/bin/chmod g+s /run/np1-control" "$BROKER_NEW"
+else
+    sed "s/@NCC_UID@/$NCC_UID/g" systemd/np1-control-broker.service > "$BROKER_NEW"
+fi
 chmod 0644 "$BROKER_NEW"
-restore_file "$BROKER_NEW" "$OWNER_UNIT"
+if test "$OWNER_LAYOUT" = 1; then restore_file "$BROKER_NEW" "$OWNER_UNIT"; fi
 restore_file "$BROKER_NEW" "$UNIT"
 
 systemctl daemon-reload
 cmp experimental/libncc-driverec-hook.so "$HOOK"
 cmp systemd/90-ncc-recorder-hook.conf "$DROPIN"
-systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=$HOOK"
+systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=$RUNTIME_HOOK"
 systemctl restart np1-control-broker.service
 systemctl restart np1-control.service
 restore_led

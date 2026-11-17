@@ -18,9 +18,10 @@ if not re.fullmatch(r'[A-Za-z0-9._:-]+', args.serial):
 root = pathlib.Path(__file__).resolve().parent.parent
 profile_action = args.action in ('gobinet-profiles-readonly', 'gobinet-profile-list-readonly', 'native-apn-status-readonly', 'apn-editor-seed')
 native_apn_action = args.action in ('native-apn-status-readonly', 'native-apn-network-readonly', 'native-apn-same-profile-trial', 'native-apn-route-recover')
-bundle = root / 'artifacts' / ('ncc-native-apn-readonly' if native_apn_action else 'ncc-profiles-readonly' if profile_action else 'ncc')
+recorder_action = args.action == 'recorder-hook-update'
+bundle = root / 'artifacts' / ('ncc-recorder-hook' if recorder_action else 'ncc-native-apn-readonly' if native_apn_action else 'ncc-profiles-readonly' if profile_action else 'ncc')
 adb = ['adb', '-s', args.serial]
-stage = '/tmp/ncc-native-apn-stage' if native_apn_action else '/tmp/ncc-profiles-stage' if profile_action else '/tmp/ncc-stage'
+stage = '/tmp/ncc-recorder-hook-stage' if recorder_action else '/tmp/ncc-native-apn-stage' if native_apn_action else '/tmp/ncc-profiles-stage' if profile_action else '/tmp/ncc-stage'
 def run(*cmd, **kwargs):
     return subprocess.run(cmd, check=True, **kwargs)
 run(*adb, 'get-state')

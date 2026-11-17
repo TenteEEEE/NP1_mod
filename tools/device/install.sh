@@ -193,7 +193,7 @@ systemctl daemon-reload
 if test -f experimental/libncc-driverec-hook.so; then
     cmp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY"
     cmp systemd/90-ncc-recorder-hook.conf "$RECORDER_DROPIN"
-    systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=$RECORDER_LIBRARY"
+    systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=/run/np1-control-recorder-hook/libncc-driverec-hook.so"
 fi
 touch /run/xtables.lock
 systemctl restart np1-control-firewall.service

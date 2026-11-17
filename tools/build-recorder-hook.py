@@ -9,6 +9,7 @@ stock_sha=hashlib.sha256(stock).hexdigest()
 expected_stock_sha='000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0'
 expected_instructions={0x138378:'e91340d13fd907f9fd7bbba9fd030091',0x1384d8:'e91340d13fd107f9fd7bbaa9e403012a',0x138658:'e91340d13fd907f9fd7bbba9640300d0'}
 if stock_sha!=expected_stock_sha:raise SystemExit('DriveRec SHA-256 does not match the pinned firmware')
+if stock[:8]!=b'\x7fELF\x02\x01\x01\x03':raise SystemExit('DriveRec ELF identity mismatch')
 for offset,expected in expected_instructions.items():
  if stock[offset:offset+16].hex()!=expected:raise SystemExit(f'DriveRec instruction mismatch at 0x{offset:x}')
 with a.drive_rec.open('rb') as stream:

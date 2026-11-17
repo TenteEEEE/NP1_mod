@@ -75,3 +75,5 @@ Copy-Item -Force "$repo/THIRD_PARTY_LICENSES.md" "$repo/artifacts/ncc/THIRD_PART
 Copy-Item -Recurse -Force "$repo/licenses" "$repo/artifacts/ncc/"
 python "$repo/tools/package.py" "$repo/artifacts/ncc"
 Check
+python "$repo/tools/package-recorder-hook-update.py"
+Check

@@ -28,7 +28,7 @@
 
 対象 `DriveRec` の SHA-256 は `000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0`。AArch64 の静的解析で以下を確認した。
 
-- `0x1658b8` から始まる VideoEncodeStreamer の構築処理は、既定値として 1280x720、16 fps、エンコード方式 ID 9、ビットレート方式 2、4 Mbps、キーフレーム間隔 1000 ms を保持する。
+- `0x1658b8` から始まる VideoEncodeStreamer の構築処理は、コンストラクタ初期値として 1280x720、16 fps、エンコード方式 ID 9、ビットレート方式 2、4 Mbps、キーフレーム間隔 1000 ms を保持する。実機起動時は純正設定反映後に1920x1080でstreamerを生成する。
 - `0x165700` の内部メソッドは入力値を `1,000,000` 倍し、エンコード構造体の bitrate フィールドへ格納する。したがって純正内部には Mbps 単位のビットレート設定機構がある。
 - 呼出元 `0x161590` / `0x1617d0` は純正設定から得た画質プリセットを解決し、前方／車内それぞれの streamer に値を渡す。公開 command は任意値をこの経路へ渡せない。
 - `libNPMultimediaPlayerStack.so` は `target-bitrate` と `interval-intraframes` を OMX H.264 encoder へ設定する。確認できた可変項目はビットレート方式、ターゲットビットレート、キーフレーム間隔で、H.264 profile / level を外部指定する公開経路は確認できない。
@@ -49,10 +49,11 @@
 
 ### 起動時フックの実装
 
-- `app-@DriveRec.service` の純正 unit は変更せず、NCC 所有の `90-ncc-recorder-hook.conf` drop-in だけで `LD_PRELOAD` を設定する。起動のたびにフックが新しいプロセスへ読み込まれ、プロセス終了とともにメモリ変更は消える。
+- `app-@DriveRec.service` の純正 unit は変更せず、NCC 所有の `90-ncc-recorder-hook.conf` drop-in だけで起動フックを設定する。実行不可マウントの永続領域から `ExecStartPre` で `/run/np1-control-recorder-hook` へ一時コピーし、そのコピーを `LD_PRELOAD` する。起動のたびにフックが新しいプロセスへ読み込まれ、プロセス終了とともに一時コピーとメモリ変更は消える。
 - 既存の所有者用復旧サービス構成は `tools/device/recorder-hook-update.sh` で更新する。NCCバイナリ、broker unit、hook、drop-inを個別バックアップし、失敗時はすべて復元する。更新そのものでは `DriveRec` を再起動せず、純正6サービスのPID・InvocationID・状態を更新前後で比較する。
 - preload ライブラリは、`/proc/self/exe` が上記 SHA-256 と一致し、`StartOrdinaryRecording` 2種類と `StopOrdinaryRecording` の先頭命令16バイトが解析済みの値と一致した場合だけ、AArch64 の絶対ジャンプへ置き換える。未知のファームウェアでは純正動作を維持する。
-- `NPMPS_CreateVideoEncodeStreamer` を interpose し、純正既定値 4,000,000 bps を前方、2,000,000 bps を車内として識別する。各カメラのターゲットビットレート、CBR/VBR、GOPミリ秒を、streamer 作成前のエンコード構造体へ反映する。
+- `NPMPS_CreateVideoEncodeStreamer` を interpose し、実機で観測した純正既定値 10,000,000 bps を前方（通常・タイムラプス）、4,000,000 bps を車内として識別する。各カメラのターゲットビットレート、CBR/VBR、GOPミリ秒を、streamer 作成前のエンコード構造体へ反映する。
+- `DriveRec` の `0x165fa8` 呼出し直前の値コピーと純正ログ文字列を突き合わせ、`NPMultimediaPlayerVideoEncodeProperty` のレイアウトを `frameRate:+0 / width:+8 / height:+12 / codecType:+16 / bitrateType:+24 / bitrate:+28 / KeyFrameInterval:+32` と確定した。実機診断で最初に `+24` を読み `2`（VBR）となったため、ビットレートは `+28` へ訂正した。実機でエンコード解像度 `1920x1080`、codec enum `9` がH.264であることも確認した。書換え時はこの解像度、H.264、純正既定ビットレートを同時に検証し、いずれかが異なる場合は純正値を保持する。
 - 車内録画 OFF では、車内カメラに対する通常録画の start / stop を成功応答で抑止し、前方カメラは純正処理へ委譲する。これは通常連続録画の経路に限定した実装であり、イベント録画や駐車録画まで停止することは未確認である。
 - テキストページの保護を RX に戻せない場合は元命令へ復元する。さらに RX 復元も失敗した場合はプロセスを終了し、RWX のまま録画を継続しない。
 
@@ -77,7 +78,8 @@
 
 - frontend の型検査・本番ビルド、backend の `go test ./...` と `go vet ./...`、Python unittest、録画／Wi-Fi／設定画面の Playwright を通過済み。
 - ARM64 向け NCC と配布マニフェストを生成済み。
-- 実機 `100.111.243.72` では HTTPS の read-only API のみ確認した。録画設定は前方高画質、車内高画質、音声 ON。Communication / DriveRec / ImageRecog / Voice / QMMF は active だった。
-- 実機の録画一覧は `NO_SD` のため、新規録画によるビットレート確認はできていない。
-- 今回の追加解析では実機設定を変更していない。ADB と Windows 側 Wi-Fi は使用していない。
-- 起動時フックは ARM64 ビルド、元 `DriveRec` のSHA／命令列照合、ELF（interpose symbol、constructor、非実行stack、text relocationなし）、設定CRCのホスト検証まで完了。実機へは未配備で、任意値の新規録画および車内通常録画停止の実映像検証は未実施。
+- 実機へ再現可能な `recorder-hook-update` として配備した。更新処理では `DriveRec` を再起動せず、純正6サービスの状態・PID・InvocationIDが不変であることを確認した。適用APIを明示実行した場合だけ `DriveRec` を再起動した。
+- 実機の任意値試験では、前方 `8,000 kbps / CBR / GOP 1,500 ms`、車内 `3,000 kbps / VBR / GOP 2,000 ms` をstreamer作成直前にread-backし、前方・車内のH.264 encoding successを確認した。前方には通常録画とタイムラプスの2ストリームとも同値が反映された。
+- 車内通常録画 OFF を適用し、APIのgenerationと設定read-back、3か所のメモリフック、および実行時の `cabin ordinary stop suppressed` を確認した。SD未挿入（`insertSts:2`）のため、通常録画開始抑止とMP4ファイル差分は確認できていない。試験後は前方 `10,000 kbps`、車内 `4,000 kbps`、VBR、GOP `1,000 ms`、車内通常録画 ON の純正相当値へ復元した。
+- 実行中の永続領域／`/run` ライブラリSHA一致、`LD_PRELOAD`、実行マッピング、純正 `DriveRec` のSHA、3か所のジャンプ命令とジャンプ先をread-backした。Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherCom はすべて active、`DriveRec` の `NRestarts=0` だった。
+- ADBは利用者が接続した対象実機だけに固定して使用した。Windows側Wi-Fiの接続先・プロファイル・設定には触れていない。
