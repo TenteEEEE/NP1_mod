@@ -816,6 +816,28 @@ paths:
         '200': {description: 'config{revision, enabled, endpoint, keyConfigured}。キー値は返さない。'}
         '400': {description: HTTPSでない、URL不正、有効化に必要な値がない}
         '409': {description: revision競合}
+  /plate/share/register:
+    post:
+      summary: 匿名ユーザーIDとNumberShare接続用キーで初回登録し、発行された機器用認証情報を端末へ保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, endpoint, userHandle, bootstrapKey]
+              properties:
+                expectedRevision: {type: integer, minimum: 1}
+                endpoint: {type: string, format: uri}
+                userHandle: {type: string, minLength: 3, maxLength: 24, pattern: '^[a-z0-9][a-z0-9_-]{2,23}$'}
+                bootstrapKey: {type: string, minLength: 24, description: 運用者から配布されたDEVICE_API_KEY。登録後は保存しない}
+                deviceName: {type: string, minLength: 1, maxLength: 100, description: 省略時はNP1}
+      responses:
+        '201': {description: 'userHandle, deviceId。発行されたapi_key・device_id・recovery_codeは端末へ保存済み。' }
+        '400': {description: エンドポイント、匿名ユーザーID、接続用キーまたは端末名が不正}
+        '409': {description: 既に登録済み、またはrevision競合}
+        '502': {description: NumberShare登録APIの接続・認証・応答エラー}
   /plate/share/check:
     post:
       summary: 保存済み認証キーでNumberShareの本人情報を確認（秘密フィールドは除去）

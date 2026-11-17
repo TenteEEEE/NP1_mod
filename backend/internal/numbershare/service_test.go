@@ -285,22 +285,20 @@ func TestLegacyConfigMigratesOnceIntoManagedAPISettings(t *testing.T) {
 	}
 }
 
-func TestUIRegistrationStoresIssuedDeviceAndManagementKeys(t *testing.T) {
+func TestUIRegistrationUsesBootstrapKeyAndStoresIssuedDeviceKey(t *testing.T) {
 	const bootstrap = "bootstrap-key-0123456789abcdef"
-	const admin = "admin-key-0123456789abcdef"
 	const issued = "issued-device-key-0123456789abcdef"
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("X-API-Key")
 		switch r.URL.Path {
-		case "/api/openapi.json":
-			if key != admin {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-			_, _ = w.Write([]byte(`{}`))
 		case "/api/users":
 			if key != bootstrap {
 				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			var body map[string]string
+			if json.NewDecoder(r.Body).Decode(&body) != nil || body["user_handle"] != "owner_01" || body["device_name"] != "NP1" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
 				return
 			}
 			w.WriteHeader(http.StatusCreated)
@@ -318,14 +316,13 @@ func TestUIRegistrationStoresIssuedDeviceAndManagementKeys(t *testing.T) {
 	defer server.Close()
 	s := New(t.TempDir(), server.Client())
 	result, err := s.Register(context.Background(), RegistrationRequest{
-		ExpectedRevision: 1, Endpoint: server.URL + "/api/", UserHandle: "owner_01", DeviceName: "NP1 test",
-		BootstrapKey: bootstrap, AdminAPIKey: admin,
+		ExpectedRevision: 1, Endpoint: server.URL + "/api/", UserHandle: "owner_01", BootstrapKey: bootstrap,
 	})
 	if err != nil || result.UserHandle != "owner_01" || result.DeviceID != "d1" {
 		t.Fatalf("register = %+v, %v", result, err)
 	}
 	status := s.Status()
-	if status.Config.Enabled || !status.Config.KeyConfigured || !status.Config.AdminKeyConfigured || status.Config.APIKey != issued || status.Config.AdminAPIKey != admin || status.Config.UserHandle != "owner_01" {
+	if status.Config.Enabled || !status.Config.KeyConfigured || status.Config.AdminKeyConfigured || status.Config.APIKey != issued || status.Config.AdminAPIKey != "" || status.Config.UserHandle != "owner_01" {
 		t.Fatalf("registered config = %+v", status.Config)
 	}
 	stored, err := loadAPIConfig(s.configPath())

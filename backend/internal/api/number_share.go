@@ -89,7 +89,6 @@ func (s *Server) registerNumberShare() {
 			UserHandle       string `json:"userHandle"`
 			DeviceName       string `json:"deviceName"`
 			BootstrapKey     string `json:"bootstrapKey"`
-			AdminAPIKey      string `json:"adminApiKey"`
 		}
 		if !decode(w, r, &body) {
 			return
@@ -98,7 +97,7 @@ func (s *Server) registerNumberShare() {
 		defer cancel()
 		result, err := n.Register(ctx, numbershare.RegistrationRequest{
 			ExpectedRevision: body.ExpectedRevision, Endpoint: body.Endpoint, UserHandle: body.UserHandle,
-			DeviceName: body.DeviceName, BootstrapKey: body.BootstrapKey, AdminAPIKey: body.AdminAPIKey,
+			DeviceName: body.DeviceName, BootstrapKey: body.BootstrapKey,
 		})
 		if err != nil {
 			numberShareFailure(w, err)

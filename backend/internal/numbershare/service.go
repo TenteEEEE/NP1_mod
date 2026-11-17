@@ -63,7 +63,6 @@ type RegistrationRequest struct {
 	UserHandle       string
 	DeviceName       string
 	BootstrapKey     string
-	AdminAPIKey      string
 }
 
 type UIRegistrationResult struct {
@@ -374,20 +373,19 @@ func (s *Service) Register(ctx context.Context, request RegistrationRequest) (UI
 		return UIRegistrationResult{}, errors.New("匿名ユーザーIDは英小文字・数字・_・-の3〜24文字で、数字だけにはできません")
 	}
 	deviceName := strings.TrimSpace(request.DeviceName)
-	if deviceName == "" || len([]rune(deviceName)) > 100 {
+	if deviceName == "" {
+		deviceName = "NP1"
+	}
+	if len([]rune(deviceName)) > 100 {
 		return UIRegistrationResult{}, errors.New("端末名は1〜100文字で入力してください")
 	}
-	bootstrapKey, adminKey := strings.TrimSpace(request.BootstrapKey), strings.TrimSpace(request.AdminAPIKey)
-	if len(bootstrapKey) < 24 || len(adminKey) < 24 {
-		return UIRegistrationResult{}, errors.New("初回登録キーと管理画面用キーを確認してください")
+	bootstrapKey := strings.TrimSpace(request.BootstrapKey)
+	if len(bootstrapKey) < 24 {
+		return UIRegistrationResult{}, errors.New("接続用キー（DEVICE_API_KEY）を確認してください")
 	}
 	managementURL, err := managementURLFor(endpoint, "")
 	if err != nil {
 		return UIRegistrationResult{}, err
-	}
-	openAPI, _ := endpointURL(endpoint, "openapi.json")
-	if status, checkErr := s.requestJSON(ctx, http.MethodGet, openAPI, adminKey, nil, nil); checkErr != nil || status != http.StatusOK {
-		return UIRegistrationResult{}, errors.New("管理画面用キーを確認してください")
 	}
 	usersURL, _ := endpointURL(endpoint, "users")
 	var issued registrationResponse
@@ -408,9 +406,12 @@ func (s *Service) Register(ctx context.Context, request RegistrationRequest) (UI
 	if request.ExpectedRevision != s.cfg.Revision || s.cfg.APIKey != "" {
 		return UIRegistrationResult{}, errors.New("revision conflict")
 	}
+	if s.cfg.ManagementURL != "" {
+		managementURL = s.cfg.ManagementURL
+	}
 	next := APIConfig{
 		Revision: s.cfg.Revision + 1, Enabled: false, Endpoint: endpoint, APIKey: issued.APIKey,
-		ManagementURL: managementURL, AdminAPIKey: adminKey, UserHandle: handle,
+		ManagementURL: managementURL, AdminAPIKey: s.cfg.AdminAPIKey, UserHandle: handle,
 		DeviceID: issued.DeviceID, RecoveryCode: issued.RecoveryCode,
 	}
 	if err = config.Atomic(s.configPath(), next); err != nil {
