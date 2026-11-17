@@ -186,6 +186,9 @@
 .plate-share .panel { padding: 0; }
 .share-panel-body { padding: 18px 20px 20px; }
 .plate-share .panel-head h2 { display: inline-flex; align-items: center; gap: 8px; }
+.share-config-head-actions { display: flex; align-items: center; gap: 8px; }
+.share-config-toggle svg { transition: transform .15s ease; }
+.share-config-toggle[aria-expanded=true] svg { transform: rotate(180deg); }
 .share-state { border-radius: 999px; padding: 5px 10px; font-size: 11px; background: var(--soft); color: var(--muted); }
 .share-state.on { color: var(--accent); }
 .share-config-grid { display: grid; grid-template-columns: minmax(260px,2fr) minmax(180px,1fr) auto; align-items: end; gap: 12px; }

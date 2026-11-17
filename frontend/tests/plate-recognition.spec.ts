@@ -96,6 +96,12 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   })
   await page.getByRole('tab',{name:'共有',exact:true}).click()
   await expect(page.locator('.plate-share .panel')).toHaveCount(5)
+  await expect(page.locator('.plate-share .panel-head h2')).toHaveText(['NumberShare API','APIの全検知履歴','送信状況','期間を指定してアップロード','登録車両を検索'])
+  const configToggle=page.getByRole('button',{name:'API設定を開く'})
+  await expect(configToggle).toHaveAttribute('aria-expanded','false')
+  await expect(page.locator('.share-config-body')).toBeHidden()
+  await configToggle.click()
+  await expect(page.locator('.share-config-body')).toBeVisible()
   expect(await page.locator('.plate-share .panel').evaluateAll(panels=>panels.map(panel=>({
    panelTop:getComputedStyle(panel).paddingTop,
    headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
@@ -136,6 +142,18 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
    headingTop:getComputedStyle(panel.querySelector('.panel-head')!).paddingTop,
    bodyTop:getComputedStyle(panel.querySelector('.share-panel-body')!).paddingTop,
   })))).toEqual(Array(5).fill({panelTop:'0px',headingTop:'18px',bodyTop:'18px'}))
+  expect(errors).toEqual([])
+ })
+
+ test('NumberShare API settings stay expanded by default until a key is configured',async({page})=>{
+  const unconfigured={config:{revision:0,enabled:false,endpoint:'',keyConfigured:false,apiKey:''},pending:0,sent:0,blocked:0,items:[]}
+  const errors=await open(page,async route=>{
+   if(new URL(route.request().url()).pathname!=='/api/v1/plate/share/status')return false
+   await route.fulfill({json:unconfigured});return true
+  })
+  await page.getByRole('tab',{name:'共有',exact:true}).click()
+  await expect(page.getByRole('button',{name:'API設定を閉じる'})).toHaveAttribute('aria-expanded','true')
+  await expect(page.locator('.share-config-body')).toBeVisible()
   expect(errors).toEqual([])
  })
 
