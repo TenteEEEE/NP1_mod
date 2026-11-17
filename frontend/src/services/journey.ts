@@ -12,8 +12,9 @@ export function rollingHourTicks(from:string,to:string):{at:number;position:numb
  return ticks
 }
 export function rollingJourney(hours:NonNullable<JourneyHistory['hours']>):JourneyBucket[]{
+ const hasDistance=hours.some(hour=>hour.observed&&finite(hour.distanceKm)),hasTime=hours.some(hour=>hour.observed&&finite(hour.drivingSeconds))
  let distance=0,time=0
- return hours.map(hour=>{const d=hour.observed&&finite(hour.distanceKm)?hour.distanceKm:null,h=hour.observed&&finite(hour.drivingSeconds)?hour.drivingSeconds/3600:null;if(d!==null)distance+=d;if(h!==null)time+=h;return {key:hour.from,from:hour.from,to:hour.to,distance:d,hours:h,observedDays:hour.observed?1:0,dayCount:1,distanceDays:d===null?0:1,timeDays:h===null?0:1,cumulativeDistance:d===null?null:distance,cumulativeHours:h===null?null:time}})
+ return hours.map(hour=>{const d=hour.observed&&finite(hour.distanceKm)?hour.distanceKm:null,h=hour.observed&&finite(hour.drivingSeconds)?hour.drivingSeconds/3600:null;if(d!==null)distance+=d;if(h!==null)time+=h;return {key:hour.from,from:hour.from,to:hour.to,distance:d,hours:h,observedDays:hour.observed?1:0,dayCount:1,distanceDays:d===null?0:1,timeDays:h===null?0:1,cumulativeDistance:hasDistance?distance:null,cumulativeHours:hasTime?time:null}})
 }
 export const finite=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=0
 export const jstDate=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Tokyo'}).format(new Date())
@@ -41,7 +42,8 @@ export function groupJourney(days:JourneyDay[],grouping:JourneyGrouping):Journey
   if(time){bucket.hours=(bucket.hours??0)+day.drivingSeconds!/3600;bucket.timeDays++}
   if(distance||time)bucket.observedDays++
  }
+ const buckets=[...groups.values()],hasDistance=buckets.some(bucket=>bucket.distance!==null),hasHours=buckets.some(bucket=>bucket.hours!==null)
  let distance=0,hours=0
- return [...groups.values()].map(bucket=>{if(bucket.distance!==null){distance+=bucket.distance;bucket.cumulativeDistance=distance}if(bucket.hours!==null){hours+=bucket.hours;bucket.cumulativeHours=hours}return bucket})
+ return buckets.map(bucket=>{if(bucket.distance!==null)distance+=bucket.distance;if(bucket.hours!==null)hours+=bucket.hours;bucket.cumulativeDistance=hasDistance?distance:null;bucket.cumulativeHours=hasHours?hours:null;return bucket})
 }
 export function niceMaximum(values:(number|null)[]){const value=Math.max(0,...values.map(value=>value??0));if(value===0)return 1;const step=10**Math.floor(Math.log10(value));return Math.ceil(value/step)*step}

@@ -38,9 +38,9 @@ const x=(index:number)=>(index+.5)*step.value
 function label(bucket:JourneyBucket){if(rolling.value)return clock(bucket.from)+'〜'+clock(bucket.to);return bucket.from===bucket.to?shortDate(bucket.from):shortDate(bucket.from)+'〜'+shortDate(bucket.to)}
 function description(bucket:JourneyBucket){return `${bucket.from}${bucket.from===bucket.to?'':'〜'+bucket.to}、距離 ${valueText(bucket.distance)} km、走行時間 ${duration(bucket.hours===null?null:bucket.hours*3600)}、計測 ${bucket.observedDays}/${bucket.dayCount}日`}
 function line(metric:'distance'|'hours'){
- const key=metric==='distance'?'cumulativeDistance':'cumulativeHours',count=metric==='distance'?'distanceDays':'timeDays',maximum=metric==='distance'?cumulativeDistanceMax.value:cumulativeHoursMax.value
- let previousComplete=false
- return buckets.value.map((bucket,index)=>{const value=bucket[key];if(value===null){previousComplete=false;return ''}const complete=bucket[count]===bucket.dayCount;const command=previousComplete&&complete?'L':'M';previousComplete=complete;return `${command}${x(index)} ${y(value,maximum)}`}).join(' ')
+ const key=metric==='distance'?'cumulativeDistance':'cumulativeHours',maximum=metric==='distance'?cumulativeDistanceMax.value:cumulativeHoursMax.value
+ let started=false
+ return buckets.value.map((bucket,index)=>{const value=bucket[key];if(value===null)return '';const command=started?'L':'M';started=true;return `${command}${x(index)} ${y(value,maximum)}`}).join(' ')
 }
 function focusBucket(event:KeyboardEvent,index:number){let next=index;if(event.key==='ArrowRight')next++;else if(event.key==='ArrowLeft')next--;else if(event.key==='Home')next=0;else if(event.key==='End')next=buckets.value.length-1;else return;event.preventDefault();next=Math.max(0,Math.min(buckets.value.length-1,next));const nodes=(event.currentTarget as Element).parentElement!.querySelectorAll<SVGElement>('.jc-bucket');nodes[next]?.focus();selected.value=buckets.value[next]?.key}
 function choosePeriod(value:string){period.value=value;selected.value=undefined;validation.value='';grouping.value=value==='90'?'week':['365','all'].includes(value)?'month':'day';if(value==='custom'){appliedFrom.value=customFrom.value;appliedTo.value=customTo.value}}
