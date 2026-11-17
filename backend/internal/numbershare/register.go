@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -22,12 +23,12 @@ import (
 const defaultTailscaleBinary = "/overlay/owner-apps/np1-control/bin/tailscale"
 
 type RegistrationOptions struct {
-	ConfigPath         string
-	RecoveryPath       string
-	BootstrapKeyPath   string
+	ConfigPath          string
+	RecoveryPath        string
+	BootstrapKeyPath    string
 	ExistingUserKeyPath string
-	InternalUserIDPath string
-	DeviceName         string
+	InternalUserIDPath  string
+	DeviceName          string
 }
 
 type RegistrationResult struct {
@@ -89,7 +90,9 @@ func readCredential(path string, required bool) (string, error) {
 		}
 		return "", err
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Windows reports synthesized POSIX mode bits that do not represent its ACLs.
+	// The deployed NP1 target is Linux, where group/other access must be rejected.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", errors.New("credential-permissions-too-broad")
 	}
 	b, err := os.ReadFile(path)

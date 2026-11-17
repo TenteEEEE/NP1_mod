@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -63,10 +64,10 @@ func TestEnsureRegistersFromInternalIDWithoutExposingBootstrapKey(t *testing.T) 
 	if strings.Contains(string(configBytes), "bootstrap-user-key") || !strings.Contains(string(configBytes), "issued-device-key") || !strings.Contains(string(recoveryBytes), "recovery-code") {
 		t.Fatal("private output mismatch")
 	}
-	if info, _ := os.Stat(r.Options.ConfigPath); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(r.Options.ConfigPath); runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
 		t.Fatalf("config mode=%o", info.Mode().Perm())
 	}
-	if info, _ := os.Stat(r.Options.RecoveryPath); info.Mode().Perm() != 0o600 {
+	if info, _ := os.Stat(r.Options.RecoveryPath); runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("recovery mode=%o", info.Mode().Perm())
 	}
 }
@@ -93,7 +94,10 @@ func TestEnsureUsesExistingUserKeyForAdditionalDevice(t *testing.T) {
 	})}
 	r := NewRegistrar(RegistrationOptions{ConfigPath: filepath.Join(dir, "numbershare.json"), ExistingUserKeyPath: userKey, DeviceName: "np1-02"})
 	r.Client = client
-	r.InternalUserID = func(context.Context, string) (string, error) { t.Fatal("internal ID should not be needed"); return "", nil }
+	r.InternalUserID = func(context.Context, string) (string, error) {
+		t.Fatal("internal ID should not be needed")
+		return "", nil
+	}
 	result, err := r.Ensure(context.Background())
 	if err != nil || result.Created != "device" || !result.Authenticated {
 		t.Fatalf("result=%+v err=%v", result, err)

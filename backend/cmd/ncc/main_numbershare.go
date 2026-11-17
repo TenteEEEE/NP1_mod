@@ -14,11 +14,11 @@ func runNumberShareSync(ctx context.Context, stateDir, syncConfig, positionURL s
 	// full ncc server is not required. Keep the plate record collector running
 	// beside the offline/retry uploader instead.
 	go api.RunPlateCollector(ctx, stateDir, positionURL)
-	return numbershare.New(syncConfig, stateDir).Run(ctx)
+	return numbershare.NewSyncer(syncConfig, stateDir).Run(ctx)
 }
 
 func runNumberShareCheck(ctx context.Context, stateDir, syncConfig string) error {
-	result, err := numbershare.New(syncConfig, stateDir).Check(ctx)
+	result, err := numbershare.NewSyncer(syncConfig, stateDir).Check(ctx)
 	if encodeErr := json.NewEncoder(os.Stdout).Encode(result); encodeErr != nil {
 		return encodeErr
 	}
@@ -31,4 +31,3 @@ func runNumberShareRegister(ctx context.Context, options numbershare.Registratio
 	}
 	return err
 }
-

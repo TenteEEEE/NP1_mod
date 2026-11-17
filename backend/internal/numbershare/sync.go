@@ -132,7 +132,7 @@ type Syncer struct {
 	Client     *http.Client
 }
 
-func New(configPath, stateDir string) *Syncer {
+func NewSyncer(configPath, stateDir string) *Syncer {
 	return &Syncer{
 		ConfigPath: configPath,
 		StateDir:   stateDir,
@@ -267,7 +267,7 @@ func payload(r plate.Record, sendLocation bool) (sightingPayload, bool) {
 	return out, true
 }
 
-func retryDelay(attempt int) time.Duration {
+func syncRetryDelay(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
@@ -411,7 +411,7 @@ func (s *Syncer) SyncOnce(ctx context.Context) (int, error) {
 			case http.StatusUnauthorized, http.StatusForbidden:
 				item.NextAttempt = now.Add(time.Hour)
 			default:
-				item.NextAttempt = now.Add(retryDelay(item.Attempts))
+				item.NextAttempt = now.Add(syncRetryDelay(item.Attempts))
 			}
 		}
 		st.Items[record.ID] = item
@@ -429,7 +429,7 @@ func (s *Syncer) SyncOnce(ctx context.Context) (int, error) {
 // plate-record ID. Operational retry state and remote credentials are never
 // returned to the dashboard API.
 func Results(stateDir string) map[string]Result {
-	s := New("", stateDir)
+	s := NewSyncer("", stateDir)
 	st := s.loadState()
 	out := make(map[string]Result)
 	for localID, item := range st.Items {
