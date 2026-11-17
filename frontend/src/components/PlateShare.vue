@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import {computed,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
-import {AlertTriangle,CheckCircle2,ChevronDown,Cloud,MapPin,RefreshCw,RotateCcw,Search,Upload} from '@lucide/vue'
+import {AlertTriangle,CheckCircle2,ChevronDown,Cloud,ExternalLink,MapPin,RefreshCw,RotateCcw,Search,Upload,UserPlus} from '@lucide/vue'
 import {api} from '../services/api'
 import {VectorMap,collection,feature,type LatLon} from '../services/vector-map'
 import {jstDay,plateSerial,type NumberShareSighting,type NumberShareSightings,type NumberShareStatus,type NumberShareUpload,type NumberShareVehicle,type NumberShareVehicles} from '../services/plate'
 
 const status=ref<NumberShareStatus>(),items=ref<NumberShareSighting[]>([]),vehicles=ref<NumberShareVehicle[]>([]),categories=ref<string[]>([])
 const endpoint=ref(''),enabled=ref(false),key=ref(''),showKey=ref(false),clearKey=ref(false),query=ref(''),scope=ref<'all'|'mine'|'others'>('all'),matchStatus=ref('')
+const managementURL=ref(''),adminKey=ref(''),showAdminKey=ref(false),clearAdminKey=ref(false)
+const userHandle=ref(''),deviceName=ref('NP1'),bootstrapKey=ref(''),registrationAdminKey=ref(''),registering=ref(false)
 const vehicleQuery=ref(''),serial=ref(''),category=ref('')
 const uploadFrom=ref(jstDay(-6)),uploadTo=ref(jstDay(0)),uploading=ref(false)
 const loading=ref(false),saving=ref(false),checking=ref(false),error=ref(''),notice=ref(''),syncedAt=ref(''),online=ref(true)
@@ -20,13 +22,23 @@ const display=(p:NumberShareSighting['plate']|NumberShareVehicle)=>[p.region,p.c
 const located=computed(()=>items.value.filter(item=>item.location))
 
 async function loadStatus(){
- try{const first=!status.value;status.value=await api<NumberShareStatus>('/plate/share/status');if(first){endpoint.value=status.value.config.endpoint;enabled.value=status.value.config.enabled;key.value=status.value.config.apiKey||''}if(!configOpenInitialized){configOpen.value=!status.value.config.keyConfigured;configOpenInitialized=true}}catch(e){error.value=message(e)}
+ try{const first=!status.value;status.value=await api<NumberShareStatus>('/plate/share/status');if(first){endpoint.value=status.value.config.endpoint||'https://nmch.jp/app/numbershare/api/';enabled.value=status.value.config.enabled;key.value=status.value.config.apiKey||'';managementURL.value=status.value.config.managementUrl||'https://nmch.jp/app/numbershare/';adminKey.value=status.value.config.adminApiKey||'';userHandle.value=status.value.config.userHandle||''}if(!configOpenInitialized){configOpen.value=!status.value.config.keyConfigured;configOpenInitialized=true}}catch(e){error.value=message(e)}
 }
 async function saveConfig(){
  if(!status.value)return;saving.value=true;error.value=''
  try{const body:{expectedRevision:number;enabled:boolean;endpoint:string;key?:string}={expectedRevision:status.value.config.revision,enabled:enabled.value,endpoint:endpoint.value};if(clearKey.value)body.key='';else if(key.value)body.key=key.value
-  await api('/plate/share/config','PUT',body);key.value='';clearKey.value=false;notice.value='NumberShare API設定を保存しました';status.value=undefined;await loadStatus()
+  const saved=await api<{revision:number}>('/plate/share/config','PUT',body);const management:{expectedRevision:number;managementUrl:string;key?:string}={expectedRevision:saved.revision,managementUrl:managementURL.value};if(clearAdminKey.value)management.key='';else if(adminKey.value)management.key=adminKey.value
+  await api('/plate/share/management','PUT',management);key.value='';adminKey.value='';clearKey.value=false;clearAdminKey.value=false;notice.value='NumberShare API設定を保存しました';status.value=undefined;await loadStatus()
  }catch(e){error.value=message(e)}finally{saving.value=false}
+}
+async function register(){
+ if(!status.value)return;registering.value=true;error.value=''
+ try{const result=await api<{userHandle:string}>('/plate/share/register','POST',{expectedRevision:status.value.config.revision,endpoint:endpoint.value,userHandle:userHandle.value,deviceName:deviceName.value,bootstrapKey:bootstrapKey.value,adminApiKey:registrationAdminKey.value});bootstrapKey.value='';registrationAdminKey.value='';notice.value=`${result.userHandle} として初回登録しました。発行された機器用認証キーを保存しました`;status.value=undefined;await loadStatus()}
+ catch(e){error.value=message(e)}finally{registering.value=false}
+}
+async function copyManagementKey(){
+ const value=adminKey.value||status.value?.config.adminApiKey||''
+ try{if(value)await navigator.clipboard.writeText(value);notice.value=value?'管理画面用キーをコピーしました。開いた画面のログイン欄へ貼り付けてください':'管理画面を開きました'}catch{notice.value='管理画面を開きました。保存キーはAPI設定で表示できます'}
 }
 async function check(){checking.value=true;error.value='';try{const r=await api<{identity?:{user_handle?:string}}>('/plate/share/check','POST');notice.value=r.identity?.user_handle?`接続しました（匿名ID: ${r.identity.user_handle}）`:'APIへ接続しました'}catch(e){error.value=message(e)}finally{checking.value=false}}
 async function retry(id:string){try{await api('/plate/share/retry/'+encodeURIComponent(id),'POST');notice.value='再送待ちへ戻しました';await loadStatus()}catch(e){error.value=message(e)}}
@@ -72,11 +84,25 @@ onUnmounted(()=>{if(statusTimer)clearInterval(statusTimer);map?.destroy()})
     <label class="share-endpoint">APIエンドポイント<input v-model.trim="endpoint" type="url" placeholder="https://example.jp/api/" autocomplete="off" spellcheck="false"></label>
     <label>認証キー<input v-model="key" :type="showKey?'text':'password'" placeholder="APIキーを入力" :disabled="clearKey" autocomplete="off" spellcheck="false"></label>
     <label class="plate-check"><input v-model="showKey" type="checkbox">認証キーを表示する</label>
+    <label class="share-endpoint">管理画面URL<input v-model.trim="managementURL" type="url" placeholder="https://example.jp/numbershare/" autocomplete="off" spellcheck="false"></label>
+    <label>管理画面用キー<input v-model="adminKey" :type="showAdminKey?'text':'password'" placeholder="管理用APIキーを入力" :disabled="clearAdminKey" autocomplete="off" spellcheck="false"></label>
+    <label class="plate-check"><input v-model="showAdminKey" type="checkbox">管理画面用キーを表示する</label>
     <label class="plate-check"><input v-model="enabled" type="checkbox">検知をリアルタイム送信する</label>
     <label v-if="status?.config.keyConfigured" class="plate-check"><input v-model="clearKey" type="checkbox">保存済みキーを削除する</label>
+    <label v-if="status?.config.adminKeyConfigured" class="plate-check"><input v-model="clearAdminKey" type="checkbox">保存済み管理キーを削除する</label>
+   </div>
+   <div v-if="status&&!status.config.keyConfigured" class="share-registration">
+    <div><h3><UserPlus :size="17"/>初回登録</h3><p>本人が決めた匿名ユーザーIDを入力します。本名や他サービスと共通のIDは使わないでください。登録後に発行された機器用認証キーと復旧情報は端末へ保存します。</p></div>
+    <div class="share-registration-grid">
+     <label>匿名ユーザーID<input v-model.trim="userHandle" placeholder="例: sky_4821" maxlength="24" autocomplete="off" spellcheck="false"></label>
+     <label>端末名<input v-model.trim="deviceName" placeholder="NP1" maxlength="100" autocomplete="off"></label>
+     <label>初回登録キー<input v-model="bootstrapKey" type="password" placeholder="初回登録用キー" autocomplete="off" spellcheck="false"></label>
+     <label>初回登録に使う管理画面用キー<input v-model="registrationAdminKey" type="password" placeholder="管理用APIキー" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <button class="primary" :disabled="registering||!endpoint||!userHandle||!deviceName||!bootstrapKey||!registrationAdminKey" @click="register"><UserPlus :size="14"/>{{registering?'登録中…':'初回登録してキーを保存'}}</button>
    </div>
    <p class="hint">保存済みの認証キーを読み込み、通常は伏せ字で表示します。「認証キーを表示する」を選んだときだけ平文表示します。HTTPS証明書の検証は常に有効です。</p>
-   <div class="share-actions"><button class="secondary" :disabled="!status?.config.keyConfigured||checking" @click="check"><RefreshCw :size="14"/>{{checking?'確認中…':'接続を確認'}}</button><button class="primary" :disabled="!status||saving" @click="saveConfig">{{saving?'保存中…':'設定を保存'}}</button></div>
+   <div class="share-actions"><a v-if="status?.config.adminKeyConfigured&&managementURL" class="secondary share-management-link" :href="managementURL" target="_blank" rel="noopener noreferrer" @click="copyManagementKey"><ExternalLink :size="14"/>キーをコピーして管理画面を開く</a><button class="secondary" :disabled="!status?.config.keyConfigured||checking" @click="check"><RefreshCw :size="14"/>{{checking?'確認中…':'接続を確認'}}</button><button class="primary" :disabled="!status||saving" @click="saveConfig">{{saving?'保存中…':'設定を保存'}}</button></div>
    </div>
   </section>
 

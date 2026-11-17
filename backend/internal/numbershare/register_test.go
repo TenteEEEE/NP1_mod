@@ -21,7 +21,15 @@ func TestDerivedUserHandleIsStableAndDoesNotExposeInternalID(t *testing.T) {
 	}
 }
 
-func TestEnsureRegistersFromInternalIDWithoutExposingBootstrapKey(t *testing.T) {
+func TestEnsureDefersInitialRegistrationToOwnerUIWithoutExplicitHandle(t *testing.T) {
+	r := NewRegistrar(RegistrationOptions{ConfigPath: filepath.Join(t.TempDir(), "missing.json")})
+	result, err := r.Ensure(context.Background())
+	if err != nil || result.Status != "ui-registration-required" || result.Configured {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestEnsureRegistersExplicitOwnerHandleWithoutExposingBootstrapKey(t *testing.T) {
 	dir := t.TempDir()
 	bootstrap := filepath.Join(dir, "bootstrap.key")
 	if err := os.WriteFile(bootstrap, []byte("bootstrap-user-key-0123456789abcdef\n"), 0o600); err != nil {
@@ -48,16 +56,15 @@ func TestEnsureRegistersFromInternalIDWithoutExposingBootstrapKey(t *testing.T) 
 			return nil, nil
 		}
 	})}
-	r := NewRegistrar(RegistrationOptions{ConfigPath: filepath.Join(dir, "private", "numbershare.json"), RecoveryPath: filepath.Join(dir, "private", "recovery.json"), BootstrapKeyPath: bootstrap, DeviceName: "NP1 test"})
+	r := NewRegistrar(RegistrationOptions{ConfigPath: filepath.Join(dir, "private", "numbershare.json"), RecoveryPath: filepath.Join(dir, "private", "recovery.json"), BootstrapKeyPath: bootstrap, DeviceName: "NP1 test", UserHandle: "owner_01"})
 	r.Client = client
 	r.Clock = func() time.Time { return time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC) }
-	r.InternalUserID = func(context.Context, string) (string, error) { return "private-internal-user-id", nil }
 	result, err := r.Ensure(context.Background())
 	if err != nil || !result.Authenticated || result.Created != "user" || result.Status != "ok" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if requestedHandle != derivedUserHandle("private-internal-user-id") || strings.Contains(requestedHandle, "private") {
-		t.Fatalf("raw ID escaped: %q", requestedHandle)
+	if requestedHandle != "owner_01" {
+		t.Fatalf("explicit handle changed: %q", requestedHandle)
 	}
 	configBytes, _ := os.ReadFile(r.Options.ConfigPath)
 	recoveryBytes, _ := os.ReadFile(r.Options.RecoveryPath)

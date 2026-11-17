@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/plate"
 )
 
@@ -23,6 +24,7 @@ func testRecord(at time.Time) plate.Record {
 
 func configureTest(t *testing.T, s *Service, endpoint string) {
 	t.Helper()
+	s.settle = 0
 	key := "fictional-test-key"
 	got, err := s.Configure(1, true, endpoint, &key)
 	if err != nil || !got.Enabled || !got.KeyConfigured {
@@ -60,7 +62,7 @@ func TestQueueRetriesSameImmutableEventAndPersists(t *testing.T) {
 			http.Error(w, `{"error":"temporary"}`, http.StatusServiceUnavailable)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"saved": true, "match": map[string]string{"status": "exact"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"saved": true, "match": map[string]any{"status": "exact", "plate": map[string]any{"category": "危険", "comment": "統合結果", "metadata_present": true}}})
 	}))
 	defer server.Close()
 
@@ -98,6 +100,10 @@ func TestQueueRetriesSameImmutableEventAndPersists(t *testing.T) {
 	if final.Sent != 1 || final.Pending != 0 || final.Items[0].MatchStatus != "exact" {
 		t.Fatalf("after success = %+v", final)
 	}
+	visible, ok := Results(filepath.Dir(s.dir))["record-1"]
+	if !ok || visible.Status != "exact" || visible.Category != "危険" || visible.Comment != "統合結果" {
+		t.Fatalf("saved match result = %+v, %v", visible, ok)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(requests) != 2 || string(requests[0]) != string(requests[1]) {
@@ -107,7 +113,7 @@ func TestQueueRetriesSameImmutableEventAndPersists(t *testing.T) {
 		t.Fatalf("keys = %q", keys)
 	}
 	var sent SightingPayload
-	if json.Unmarshal(requests[0], &sent) != nil || sent.EventID == "" || sent.Plate.ClassificationNumber != "301" {
+	if json.Unmarshal(requests[0], &sent) != nil || sent.EventID != eventID("record-1") || sent.Plate.SerialNumber != "12-34" || sent.Plate.ClassificationNumber != "301" {
 		t.Fatalf("payload = %+v", sent)
 	}
 	reloaded := New(filepath.Dir(s.dir), server.Client()).Status()
@@ -144,11 +150,36 @@ func TestPermanentErrorBlocksUntilManualRetry(t *testing.T) {
 	}
 }
 
+func TestRealtimeQueueWaitsForMergedRecordToSettle(t *testing.T) {
+	now := time.Date(2026, 11, 17, 3, 0, 0, 0, time.UTC)
+	s := New(t.TempDir(), nil)
+	s.clock = func() time.Time { return now }
+	key := "fictional-test-key"
+	if _, err := s.Configure(1, true, "https://share.example/api/", &key); err != nil {
+		t.Fatal(err)
+	}
+	record := testRecord(now)
+	record.LastSeen = now
+	if err := s.Enqueue(record); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, due := s.nextDue(); due {
+		t.Fatal("record was sent before its merge window settled")
+	}
+	now = now.Add(defaultGrace)
+	if _, _, due := s.nextDue(); !due {
+		t.Fatal("settled record did not become due")
+	}
+}
+
 func TestEstimatedLocationIsNotShared(t *testing.T) {
 	now := time.Now()
 	record := testRecord(now)
 	record.Location.Estimated = true
-	p := payloadFor(record, "event")
+	p, ok := payloadFor(record, "event")
+	if !ok {
+		t.Fatal("valid record was rejected")
+	}
 	if p.Location != nil {
 		t.Fatalf("estimated location leaked as measured: %+v", p.Location)
 	}
@@ -156,7 +187,10 @@ func TestEstimatedLocationIsNotShared(t *testing.T) {
 
 func TestPayloadUsesNumberShareMillisecondTimestamp(t *testing.T) {
 	at := time.Date(2026, 11, 16, 6, 0, 0, 817821101, time.UTC)
-	payload := payloadFor(testRecord(at), "event")
+	payload, ok := payloadFor(testRecord(at), "event")
+	if !ok {
+		t.Fatal("valid record was rejected")
+	}
 	if payload.ObservedAt != "2026-11-16T06:00:00.817Z" {
 		t.Fatalf("observed_at = %q", payload.ObservedAt)
 	}
@@ -218,6 +252,81 @@ func TestConfigureRejectsPlainHTTPAndRequiresCredentials(t *testing.T) {
 	}
 	if _, err := s.Configure(1, true, "https://example.test/api", nil); err == nil {
 		t.Fatal("enabled without key accepted")
+	}
+}
+
+func TestLegacyConfigMigratesOnceIntoManagedAPISettings(t *testing.T) {
+	root := t.TempDir()
+	legacyPath := filepath.Join(root, "private", "numbershare.json")
+	writeJSON(t, legacyPath, Config{Enabled: true, BaseURL: "https://share.example/api/", APIKey: "legacy-device-key-0123456789", CutoverAt: time.Now()})
+	writeJSON(t, filepath.Join(root, "private", "numbershare-recovery.json"), map[string]string{"userHandle": "legacy_owner", "recoveryCode": "legacy-recovery-secret"})
+	migrated, err := MigrateLegacyConfig(legacyPath, filepath.Join(root, "state"))
+	if err != nil || !migrated {
+		t.Fatalf("first migration = %v, %v", migrated, err)
+	}
+	managed, err := loadAPIConfig(ManagedConfigPath(filepath.Join(root, "state")))
+	if err != nil || !managed.Enabled || managed.Endpoint != "https://share.example/api/" || managed.APIKey != "legacy-device-key-0123456789" || managed.UserHandle != "legacy_owner" || managed.RecoveryCode != "legacy-recovery-secret" {
+		t.Fatalf("managed config = %+v, %v", managed, err)
+	}
+	managed.Endpoint = "https://owner.example/api/"
+	if err = config.Atomic(ManagedConfigPath(filepath.Join(root, "state")), managed); err != nil {
+		t.Fatal(err)
+	}
+	if migrated, err = MigrateLegacyConfig(legacyPath, filepath.Join(root, "state")); err != nil || migrated {
+		t.Fatalf("second migration = %v, %v", migrated, err)
+	}
+	kept, _ := loadAPIConfig(ManagedConfigPath(filepath.Join(root, "state")))
+	if kept.Endpoint != "https://owner.example/api/" {
+		t.Fatalf("owner setting was overwritten: %+v", kept)
+	}
+}
+
+func TestUIRegistrationStoresIssuedDeviceAndManagementKeys(t *testing.T) {
+	const bootstrap = "bootstrap-key-0123456789abcdef"
+	const admin = "admin-key-0123456789abcdef"
+	const issued = "issued-device-key-0123456789abcdef"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-API-Key")
+		switch r.URL.Path {
+		case "/api/openapi.json":
+			if key != admin {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`{}`))
+		case "/api/users":
+			if key != bootstrap {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"user_id":"u1","user_handle":"owner_01","device_id":"d1","api_key":"` + issued + `","recovery_code":"recovery-secret"}`))
+		case "/api/users/me":
+			if key != issued {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = w.Write([]byte(`{"user_id":"u1","user_handle":"owner_01","device_id":"d1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	s := New(t.TempDir(), server.Client())
+	result, err := s.Register(context.Background(), RegistrationRequest{
+		ExpectedRevision: 1, Endpoint: server.URL + "/api/", UserHandle: "owner_01", DeviceName: "NP1 test",
+		BootstrapKey: bootstrap, AdminAPIKey: admin,
+	})
+	if err != nil || result.UserHandle != "owner_01" || result.DeviceID != "d1" {
+		t.Fatalf("register = %+v, %v", result, err)
+	}
+	status := s.Status()
+	if status.Config.Enabled || !status.Config.KeyConfigured || !status.Config.AdminKeyConfigured || status.Config.APIKey != issued || status.Config.AdminAPIKey != admin || status.Config.UserHandle != "owner_01" {
+		t.Fatalf("registered config = %+v", status.Config)
+	}
+	stored, err := loadAPIConfig(s.configPath())
+	if err != nil || stored.RecoveryCode != "recovery-secret" || stored.DeviceID != "d1" {
+		t.Fatalf("private registration state = %+v, %v", stored, err)
 	}
 }
 

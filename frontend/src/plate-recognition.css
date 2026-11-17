@@ -194,8 +194,16 @@
 .share-config-grid { display: grid; grid-template-columns: minmax(260px,2fr) minmax(180px,1fr) auto; align-items: end; gap: 12px; }
 .share-config-grid > label:not(.plate-check), .plate-share .plate-toolbar > label:not(.plate-check) { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
 .share-config-grid input, .plate-share .plate-toolbar :is(input,select) { min-height: 44px; min-width: 0; }
+.share-registration { display: grid; gap: 14px; margin-top: 18px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
+.share-registration h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.share-registration p { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.share-registration-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.share-registration-grid label { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; }
+.share-registration-grid input { min-width: 0; min-height: 44px; }
+.share-registration > button { justify-self: end; }
 .share-config .hint { margin: 12px 0 0; }
 .share-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.share-management-link { color: var(--text); text-decoration: none; }
 .share-upload .hint { margin: 12px 0 0; }
 .share-counts { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
 .share-counts div { min-width: 100px; padding: 10px 14px; border-radius: 7px; background: var(--soft); }
@@ -222,6 +230,8 @@
 .share-vehicle-grid p { margin: 3px 0 0; font-size: 12px; }
 @media (max-width: 800px) {
  .share-config-grid { grid-template-columns: minmax(0,1fr); }
+ .share-registration-grid { grid-template-columns: minmax(0,1fr); }
+ .share-registration > button { justify-self: stretch; }
  .share-vehicle-grid { grid-template-columns: minmax(0,1fr); }
  .plate-map.share-map { height: 320px; }
 }

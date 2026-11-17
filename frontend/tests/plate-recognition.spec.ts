@@ -78,18 +78,19 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
 
  test('NumberShare receives all sightings and masks the saved key until explicitly shown',async({page})=>{
   await page.setViewportSize({width:390,height:900})
-  const configWrites:any[]=[],uploads:any[]=[],receiveMethods:string[]=[]
+  const configWrites:any[]=[],managementWrites:any[]=[],uploads:any[]=[],receiveMethods:string[]=[]
   const shared=[
    {id:1,event_id:'11111111-1111-4111-8111-111111111111',observed_at:at(3),received_at:at(2),match_status:'exact',recognition_revision:0,plate:{serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ'},location:{latitude:35.62,longitude:139.74},mine:true},
    {id:2,event_id:'22222222-2222-4222-8222-222222222222',observed_at:at(8),received_at:at(7),match_status:'none',recognition_revision:0,plate:{serial_number:'56-78',region:'練馬'},location:{latitude:35.64,longitude:139.71},mine:false},
   ]
-  const shareStatus={config:{revision:2,enabled:true,endpoint:'https://share.example/api/',keyConfigured:true,apiKey:'saved-fixture-key'},pending:1,sent:4,blocked:1,items:[{eventId:'33333333-3333-4333-8333-333333333333',recordId:'pfix-0004',payload:{event_id:'33333333-3333-4333-8333-333333333333',observed_at:at(12),plate:{serial_number:'77',region:'横浜'}},state:'blocked',attempts:1,queuedAt:at(12),httpStatus:422,lastError:'API 422: bad plate'}]}
+  const shareStatus={config:{revision:2,enabled:true,endpoint:'https://share.example/api/',keyConfigured:true,apiKey:'saved-fixture-key',managementUrl:'https://share.example/',adminKeyConfigured:true,adminApiKey:'saved-admin-key',userHandle:'fixture_user'},pending:1,sent:4,blocked:1,items:[{eventId:'33333333-3333-4333-8333-333333333333',recordId:'pfix-0004',payload:{event_id:'33333333-3333-4333-8333-333333333333',observed_at:at(12),plate:{serial_number:'77',region:'横浜'}},state:'blocked',attempts:1,queuedAt:at(12),httpStatus:422,lastError:'API 422: bad plate'}]}
   const errors=await open(page,async route=>{
    const url=new URL(route.request().url()),method=route.request().method()
    if(url.pathname==='/api/v1/plate/share/status'){await route.fulfill({json:shareStatus});return true}
    if(url.pathname==='/api/v1/plate/share/sightings'){receiveMethods.push(method);const scope=url.searchParams.get('scope');await route.fulfill({json:{items:scope==='others'?shared.filter(x=>!x.mine):shared,truncated:false,syncedAt:at(0)}});return true}
    if(url.pathname==='/api/v1/plate/share/vehicles'){await route.fulfill({json:{items:[{id:10,serial_number:'12-34',region:'品川',classification_number:'300',hiragana:'あ',category:'危険',comment:'合成テスト車両',sightings:2,last_seen:at(2),last_location:{latitude:35.62,longitude:139.74}}],total:1,categories:['未分類','危険']}});return true}
    if(url.pathname==='/api/v1/plate/share/config'&&method==='PUT'){configWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:3}});return true}
+   if(url.pathname==='/api/v1/plate/share/management'&&method==='PUT'){managementWrites.push(route.request().postDataJSON());await route.fulfill({json:{...shareStatus.config,revision:4}});return true}
    if(url.pathname==='/api/v1/plate/share/check'){await route.fulfill({json:{ok:true,identity:{user_handle:'fixture_user'}}});return true}
    if(url.pathname==='/api/v1/plate/share/upload'&&method==='POST'){uploads.push(route.request().postDataJSON());await route.fulfill({status:202,json:{total:4,queued:3,requeued:0,existing:1,skipped:0}});return true}
    return false
@@ -127,11 +128,16 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect(page.locator('.share-item')).toContainText('他の利用者')
   await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','password')
   await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
+  await expect(page.getByLabel('管理画面用キー',{exact:true})).toHaveAttribute('type','password')
+  await expect(page.getByLabel('管理画面用キー',{exact:true})).toHaveValue('saved-admin-key')
+  await expect(page.getByRole('link',{name:'キーをコピーして管理画面を開く'})).toHaveAttribute('href','https://share.example/')
   await page.getByLabel('認証キーを表示する').check()
   await expect(page.getByLabel('認証キー',{exact:true})).toHaveAttribute('type','text')
   await page.getByLabel('認証キー',{exact:true}).fill('replacement-fixture-key')
   await page.getByRole('button',{name:'設定を保存'}).click()
+  await expect(page.getByText('NumberShare API設定を保存しました')).toBeVisible()
   expect(configWrites).toEqual([{expectedRevision:2,enabled:true,endpoint:'https://share.example/api/',key:'replacement-fixture-key'}])
+  expect(managementWrites).toEqual([{expectedRevision:3,managementUrl:'https://share.example/',key:'saved-admin-key'}])
   await expect(page.getByLabel('認証キー',{exact:true})).toHaveValue('saved-fixture-key')
   await page.getByRole('button',{name:'接続を確認'}).click()
   await expect(page.getByText('接続しました（匿名ID: fixture_user）')).toBeVisible()
@@ -146,14 +152,25 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
  })
 
  test('NumberShare API settings stay expanded by default until a key is configured',async({page})=>{
-  const unconfigured={config:{revision:0,enabled:false,endpoint:'',keyConfigured:false,apiKey:''},pending:0,sent:0,blocked:0,items:[]}
+  const registrations:any[]=[]
+  const unconfigured={config:{revision:1,enabled:false,endpoint:'',keyConfigured:false,apiKey:'',adminKeyConfigured:false},pending:0,sent:0,blocked:0,items:[]}
   const errors=await open(page,async route=>{
-   if(new URL(route.request().url()).pathname!=='/api/v1/plate/share/status')return false
-   await route.fulfill({json:unconfigured});return true
+   const path=new URL(route.request().url()).pathname
+   if(path==='/api/v1/plate/share/status'){await route.fulfill({json:unconfigured});return true}
+   if(path==='/api/v1/plate/share/register'){registrations.push(route.request().postDataJSON());await route.fulfill({status:201,json:{userHandle:'new_owner',deviceId:'device-1'}});return true}
+   return false
   })
   await page.getByRole('tab',{name:'共有',exact:true}).click()
   await expect(page.getByRole('button',{name:'API設定を閉じる'})).toHaveAttribute('aria-expanded','true')
   await expect(page.locator('.share-config-body')).toBeVisible()
+  await expect(page.getByRole('heading',{name:'初回登録'})).toBeVisible()
+  await page.getByLabel('匿名ユーザーID').fill('new_owner')
+  await page.getByLabel('端末名').fill('NP1 fixture')
+  await page.getByLabel('初回登録キー').fill('bootstrap-fixture-key-0123456789')
+  await page.getByLabel('初回登録に使う管理画面用キー').fill('admin-fixture-key-0123456789')
+  await page.getByRole('button',{name:'初回登録してキーを保存'}).click()
+  await expect(page.getByText('new_owner として初回登録しました。発行された機器用認証キーを保存しました')).toBeVisible()
+  expect(registrations).toEqual([{expectedRevision:1,endpoint:'https://nmch.jp/app/numbershare/api/',userHandle:'new_owner',deviceName:'NP1 fixture',bootstrapKey:'bootstrap-fixture-key-0123456789',adminApiKey:'admin-fixture-key-0123456789'}])
   expect(errors).toEqual([])
  })
 

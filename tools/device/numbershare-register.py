@@ -211,7 +211,7 @@ def main() -> None:
     verify_adb_target(args.adb, args.serial)
     opener, csrf = control_opener(control_url)
     _, status = control_json(opener, control_url, "/plate/share/status")
-    control_json(
+    _, configured = control_json(
         opener,
         control_url,
         "/plate/share/config",
@@ -221,6 +221,18 @@ def main() -> None:
             "enabled": args.enable,
             "endpoint": api_base,
             "key": account["api_key"],
+        },
+        csrf,
+    )
+    control_json(
+        opener,
+        control_url,
+        "/plate/share/management",
+        "PUT",
+        {
+            "expectedRevision": configured["revision"],
+            "managementUrl": management_url,
+            "key": admin_key,
         },
         csrf,
     )

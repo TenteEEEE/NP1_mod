@@ -115,6 +115,7 @@ type serverMatch struct {
 type serverResponse struct {
 	Saved bool        `json:"saved"`
 	Match serverMatch `json:"match"`
+	Error string      `json:"error"`
 }
 
 // CheckResult intentionally exposes no account, device, API-key, or response
@@ -261,7 +262,7 @@ func payload(r plate.Record, sendLocation bool) (sightingPayload, bool) {
 		p.Hiragana = r.Reading.Kana
 	}
 	out := sightingPayload{EventID: eventID(r.ID), ObservedAt: r.FirstSeen.Format(time.RFC3339Nano), Plate: p}
-	if sendLocation && r.Location != nil && r.Location.Lat >= -90 && r.Location.Lat <= 90 && r.Location.Lon >= -180 && r.Location.Lon <= 180 {
+	if sendLocation && r.Location != nil && !r.Location.Estimated && r.Location.Lat >= -90 && r.Location.Lat <= 90 && r.Location.Lon >= -180 && r.Location.Lon <= 180 {
 		out.Location = &locationPayload{Latitude: r.Location.Lat, Longitude: r.Location.Lon, AccuracyM: r.Location.AccuracyM}
 	}
 	return out, true

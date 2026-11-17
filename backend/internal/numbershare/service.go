@@ -6,8 +6,6 @@ package numbershare
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,19 +28,47 @@ const (
 	apiTimeLayout    = "2006-01-02T15:04:05.000Z07:00"
 )
 
-type APIConfig struct {
-	Revision int    `json:"revision"`
-	Enabled  bool   `json:"enabled"`
-	Endpoint string `json:"endpoint"`
-	APIKey   string `json:"apiKey"`
-}
+var (
+	registrationHandlePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{2,23}$`)
+	digitsOnlyPattern         = regexp.MustCompile(`^[0-9]+$`)
+)
 
-type PublicConfig struct {
+type APIConfig struct {
 	Revision      int    `json:"revision"`
 	Enabled       bool   `json:"enabled"`
 	Endpoint      string `json:"endpoint"`
-	KeyConfigured bool   `json:"keyConfigured"`
 	APIKey        string `json:"apiKey"`
+	ManagementURL string `json:"managementUrl,omitempty"`
+	AdminAPIKey   string `json:"adminApiKey,omitempty"`
+	UserHandle    string `json:"userHandle,omitempty"`
+	DeviceID      string `json:"deviceId,omitempty"`
+	RecoveryCode  string `json:"recoveryCode,omitempty"`
+}
+
+type PublicConfig struct {
+	Revision           int    `json:"revision"`
+	Enabled            bool   `json:"enabled"`
+	Endpoint           string `json:"endpoint"`
+	KeyConfigured      bool   `json:"keyConfigured"`
+	APIKey             string `json:"apiKey"`
+	ManagementURL      string `json:"managementUrl,omitempty"`
+	AdminKeyConfigured bool   `json:"adminKeyConfigured"`
+	AdminAPIKey        string `json:"adminApiKey,omitempty"`
+	UserHandle         string `json:"userHandle,omitempty"`
+}
+
+type RegistrationRequest struct {
+	ExpectedRevision int
+	Endpoint         string
+	UserHandle       string
+	DeviceName       string
+	BootstrapKey     string
+	AdminAPIKey      string
+}
+
+type UIRegistrationResult struct {
+	UserHandle string `json:"userHandle"`
+	DeviceID   string `json:"deviceId"`
 }
 
 type Plate struct {
@@ -101,6 +128,7 @@ type Service struct {
 	dir    string
 	client *http.Client
 	clock  func() time.Time
+	settle time.Duration
 	wake   chan struct{}
 
 	mu    sync.Mutex
@@ -112,7 +140,7 @@ func New(stateDir string, client *http.Client) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	s := &Service{dir: filepath.Join(stateDir, "numbershare"), client: client, clock: time.Now, wake: make(chan struct{}, 1), cfg: APIConfig{Revision: 1}, queue: []QueueItem{}}
+	s := &Service{dir: filepath.Join(stateDir, "numbershare"), client: client, clock: time.Now, settle: defaultGrace, wake: make(chan struct{}, 1), cfg: APIConfig{Revision: 1}, queue: []QueueItem{}}
 	if b, err := os.ReadFile(s.configPath()); err == nil {
 		var saved APIConfig
 		if json.Unmarshal(b, &saved) == nil && saved.Revision > 0 {
@@ -152,8 +180,83 @@ func New(stateDir string, client *http.Client) *Service {
 func (s *Service) configPath() string { return filepath.Join(s.dir, "config.json") }
 func (s *Service) queuePath() string  { return filepath.Join(s.dir, "queue.json") }
 
+// ManagedConfigPath is the single NumberShare credential/configuration source
+// used by both the owner UI and automatic device registration.
+func ManagedConfigPath(stateDir string) string {
+	return filepath.Join(stateDir, "numbershare", "config.json")
+}
+
+func loadAPIConfig(path string) (APIConfig, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return APIConfig{}, err
+	}
+	var cfg APIConfig
+	if json.Unmarshal(b, &cfg) != nil || cfg.Revision < 1 {
+		return APIConfig{}, errors.New("invalid-managed-config")
+	}
+	normalized, err := normalizeEndpoint(cfg.Endpoint)
+	if err != nil || normalized != cfg.Endpoint || cfg.Enabled && (cfg.Endpoint == "" || strings.TrimSpace(cfg.APIKey) == "") {
+		return APIConfig{}, errors.New("invalid-managed-config")
+	}
+	return cfg, nil
+}
+
+// MigrateLegacyConfig imports main's former root-managed sender configuration
+// only when the owner UI has no configuration yet. The legacy sender itself is
+// retired, so a detection always has exactly one runtime owner.
+func MigrateLegacyConfig(legacyPath, stateDir string) (bool, error) {
+	managedPath := ManagedConfigPath(stateDir)
+	if _, err := loadAPIConfig(managedPath); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	legacy, err := loadConfig(legacyPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, err
+	}
+	managed := APIConfig{Revision: 1, Enabled: legacy.Enabled, Endpoint: legacy.BaseURL, APIKey: legacy.APIKey}
+	var recovery struct {
+		UserHandle   string `json:"userHandle"`
+		RecoveryCode string `json:"recoveryCode"`
+	}
+	if data, readErr := os.ReadFile(filepath.Join(filepath.Dir(legacyPath), "numbershare-recovery.json")); readErr == nil && json.Unmarshal(data, &recovery) == nil {
+		managed.UserHandle = strings.TrimSpace(recovery.UserHandle)
+		managed.RecoveryCode = strings.TrimSpace(recovery.RecoveryCode)
+	}
+	if _, err = normalizeEndpoint(managed.Endpoint); err != nil {
+		return false, err
+	}
+	return true, config.Atomic(managedPath, managed)
+}
+
+func (s *Service) reloadConfig() {
+	saved, err := loadAPIConfig(s.configPath())
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	changed := saved != s.cfg
+	if changed {
+		s.cfg = saved
+	}
+	s.mu.Unlock()
+	if changed {
+		s.signal()
+	}
+}
+
 func publicConfig(c APIConfig) PublicConfig {
-	return PublicConfig{Revision: c.Revision, Enabled: c.Enabled, Endpoint: c.Endpoint, KeyConfigured: c.APIKey != "", APIKey: c.APIKey}
+	return PublicConfig{
+		Revision: c.Revision, Enabled: c.Enabled, Endpoint: c.Endpoint,
+		KeyConfigured: c.APIKey != "", APIKey: c.APIKey,
+		ManagementURL: c.ManagementURL, AdminKeyConfigured: c.AdminAPIKey != "", AdminAPIKey: c.AdminAPIKey,
+		UserHandle: c.UserHandle,
+	}
 }
 
 func normalizeEndpoint(raw string) (string, error) {
@@ -172,7 +275,153 @@ func normalizeEndpoint(raw string) (string, error) {
 	return u.String(), nil
 }
 
+func managementURLFor(endpoint, raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		u, err := url.Parse(endpoint)
+		if err != nil {
+			return "", errors.New("管理画面URLを確認してください")
+		}
+		u.Path = strings.TrimSuffix(u.Path, "api/")
+		u.RawQuery, u.Fragment = "", ""
+		raw = u.String()
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("管理画面URLにはHTTPSのURLを指定してください")
+	}
+	if !strings.HasSuffix(u.Path, "/") {
+		u.Path += "/"
+	}
+	return u.String(), nil
+}
+
+func (s *Service) ConfigureManagement(expected int, managementURL string, key *string) (PublicConfig, error) {
+	s.reloadConfig()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if expected != s.cfg.Revision {
+		return PublicConfig{}, errors.New("revision conflict")
+	}
+	next := s.cfg
+	if key != nil {
+		next.AdminAPIKey = strings.TrimSpace(*key)
+	}
+	if next.AdminAPIKey != "" {
+		var err error
+		next.ManagementURL, err = managementURLFor(next.Endpoint, managementURL)
+		if err != nil {
+			return PublicConfig{}, err
+		}
+	} else {
+		next.ManagementURL = ""
+	}
+	next.Revision++
+	if err := config.Atomic(s.configPath(), next); err != nil {
+		return PublicConfig{}, err
+	}
+	s.cfg = next
+	return publicConfig(next), nil
+}
+
+func (s *Service) requestJSON(ctx context.Context, method, target, key string, body any, into any) (int, error) {
+	var reader io.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return 0, err
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, reader)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-Key", key)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return 0, errors.New("NumberShare APIへ接続できません")
+	}
+	defer resp.Body.Close()
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if readErr != nil || len(data) > maxResponseBytes {
+		return resp.StatusCode, errors.New("NumberShare APIの応答を読み取れません")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var failure struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(data, &failure)
+		return resp.StatusCode, errors.New(apiError(resp.StatusCode, failure.Error))
+	}
+	if into != nil && json.Unmarshal(data, into) != nil {
+		return resp.StatusCode, errors.New("NumberShare APIの応答を読み取れません")
+	}
+	return resp.StatusCode, nil
+}
+
+func (s *Service) Register(ctx context.Context, request RegistrationRequest) (UIRegistrationResult, error) {
+	s.reloadConfig()
+	endpoint, err := normalizeEndpoint(request.Endpoint)
+	if err != nil || endpoint == "" {
+		return UIRegistrationResult{}, errors.New("APIエンドポイントを確認してください")
+	}
+	handle := strings.ToLower(strings.TrimSpace(request.UserHandle))
+	if !registrationHandlePattern.MatchString(handle) || digitsOnlyPattern.MatchString(handle) {
+		return UIRegistrationResult{}, errors.New("匿名ユーザーIDは英小文字・数字・_・-の3〜24文字で、数字だけにはできません")
+	}
+	deviceName := strings.TrimSpace(request.DeviceName)
+	if deviceName == "" || len([]rune(deviceName)) > 100 {
+		return UIRegistrationResult{}, errors.New("端末名は1〜100文字で入力してください")
+	}
+	bootstrapKey, adminKey := strings.TrimSpace(request.BootstrapKey), strings.TrimSpace(request.AdminAPIKey)
+	if len(bootstrapKey) < 24 || len(adminKey) < 24 {
+		return UIRegistrationResult{}, errors.New("初回登録キーと管理画面用キーを確認してください")
+	}
+	managementURL, err := managementURLFor(endpoint, "")
+	if err != nil {
+		return UIRegistrationResult{}, err
+	}
+	openAPI, _ := endpointURL(endpoint, "openapi.json")
+	if status, checkErr := s.requestJSON(ctx, http.MethodGet, openAPI, adminKey, nil, nil); checkErr != nil || status != http.StatusOK {
+		return UIRegistrationResult{}, errors.New("管理画面用キーを確認してください")
+	}
+	usersURL, _ := endpointURL(endpoint, "users")
+	var issued registrationResponse
+	status, err := s.requestJSON(ctx, http.MethodPost, usersURL, bootstrapKey, map[string]string{"user_handle": handle, "device_name": deviceName}, &issued)
+	if err != nil || status != http.StatusCreated || issued.APIKey == "" || issued.DeviceID == "" || issued.UserHandle != handle {
+		if err != nil {
+			return UIRegistrationResult{}, err
+		}
+		return UIRegistrationResult{}, errors.New("初回登録の応答を確認してください")
+	}
+	meURL, _ := endpointURL(endpoint, "users/me")
+	var identity registrationIdentity
+	if _, err = s.requestJSON(ctx, http.MethodGet, meURL, issued.APIKey, nil, &identity); err != nil || identity.DeviceID != issued.DeviceID || identity.UserHandle != handle {
+		return UIRegistrationResult{}, errors.New("発行された機器用認証キーを確認できませんでした")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if request.ExpectedRevision != s.cfg.Revision || s.cfg.APIKey != "" {
+		return UIRegistrationResult{}, errors.New("revision conflict")
+	}
+	next := APIConfig{
+		Revision: s.cfg.Revision + 1, Enabled: false, Endpoint: endpoint, APIKey: issued.APIKey,
+		ManagementURL: managementURL, AdminAPIKey: adminKey, UserHandle: handle,
+		DeviceID: issued.DeviceID, RecoveryCode: issued.RecoveryCode,
+	}
+	if err = config.Atomic(s.configPath(), next); err != nil {
+		return UIRegistrationResult{}, err
+	}
+	s.cfg = next
+	return UIRegistrationResult{UserHandle: handle, DeviceID: issued.DeviceID}, nil
+}
+
 func (s *Service) Configure(expected int, enabled bool, endpoint string, key *string) (PublicConfig, error) {
+	s.reloadConfig()
 	normalized, err := normalizeEndpoint(endpoint)
 	if err != nil {
 		return PublicConfig{}, err
@@ -213,33 +462,38 @@ func (s *Service) Configure(expected int, enabled bool, endpoint string, key *st
 }
 
 func (s *Service) Config() PublicConfig {
+	s.reloadConfig()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return publicConfig(s.cfg)
 }
 
-func uuidV4() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+func payloadFor(record plate.Record, eventID string) (SightingPayload, bool) {
+	validated, ok := payload(record, true)
+	if !ok {
+		return SightingPayload{}, false
 	}
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	h := hex.EncodeToString(b)
-	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32], nil
+	validated.EventID = eventID
+	p := SightingPayload{EventID: eventID, ObservedAt: record.FirstSeen.Format(apiTimeLayout), Plate: Plate{
+		SerialNumber: validated.Plate.SerialNumber, Region: validated.Plate.Region,
+		ClassificationNumber: validated.Plate.ClassificationNumber, Hiragana: validated.Plate.Hiragana,
+	}}
+	if validated.Location != nil {
+		p.Location = &Location{Latitude: validated.Location.Latitude, Longitude: validated.Location.Longitude, AccuracyM: validated.Location.AccuracyM}
+	}
+	return p, true
 }
 
-func payloadFor(record plate.Record, eventID string) SightingPayload {
-	p := SightingPayload{EventID: eventID, ObservedAt: record.FirstSeen.Format(apiTimeLayout), Plate: Plate{
-		SerialNumber: record.Reading.Number, Region: record.Reading.Region,
-		ClassificationNumber: record.Reading.Class, Hiragana: record.Reading.Kana,
-	}}
-	// An interpolated local position is useful in the NP1 UI but must not be
-	// represented to the sharing API as a measured GNSS fix.
-	if record.Location != nil && !record.Location.Estimated {
-		p.Location = &Location{Latitude: record.Location.Lat, Longitude: record.Location.Lon, AccuracyM: record.Location.AccuracyM}
+func (s *Service) realtimeDue(record plate.Record, now time.Time) time.Time {
+	seen := record.LastSeen
+	if seen.IsZero() {
+		seen = record.FirstSeen
 	}
-	return p
+	due := seen.Add(s.settle).UTC()
+	if due.Before(now) {
+		return now
+	}
+	return due
 }
 
 // Enqueue persists a confirmed local record before allowing the worker to
@@ -255,18 +509,26 @@ func (s *Service) Enqueue(record plate.Record) error {
 			// Before the first attempt, later OCR frames may fill fields. Once an
 			// attempt occurred the POST body must remain byte-for-byte stable.
 			if s.queue[i].Attempts == 0 {
-				s.queue[i].Payload = payloadFor(record, s.queue[i].EventID)
+				updated, ok := payloadFor(record, s.queue[i].EventID)
+				if !ok {
+					return nil
+				}
+				s.queue[i].Payload = updated
+				due := s.realtimeDue(record, s.clock().UTC())
+				s.queue[i].NextAttempt = &due
 				return s.saveQueueLocked()
 			}
 			return nil
 		}
 	}
-	id, err := uuidV4()
-	if err != nil {
-		return err
+	id := eventID(record.ID)
+	payload, ok := payloadFor(record, id)
+	if !ok {
+		return nil
 	}
 	now := s.clock().UTC()
-	s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payloadFor(record, id), State: "pending", QueuedAt: now, NextAttempt: &now})
+	due := s.realtimeDue(record, now)
+	s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payload, State: "pending", QueuedAt: now, NextAttempt: &due})
 	if err := s.saveQueueLocked(); err != nil {
 		s.queue = s.queue[:len(s.queue)-1]
 		return err
@@ -292,7 +554,9 @@ func (s *Service) EnqueueUpload(records []plate.Record) (UploadResult, error) {
 	original := append([]QueueItem(nil), s.queue...)
 	now := s.clock().UTC()
 	for _, record := range records {
-		if strings.TrimSpace(record.Reading.Number) == "" {
+		id := eventID(record.ID)
+		payload, valid := payloadFor(record, id)
+		if !valid {
 			result.Skipped++
 			continue
 		}
@@ -300,20 +564,15 @@ func (s *Service) EnqueueUpload(records []plate.Record) (UploadResult, error) {
 			result.Existing++
 			item := &s.queue[index]
 			if item.State == "blocked" {
-				item.Payload = payloadFor(record, item.EventID)
+				payload.EventID = item.EventID
+				item.Payload = payload
 				item.State, item.LastError, item.HTTPStatus, item.Manual = "pending", "", 0, true
 				item.NextAttempt = &now
 				result.Requeued++
 			}
 			continue
 		}
-		id, err := uuidV4()
-		if err != nil {
-			s.queue = original
-			s.mu.Unlock()
-			return result, err
-		}
-		s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payloadFor(record, id), State: "pending", QueuedAt: now, NextAttempt: &now, Manual: true})
+		s.queue = append(s.queue, QueueItem{EventID: id, RecordID: record.ID, Payload: payload, State: "pending", QueuedAt: now, NextAttempt: &now, Manual: true})
 		existing[record.ID] = len(s.queue) - 1
 		result.Queued++
 	}
@@ -340,6 +599,7 @@ func (s *Service) signal() {
 }
 
 func (s *Service) Status() Status {
+	s.reloadConfig()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := Status{Config: publicConfig(s.cfg), Items: make([]QueueItem, len(s.queue))}
@@ -407,6 +667,17 @@ func (s *Service) nextDue() (QueueItem, APIConfig, bool) {
 	return QueueItem{}, APIConfig{}, false
 }
 
+func (s *Service) saveResult(recordID, eventID string, result Result) error {
+	syncer := NewSyncer("", filepath.Dir(s.dir))
+	state := syncer.loadState()
+	item := state.Items[recordID]
+	item.EventID, item.Sent, item.Permanent, item.Result = eventID, true, false, &result
+	item.NextAttempt = time.Time{}
+	state.Items[recordID] = item
+	state.LastSuccessAt, state.LastError = s.clock().UTC(), ""
+	return syncer.saveState(state)
+}
+
 func (s *Service) complete(item QueueItem, status int, body []byte, requestErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -419,19 +690,28 @@ func (s *Service) complete(item QueueItem, status int, body []byte, requestErr e
 		q.Attempts++
 		q.LastAttempt, q.HTTPStatus = &now, status
 		q.NextAttempt = nil
-		var response struct {
-			Saved bool `json:"saved"`
-			Match struct {
-				Status string `json:"status"`
-			} `json:"match"`
-			Error string `json:"error"`
-		}
+		var response serverResponse
 		_ = json.Unmarshal(body, &response)
+		validationError := error(nil)
 		if requestErr == nil && status >= 200 && status < 300 && response.Saved {
-			q.State, q.SentAt, q.LastError, q.MatchStatus = "sent", &now, "", response.Match.Status
-		} else if requestErr == nil && ((status >= 200 && status < 300) || status == 401 || status == 403 || status == 404 || status == 409 || status == 410 || status == 413 || status == 415 || status == 422) {
+			result, resultErr := responseResult(response, now)
+			if resultErr == nil {
+				resultErr = s.saveResult(q.RecordID, q.EventID, *result)
+			}
+			if resultErr == nil {
+				q.State, q.SentAt, q.LastError, q.MatchStatus = "sent", &now, "", result.Status
+				_ = s.saveQueueLocked()
+				return
+			}
+			validationError = resultErr
+		}
+		if requestErr == nil && ((status >= 200 && status < 300) || status == 401 || status == 403 || status == 404 || status == 409 || status == 410 || status == 413 || status == 415 || status == 422) {
 			q.State = "blocked"
-			q.LastError = apiError(status, response.Error)
+			if validationError != nil {
+				q.LastError = "API応答を確認してください: " + validationError.Error()
+			} else {
+				q.LastError = apiError(status, response.Error)
+			}
 		} else {
 			q.State = "pending"
 			next := now.Add(retryDelay(q.Attempts))
@@ -499,6 +779,7 @@ func (s *Service) send(ctx context.Context, cfg APIConfig, item QueueItem) (int,
 
 func (s *Service) Run(ctx context.Context) {
 	for {
+		s.reloadConfig()
 		for {
 			item, cfg, ok := s.nextDue()
 			if !ok {
@@ -603,6 +884,11 @@ func (s *Service) Shared(ctx context.Context, q SharedQuery) (SharedResponse, er
 		mine[item.EventID] = true
 	}
 	s.mu.Unlock()
+	for _, item := range NewSyncer("", filepath.Dir(s.dir)).loadState().Items {
+		if item.EventID != "" {
+			mine[item.EventID] = true
+		}
+	}
 	values := url.Values{"limit": {"100"}}
 	if q.MatchStatus != "" {
 		values.Set("match_status", q.MatchStatus)

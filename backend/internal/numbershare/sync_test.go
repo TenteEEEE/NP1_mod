@@ -89,7 +89,7 @@ func TestPayloadSendsLocationOnlyWhenExplicitlyEnabled(t *testing.T) {
 		ID:        "plocation-0001",
 		FirstSeen: time.Date(2026, 11, 16, 2, 0, 0, 0, time.UTC),
 		Reading:   plate.Reading{Number: "1234"},
-		Location:  &plate.Location{Lat: 35.0, Lon: 139.0, AccuracyM: &accuracy, Estimated: true},
+		Location:  &plate.Location{Lat: 35.0, Lon: 139.0, AccuracyM: &accuracy},
 	}
 	without, ok := payload(record, false)
 	if !ok || without.Location != nil {

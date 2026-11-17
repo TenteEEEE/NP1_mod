@@ -36,7 +36,7 @@ func numberShareFailure(w http.ResponseWriter, err error) {
 		status, code = http.StatusConflict, "NUMBER_SHARE_NOT_CONFIGURED"
 	} else if strings.Contains(message, "revision conflict") {
 		status, code = http.StatusConflict, "REVISION_CONFLICT"
-	} else if strings.Contains(message, "HTTPS") || strings.Contains(message, "エンドポイント") || strings.Contains(message, "認証キー") || strings.Contains(message, "件数") {
+	} else if strings.Contains(message, "HTTPS") || strings.Contains(message, "エンドポイント") || strings.Contains(message, "認証キー") || strings.Contains(message, "キー") || strings.Contains(message, "匿名ユーザーID") || strings.Contains(message, "端末名") || strings.Contains(message, "件数") {
 		status, code = http.StatusBadRequest, "INVALID_NUMBER_SHARE_CONFIG"
 	}
 	fail(w, status, code, message)
@@ -64,6 +64,48 @@ func (s *Server) registerNumberShare() {
 		}
 		s.audit("numbershare.config.update", "accepted")
 		jsonOut(w, http.StatusOK, cfg)
+	})
+	s.mux.HandleFunc("PUT /api/v1/plate/share/management", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ExpectedRevision int     `json:"expectedRevision"`
+			ManagementURL    string  `json:"managementUrl"`
+			Key              *string `json:"key"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+		cfg, err := n.ConfigureManagement(body.ExpectedRevision, body.ManagementURL, body.Key)
+		if err != nil {
+			numberShareFailure(w, err)
+			return
+		}
+		s.audit("numbershare.management.update", "accepted")
+		jsonOut(w, http.StatusOK, cfg)
+	})
+	s.mux.HandleFunc("POST /api/v1/plate/share/register", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ExpectedRevision int    `json:"expectedRevision"`
+			Endpoint         string `json:"endpoint"`
+			UserHandle       string `json:"userHandle"`
+			DeviceName       string `json:"deviceName"`
+			BootstrapKey     string `json:"bootstrapKey"`
+			AdminAPIKey      string `json:"adminApiKey"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		result, err := n.Register(ctx, numbershare.RegistrationRequest{
+			ExpectedRevision: body.ExpectedRevision, Endpoint: body.Endpoint, UserHandle: body.UserHandle,
+			DeviceName: body.DeviceName, BootstrapKey: body.BootstrapKey, AdminAPIKey: body.AdminAPIKey,
+		})
+		if err != nil {
+			numberShareFailure(w, err)
+			return
+		}
+		s.audit("numbershare.registration", "accepted")
+		jsonOut(w, http.StatusCreated, result)
 	})
 	s.mux.HandleFunc("POST /api/v1/plate/share/retry/{event_id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := n.Retry(r.PathValue("event_id")); err != nil {
