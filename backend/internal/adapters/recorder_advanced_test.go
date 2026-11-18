@@ -141,6 +141,51 @@ func TestEnsureRecorderHookAtBootDoesNotReapplyWhenAlreadyLoaded(t *testing.T) {
 	}
 }
 
+func TestRecorderAdvancedDeferredSaveWaitsForNextDriveRecProcess(t *testing.T) {
+	directory := t.TempDir()
+	originalPath, originalAppliedPath, originalDeferredPath := recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedDeferredPath
+	originalAvailable, originalLoaded := recorderAdvancedAvailable, recorderAdvancedLoaded
+	originalRestart, originalHealthy, originalIdentity := recorderAdvancedRestart, recorderAdvancedHealthy, recorderAdvancedIdentity
+	recorderAdvancedConfigPath = filepath.Join(directory, "recorder", "config")
+	recorderAdvancedAppliedPath = filepath.Join(directory, "recorder", "applied-generation")
+	recorderAdvancedDeferredPath = filepath.Join(directory, "recorder", "deferred-until-restart")
+	recorderAdvancedAvailable = func() bool { return true }
+	identity := recorderIdentity{PID: 123, StartTime: 456}
+	recorderAdvancedIdentity = func() (recorderIdentity, error) { return identity, nil }
+	loaded, restarts := true, 0
+	recorderAdvancedLoaded = func(context.Context) bool { return loaded }
+	recorderAdvancedRestart = func(context.Context) error { restarts++; loaded = true; return nil }
+	recorderAdvancedHealthy = func(context.Context) error { return nil }
+	t.Cleanup(func() {
+		recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedDeferredPath = originalPath, originalAppliedPath, originalDeferredPath
+		recorderAdvancedAvailable, recorderAdvancedLoaded = originalAvailable, originalLoaded
+		recorderAdvancedRestart, recorderAdvancedHealthy, recorderAdvancedIdentity = originalRestart, originalHealthy, originalIdentity
+	})
+	settings := defaultRecorderAdvancedSettings()
+	settings.FrontBitrateKbps = 2345
+	body := map[string]any{"expectedGeneration": 0, "settings": settings, "applyNow": false, "confirmation": "", "acknowledgeRecordingGap": false}
+	raw, _ := json.Marshal(body)
+	response := httptest.NewRecorder()
+	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
+	if response.Code != 200 || restarts != 0 || readRecorderApplied(recorderAdvancedAppliedPath) != 0 {
+		t.Fatalf("deferred save = %d restarts=%d applied=%d %s", response.Code, restarts, readRecorderApplied(recorderAdvancedAppliedPath), response.Body.String())
+	}
+	if generation, savedIdentity := readRecorderDeferred(recorderAdvancedDeferredPath); generation != 1 || savedIdentity != identity {
+		t.Fatalf("deferred marker = %d %#v", generation, savedIdentity)
+	}
+	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil || restarts != 0 {
+		t.Fatalf("same process applied deferred settings: %v restarts=%d", err, restarts)
+	}
+	identity.StartTime++
+	loaded = false
+	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil || restarts != 1 || readRecorderApplied(recorderAdvancedAppliedPath) != 1 {
+		t.Fatalf("next process did not apply settings: %v restarts=%d applied=%d", err, restarts, readRecorderApplied(recorderAdvancedAppliedPath))
+	}
+	if generation, _ := readRecorderDeferred(recorderAdvancedDeferredPath); generation != 0 {
+		t.Fatalf("deferred marker survived application: %d", generation)
+	}
+}
+
 func TestEnsureRecorderHookAtBootInjectsBeforeStockHealthCheck(t *testing.T) {
 	originalAvailable, originalLoaded, originalRestart, originalHealthy := recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy
 	recorderAdvancedAvailable = func() bool { return true }

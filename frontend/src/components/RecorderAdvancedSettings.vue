@@ -9,7 +9,7 @@ const state=ref<State>(),draft=ref<Settings>(),loading=ref(false),saving=ref(fal
 const clone=(value:Settings):Settings=>({...value})
 const message=(value:unknown)=>value instanceof Error?value.message:String(value)
 async function load(){if(loading.value||saving.value)return;loading.value=true;error.value='';try{state.value=await api<State>('/device/recorder-advanced');draft.value=clone(state.value.settings)}catch(e){error.value=message(e);state.value=undefined;draft.value=undefined}finally{loading.value=false}}
-async function apply(){if(!state.value?.available||!draft.value||!acknowledged.value||saving.value)return;saving.value=true;error.value='';notice.value='';try{const next=await api<State>('/device/recorder-advanced','PUT',{expectedGeneration:state.value.generation,settings:draft.value,applyNow:true,confirmation:'即時適用する',acknowledgeRecordingGap:true});state.value=next;draft.value=clone(next.settings);acknowledged.value=false;notice.value=next.message||'録画設定を適用しました。'}catch(e){error.value=message(e);await load()}finally{saving.value=false}}
+async function apply(){if(!state.value?.available||!draft.value||saving.value)return;saving.value=true;error.value='';notice.value='';const applyNow=acknowledged.value;try{const next=await api<State>('/device/recorder-advanced','PUT',{expectedGeneration:state.value.generation,settings:draft.value,applyNow,confirmation:applyNow?'即時適用する':'',acknowledgeRecordingGap:applyNow});state.value=next;draft.value=clone(next.settings);acknowledged.value=false;notice.value=next.message||(applyNow?'録画設定を即時適用しました。':'録画設定を保存しました。次回のドラレコ起動時に適用します。')}catch(e){error.value=message(e);await load()}finally{saving.value=false}}
 onMounted(load)
 </script>
 <template>
@@ -24,7 +24,7 @@ onMounted(load)
     <fieldset><legend>車内・後方カメラ</legend><label class="recorder-enabled"><input v-model="draft.cabinRecording" type="checkbox" :disabled="!state?.available||saving"><span><b>録画する</b><small>OFFでは車内側の通常録画開始を抑止します</small></span></label><label>ビットレート（kbps）<input v-model.number="draft.cabinBitrateKbps" type="number" min="128" max="50000" step="1" :disabled="!state?.available||saving||!draft.cabinRecording"></label><label>レート制御<select v-model="draft.cabinRateControl" :disabled="!state?.available||saving||!draft.cabinRecording"><option value="vbr">可変（VBR）</option><option value="cbr">固定（CBR）</option></select></label><label>GOP間隔（ms）<input v-model.number="draft.cabinGopMilliseconds" type="number" min="250" max="10000" step="10" :disabled="!state?.available||saving||!draft.cabinRecording"></label></fieldset>
    </div>
    <label class="recorder-restart-ack"><input v-model="acknowledged" type="checkbox" :disabled="!state?.available||saving"><span><b>即時適用する</b><small>適用時に録画が数秒間中断します。走行中の変更は避けてください。</small></span></label>
-   <div class="recorder-actions"><button class="primary" :disabled="!state?.available||!acknowledged||saving" @click="apply">{{saving?'録画設定を適用中…':'保存して即時適用'}}</button></div>
+   <div class="recorder-actions"><button class="primary" :disabled="!state?.available||saving" @click="apply">{{saving?(acknowledged?'録画設定を適用中…':'録画設定を保存中…'):(acknowledged?'保存して即時適用':'保存して次回起動時に適用')}}</button></div>
   </div>
  </section>
 </template>

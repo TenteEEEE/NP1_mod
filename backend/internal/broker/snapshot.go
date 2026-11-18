@@ -7,12 +7,17 @@ import (
 )
 
 // Keep JPEG conversion serial while allowing concurrent readers to wait briefly.
-func snapshotHandler(snapshot func(string, string) ([]byte, error)) http.Handler {
+func snapshotHandler(snapshot func(string, string, string) ([]byte, error)) http.Handler {
 	gate := make(chan struct{}, 1)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mode := r.URL.Query().Get("color")
 		if mode != "auto" && mode != "source" {
 			http.Error(w, "invalid color mode", http.StatusBadRequest)
+			return
+		}
+		resolution := r.URL.Query().Get("resolution")
+		if resolution != "360p" && resolution != "1080p" {
+			http.Error(w, "invalid snapshot resolution", http.StatusBadRequest)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -32,7 +37,7 @@ func snapshotHandler(snapshot func(string, string) ([]byte, error)) http.Handler
 			http.Error(w, "snapshot canceled", http.StatusRequestTimeout)
 			return
 		}
-		b, err := snapshot(r.URL.Query().Get("source"), mode)
+		b, err := snapshot(r.URL.Query().Get("source"), mode, resolution)
 		if err != nil {
 			http.Error(w, "camera unavailable or stale", http.StatusServiceUnavailable)
 			return

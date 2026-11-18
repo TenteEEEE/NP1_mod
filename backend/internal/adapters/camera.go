@@ -10,7 +10,22 @@ import (
 	"time"
 )
 
-func Snapshot(source, mode string) ([]byte, error) {
+func snapshotDimensions(resolution string) (int, int, int, error) {
+	switch resolution {
+	case "360p":
+		return 640, 360, 3, nil
+	case "1080p":
+		return 1920, 1080, 1, nil
+	default:
+		return 0, 0, 0, errors.New("invalid snapshot resolution")
+	}
+}
+
+func Snapshot(source, mode, resolution string) ([]byte, error) {
+	width, height, scale, e := snapshotDimensions(resolution)
+	if e != nil {
+		return nil, e
+	}
 	p, e := CameraPath(source)
 	if e != nil {
 		return nil, e
@@ -32,10 +47,10 @@ func Snapshot(source, mode string) ([]byte, error) {
 		return nil, e
 	}
 	// Always reopen the atomically replaced export. Do not acquire a camera device.
-	out := image.NewRGBA(image.Rect(0, 0, 640, 360))
-	for y := 0; y < 360; y++ {
-		for x := 0; x < 640; x++ {
-			sx, sy := x*3, y*3
+	out := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			sx, sy := x*scale, y*scale
 			i := 1920*1080 + (sy/2)*1920 + (sx/2)*2
 			r, g, b := limitedRGB(raw[sy*1920+sx], raw[i], raw[i+1])
 			p := y*out.Stride + x*4

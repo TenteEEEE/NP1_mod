@@ -54,9 +54,9 @@ type Settings struct {
 	MapThemes          MapThemes `json:"mapThemes"`
 }
 type cameraSession struct {
-	Source, Owner, Color string
-	Expires              time.Time
-	Active               int
+	Source, Owner, Color, Resolution string
+	Expires                          time.Time
+	Active                           int
 }
 type Server struct {
 	cfg         config.Config
@@ -424,13 +424,14 @@ func (s *Server) routes() {
 			return
 		}
 		var v struct {
-			Source string `json:"source"`
-			Color  string `json:"color"`
+			Source     string `json:"source"`
+			Color      string `json:"color"`
+			Resolution string `json:"resolution"`
 		}
 		if !decode(w, r, &v) {
 			return
 		}
-		if (v.Source != "front" && v.Source != "in") || (v.Color != "" && v.Color != "auto" && v.Color != "source") {
+		if (v.Source != "front" && v.Source != "in") || (v.Color != "" && v.Color != "auto" && v.Color != "source") || (v.Resolution != "" && v.Resolution != "360p" && v.Resolution != "1080p") {
 			fail(w, 400, "INVALID_CAMERA", "カメラと色調を確認してください")
 			return
 		}
@@ -455,9 +456,16 @@ func (s *Server) routes() {
 		if v.Color == "" {
 			v.Color = "auto"
 		}
-		s.cameras[id] = cameraSession{Source: v.Source, Owner: session.CSRF, Color: v.Color, Expires: time.Now().Add(30 * time.Second)}
+		if v.Resolution == "" {
+			v.Resolution = "360p"
+		}
+		width, height := 640, 360
+		if v.Resolution == "1080p" {
+			width, height = 1920, 1080
+		}
+		s.cameras[id] = cameraSession{Source: v.Source, Owner: session.CSRF, Color: v.Color, Resolution: v.Resolution, Expires: time.Now().Add(30 * time.Second)}
 		s.audit("camera.start", "started")
-		jsonOut(w, 201, map[string]any{"id": id, "idleTimeout": 30, "fps": 1, "width": 640, "height": 360})
+		jsonOut(w, 201, map[string]any{"id": id, "idleTimeout": 30, "fps": 1, "width": width, "height": height})
 	})
 	s.mux.HandleFunc("GET /api/v1/camera/sessions/{id}/h264", s.cameraH264)
 	s.mux.HandleFunc("GET /api/v1/camera/sessions/{id}/stream", func(w http.ResponseWriter, r *http.Request) {
@@ -475,7 +483,8 @@ func (s *Server) routes() {
 			s.cameras[r.PathValue("id")] = current
 		}
 		s.mu.Unlock()
-		s.proxy(w, r, "/snapshot?source="+c.Source+"&color="+c.Color)
+		query := url.Values{"source": []string{c.Source}, "color": []string{c.Color}, "resolution": []string{c.Resolution}}
+		s.proxy(w, r, "/snapshot?"+query.Encode())
 	})
 	s.mux.HandleFunc("DELETE /api/v1/camera/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
 		session, _ := s.auth.Get(r)

@@ -120,6 +120,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
   await expect(page.getByRole('status').filter({hasText:'本体から再取得'})).toBeVisible()
   await expect(page.getByLabel('車内・後方カメラの録画品質')).toHaveValue('1')
   await expect(page.getByLabel('録画に車内の音声を含める')).toHaveValue('2')
+  await expect(page.getByRole('button',{name:'保存して次回起動時に適用'})).toBeEnabled()
   await page.getByRole('group',{name:'前方カメラ'}).getByLabel('ビットレート（kbps）').fill('8123')
   await page.getByLabel('録画ファイルの分割時間').fill('240')
   await page.getByRole('group',{name:'車内・後方カメラ'}).getByLabel('録画する').uncheck()

@@ -31,10 +31,14 @@ test('both original H264 camera streams decode and survive shared view switching
  await page.getByRole('button',{name:'映像を表示',exact:true}).click()
  const videos=page.locator('.live-camera-grid video')
  await expect(videos).toHaveCount(2)
- // The pinned stock GStreamer encoders expose 1280x720 H.264 for both
- // ordinary front and cabin outputs even when the native quality label is
- // 1080p. Validate the encoded stream itself instead of the preset label.
- await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>(item as HTMLVideoElement).readyState>=2&&(item as HTMLVideoElement).videoWidth===1280&&(item as HTMLVideoElement).videoHeight===720)),{timeout:25000}).toBe(true)
+ // DriveRec has more than one stock front encoder and may expose either its
+ // 1080p ordinary output or 720p companion output first. Both are native
+ // encoder taps; verify decode and bounded live-edge buffering.
+ await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>{const video=item as HTMLVideoElement;return video.readyState>=2&&[[1920,1080],[1280,720]].some(([width,height])=>video.videoWidth===width&&video.videoHeight===height)})),{timeout:25000}).toBe(true)
+ await page.waitForTimeout(2000)
+ const startup=await videos.evaluateAll(items=>items.map(item=>{const video=item as HTMLVideoElement,buffer=video.buffered,end=buffer.length?buffer.end(buffer.length-1):0;return {time:video.currentTime,end,lag:end-video.currentTime,ready:video.readyState,width:video.videoWidth,height:video.videoHeight,frames:video.getVideoPlaybackQuality().totalVideoFrames}}))
+ note({startup})
+ expect(startup.every(item=>item.lag>=0&&item.lag<.8)).toBe(true)
  const frames=await videos.evaluateAll(items=>items.map(item=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames))
  await expect.poll(()=>videos.evaluateAll((items,before)=>items.every((item,index)=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames>before[index]+8),frames),{timeout:35000}).toBe(true)
  const next=await videos.evaluateAll(items=>items.map(item=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames))
@@ -43,7 +47,8 @@ test('both original H264 camera streams decode and survive shared view switching
  if(soakSeconds){
   const connections=responses,started=Date.now()
   while(Date.now()-started<soakSeconds*1000){
-   await page.waitForTimeout(Math.max(1,Math.min(10000,soakSeconds*1000-(Date.now()-started))))
+   await page.waitForTimeout(Math.max(1,Math.min(1000,soakSeconds*1000-(Date.now()-started))))
+   note({playback:await videos.evaluateAll(items=>items.map(item=>{const video=item as HTMLVideoElement,buffer=video.buffered;return {time:video.currentTime,end:buffer.length?buffer.end(buffer.length-1):null,lag:buffer.length?buffer.end(buffer.length-1)-video.currentTime:null,ready:video.readyState,paused:video.paused,frames:video.getVideoPlaybackQuality().totalVideoFrames}}))})
    expect(await videos.evaluateAll(items=>items.every(item=>!(item as HTMLVideoElement).error))).toBe(true)
   }
   await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>(item as HTMLVideoElement).readyState>=2)),{timeout:20000}).toBe(true)
@@ -66,4 +71,27 @@ test('both original H264 camera streams decode and survive shared view switching
  await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>!(item as HTMLVideoElement).getAttribute('src')))).toBe(true)
  expect(errors).toEqual([])
  }finally{await writeFile(info.outputPath('media-diagnostics.private.json'),JSON.stringify(journal,null,2))}
+})
+
+test('slow link stays at the live edge without flashing the recovery panel',async({page},info)=>{
+ test.skip(process.env.NCC_H264_LOW_BANDWIDTH!=='1','Explicit low-bandwidth field flag required')
+ test.setTimeout(70000)
+ let responses=0
+ page.on('response',response=>{if(/\/camera\/sessions\/[^/]+\/h264$/.test(new URL(response.url()).pathname)&&response.status()===200)responses++})
+ await page.goto('/#camera')
+ const network=await page.context().newCDPSession(page)
+ await network.send('Network.enable')
+ await network.send('Network.emulateNetworkConditions',{offline:false,latency:100,downloadThroughput:3_000_000/8,uploadThroughput:1_000_000/8,connectionType:'cellular3g'})
+ await page.getByRole('button',{name:'映像を表示',exact:true}).click()
+ const video=page.locator('.live-camera video')
+ await expect.poll(()=>video.evaluate(item=>{const media=item as HTMLVideoElement;return media.readyState>=2&&media.getVideoPlaybackQuality().totalVideoFrames>4}),{timeout:30000}).toBe(true)
+ const samples:unknown[]=[]
+ for(let second=0;second<20;second++){
+  await page.waitForTimeout(1000)
+  expect(await page.getByText('カメラ出力の再開を待っています。',{exact:true}).count()).toBe(0)
+  samples.push(await video.evaluate(item=>{const media=item as HTMLVideoElement,buffer=media.buffered,end=buffer.length?buffer.end(buffer.length-1):0;return {ready:media.readyState,time:media.currentTime,end,lag:end-media.currentTime,frames:media.getVideoPlaybackQuality().totalVideoFrames}}))
+ }
+ expect(samples.filter((item:any)=>item.ready>=2&&item.lag>=0&&item.lag<.8).length).toBeGreaterThanOrEqual(15)
+ expect(responses).toBeGreaterThan(0)
+ await page.screenshot({path:info.outputPath('h264-live-low-bandwidth.png'),fullPage:true})
 })

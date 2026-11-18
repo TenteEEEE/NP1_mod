@@ -25,6 +25,7 @@ const (
 	recorderHookLibrary     = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
 	recorderHookConfig      = "/overlay/owner-apps/np1-control/recorder-hook/config"
 	recorderHookApplied     = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
+	recorderHookDeferred    = "/overlay/owner-apps/np1-control/recorder-hook/deferred-until-restart"
 	recorderHookLibrarySHA  = "ef355014917626378f62a8d31652e48b43f9e531abca8f29a7aec48cde4e2436"
 	recorderHookStatusOff   = 0x36470
 	recorderHookInjector    = "/run/np1-control-native/recorder-injector"
@@ -67,10 +68,12 @@ type RecorderAdvancedState struct {
 var recorderAdvancedMu sync.Mutex
 var recorderAdvancedConfigPath = recorderHookConfig
 var recorderAdvancedAppliedPath = recorderHookApplied
+var recorderAdvancedDeferredPath = recorderHookDeferred
 var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA) }
 var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
 var recorderAdvancedHealthy = verifyRecorderFunction
+var recorderAdvancedIdentity = recorderDriveRecIdentity
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
 	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true, SegmentSeconds: 180}
@@ -237,6 +240,75 @@ func writeRecorderApplied(path string, generation uint32) error {
 	binary.LittleEndian.PutUint32(data[8:], generation)
 	binary.LittleEndian.PutUint32(data[12:], crc32.ChecksumIEEE(data[:12]))
 	return writeRecorderFile(path, data)
+}
+
+type recorderIdentity struct {
+	PID       uint32
+	StartTime uint64
+}
+
+func recorderDriveRecIdentity() (recorderIdentity, error) {
+	text, err := command("systemctl", "show", "app-@DriveRec.service", "-p", "MainPID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
+	if err != nil {
+		return recorderIdentity{}, err
+	}
+	properties := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if pair := strings.SplitN(line, "=", 2); len(pair) == 2 {
+			properties[pair[0]] = pair[1]
+		}
+	}
+	pid64, err := strconv.ParseUint(properties["MainPID"], 10, 31)
+	if err != nil || pid64 <= 1 || properties["ActiveState"] != "active" || properties["SubState"] != "running" || properties["Job"] != "" {
+		return recorderIdentity{}, errors.New("DriveRec process identity unavailable")
+	}
+	stat, err := os.ReadFile("/proc/" + strconv.FormatUint(pid64, 10) + "/stat")
+	if err != nil {
+		return recorderIdentity{}, err
+	}
+	closing := strings.LastIndex(string(stat), ") ")
+	if closing < 0 {
+		return recorderIdentity{}, errors.New("DriveRec process start time unavailable")
+	}
+	fields := strings.Fields(string(stat)[closing+2:])
+	if len(fields) <= 19 {
+		return recorderIdentity{}, errors.New("DriveRec process stat is incomplete")
+	}
+	start, err := strconv.ParseUint(fields[19], 10, 64)
+	if err != nil || start == 0 {
+		return recorderIdentity{}, errors.New("DriveRec process start time is invalid")
+	}
+	return recorderIdentity{PID: uint32(pid64), StartTime: start}, nil
+}
+
+func writeRecorderDeferred(path string, generation uint32, identity recorderIdentity) error {
+	if generation == 0 || identity.PID <= 1 || identity.StartTime == 0 {
+		return errors.New("invalid deferred recorder generation")
+	}
+	data := make([]byte, 28)
+	copy(data, []byte{'N', 'C', 'C', 'D', 'E', 'F', '1', 0})
+	binary.LittleEndian.PutUint32(data[8:], generation)
+	binary.LittleEndian.PutUint32(data[12:], identity.PID)
+	binary.LittleEndian.PutUint64(data[16:], identity.StartTime)
+	binary.LittleEndian.PutUint32(data[24:], crc32.ChecksumIEEE(data[:24]))
+	return writeRecorderFile(path, data)
+}
+
+func readRecorderDeferred(path string) (uint32, recorderIdentity) {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) != 28 || string(data[:8]) != "NCCDEF1\x00" || crc32.ChecksumIEEE(data[:24]) != binary.LittleEndian.Uint32(data[24:]) {
+		return 0, recorderIdentity{}
+	}
+	return binary.LittleEndian.Uint32(data[8:]), recorderIdentity{PID: binary.LittleEndian.Uint32(data[12:]), StartTime: binary.LittleEndian.Uint64(data[16:])}
+}
+
+func recorderDeferredForCurrent(generation uint32) bool {
+	deferredGeneration, deferredIdentity := readRecorderDeferred(recorderAdvancedDeferredPath)
+	if deferredGeneration != generation {
+		return false
+	}
+	current, err := recorderAdvancedIdentity()
+	return err == nil && current == deferredIdentity
 }
 
 func recorderHookLoaded(ctx context.Context) bool {
@@ -588,6 +660,14 @@ func EnsureRecorderHookAtBoot(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("recorder boot config read-back: %w", err)
 	}
+	// A save without "apply now" is deliberately pinned to the current
+	// DriveRec process.  The periodic reconciler must leave that process alone;
+	// as soon as its PID/start time changes, normal boot reconciliation applies
+	// and verifies the saved generation.
+	if configured && recorderDeferredForCurrent(generation) {
+		return nil
+	}
+	_ = os.Remove(recorderAdvancedDeferredPath)
 	loaded := recorderAdvancedLoaded(ctx)
 	if configured && loaded && readRecorderApplied(recorderAdvancedAppliedPath) == generation {
 		return nil
@@ -608,6 +688,7 @@ func EnsureRecorderHookAtBoot(ctx context.Context) error {
 			return fmt.Errorf("recorder boot generation: %w", err)
 		}
 	}
+	_ = os.Remove(recorderAdvancedDeferredPath)
 	return nil
 }
 
@@ -685,13 +766,25 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 		nativeError(w, 503, "RECORDER_HOOK_SAVE_FAILED", "録画設定の適用状態を安全に更新できません")
 		return
 	}
+	if body.ApplyNow {
+		if err = os.Remove(recorderAdvancedDeferredPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			nativeError(w, 503, "RECORDER_HOOK_SAVE_FAILED", "録画設定の適用方法を安全に更新できません")
+			return
+		}
+	} else {
+		identity, identityErr := recorderAdvancedIdentity()
+		if identityErr != nil || writeRecorderDeferred(recorderAdvancedDeferredPath, generation+1, identity) != nil {
+			nativeError(w, 503, "RECORDER_HOOK_SAVE_FAILED", "次回起動用の録画設定を安全に保存できません")
+			return
+		}
+	}
 	if err = writeRecorderAdvanced(recorderAdvancedConfigPath, body.Settings, generation+1); err != nil {
 		nativeError(w, 503, "RECORDER_HOOK_SAVE_FAILED", "録画設定を安全に保存できません")
 		return
 	}
 	state, _ := recorderAdvancedState(r.Context())
 	state.Configured, state.Generation, state.Settings, state.RestartRequired, state.Applied = true, generation+1, body.Settings, true, false
-	state.Message = "設定を保存しました。"
+	state.Message = "設定を保存しました。次回のドラレコ起動時に適用します。"
 	if body.ApplyNow {
 		if err = recorderAdvancedRestart(r.Context()); err != nil {
 			state.Message = "設定を保存しましたが、即時適用できませんでした。もう一度お試しください。"

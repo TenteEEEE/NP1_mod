@@ -14,6 +14,27 @@ import (
 	"time"
 )
 
+const managementWriteBuffer = 128 << 10
+
+type managementListener struct{ net.Listener }
+
+func (l managementListener) Accept() (net.Conn, error) {
+	connection, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	if tcp, ok := connection.(*net.TCPConn); ok {
+		// Bound queued output so a slow live-view client is disconnected and
+		// reopens at the current encoder frame instead of watching an old TCP
+		// backlog.  128 KiB is still ample for ordinary API and file transfers.
+		if err := tcp.SetWriteBuffer(managementWriteBuffer); err != nil {
+			_ = connection.Close()
+			return nil, err
+		}
+	}
+	return connection, nil
+}
+
 func managementAddresses(c config.Config) map[string]bool {
 	out := map[string]bool{}
 	for _, base := range []string{c.HTTPListen, c.Listen} {
@@ -91,6 +112,7 @@ func ServeManagement(ctx context.Context, c config.Config, h http.Handler) error
 				log.Printf("management listener unavailable: %s", addr)
 				continue
 			}
+			l = managementListener{Listener: l}
 			_, port, _ := net.SplitHostPort(addr)
 			secure := port == tlsPort
 			server := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 * 1024}

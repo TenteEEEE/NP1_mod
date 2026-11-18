@@ -140,6 +140,47 @@ func TestCameraMSECanUseSameOriginBlobMedia(t *testing.T) {
 	}
 }
 
+func TestCameraJPEG1080SessionPinsBrokerResolution(t *testing.T) {
+	s := New(config.Config{NetworkTrust: true, StateDir: t.TempDir()})
+	calls := 0
+	s.client.Transport = stockAuditTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.Host != "broker" || r.URL.Path != "/snapshot" || r.URL.RawQuery != "color=source&resolution=1080p&source=front" {
+			t.Fatalf("unfixed JPEG target: %s", r.URL.String())
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/jpeg"}}, Body: io.NopCloser(strings.NewReader("synthetic-jpeg"))}, nil
+	})
+	server := httptest.NewServer(s.Handler())
+	defer server.Close()
+	client := server.Client()
+	client.Jar, _ = cookiejar.New(nil)
+	r := request(t, client, server, "GET", "/auth/session", "", nil)
+	var session struct{ CSRF string }
+	json.NewDecoder(r.Body).Decode(&session)
+	r.Body.Close()
+	r = request(t, client, server, "POST", "/camera/sessions", session.CSRF, map[string]string{"source": "front", "color": "source", "resolution": "1080p"})
+	var camera struct {
+		ID            string
+		Width, Height int
+	}
+	json.NewDecoder(r.Body).Decode(&camera)
+	r.Body.Close()
+	if r.StatusCode != 201 || camera.ID == "" || camera.Width != 1920 || camera.Height != 1080 {
+		t.Fatalf("1080p camera session = %d %#v", r.StatusCode, camera)
+	}
+	r = request(t, client, server, "GET", "/camera/sessions/"+camera.ID+"/stream", "", nil)
+	data, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if r.StatusCode != 200 || string(data) != "synthetic-jpeg" || calls != 1 {
+		t.Fatalf("1080p JPEG proxy = %d %q calls=%d", r.StatusCode, data, calls)
+	}
+	r = request(t, client, server, "POST", "/camera/sessions", session.CSRF, map[string]string{"source": "front", "resolution": "720p"})
+	r.Body.Close()
+	if r.StatusCode != 400 {
+		t.Fatalf("unsupported JPEG resolution accepted: %d", r.StatusCode)
+	}
+}
+
 func TestMapTilesReceiveAnOriginReferrer(t *testing.T) {
 	s := New(config.Config{NetworkTrust: true, StateDir: t.TempDir()})
 	w := httptest.NewRecorder()

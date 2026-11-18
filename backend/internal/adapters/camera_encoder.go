@@ -20,6 +20,8 @@ const (
 	cameraEncoderHeader = 56
 	cameraEncoderChunk  = 60000
 	cameraEncoderMaxAU  = 4 << 20
+	cameraEncoderBuffer = 4 << 20
+	cameraSlowWrite     = 500 * time.Millisecond
 )
 
 type cameraEncoderFrame struct {
@@ -66,6 +68,14 @@ func openCameraEncoderStream(source string) (*cameraEncoderStream, error) {
 		return nil, err
 	}
 	if err := os.Chmod(name, 0666); err != nil {
+		conn.Close()
+		_ = os.Remove(name)
+		return nil, err
+	}
+	// IDR access units can span several 60 KiB datagrams.  The stock encoder
+	// must never block, so give the receiver as much queue as the kernel allows
+	// and drain it independently from the client connection below.
+	if err := conn.SetReadBuffer(cameraEncoderBuffer); err != nil {
 		conn.Close()
 		_ = os.Remove(name)
 		return nil, err
@@ -200,16 +210,67 @@ func serveCameraEncoderH264(w http.ResponseWriter, r *http.Request, source strin
 	w.Header().Set("X-Camera-Source", "encoder")
 	controller := http.NewResponseController(w)
 	write := func(data []byte) error {
-		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		started := time.Now()
+		_ = controller.SetWriteDeadline(started.Add(time.Second))
 		defer controller.SetWriteDeadline(time.Time{})
 		if _, err := w.Write(data); err != nil {
 			return err
 		}
-		return controller.Flush()
+		if err := controller.Flush(); err != nil {
+			return err
+		}
+		if time.Since(started) > cameraSlowWrite {
+			return errors.New("camera client fell behind live edge")
+		}
+		return nil
 	}
 	if err := write(init); err != nil {
 		return nil
 	}
+	// Keep consuming the nonblocking encoder tap even while the network is
+	// backpressured.  If the client cannot keep up, discard the dependent P
+	// frames and resume at the newest IDR instead of delivering seconds of
+	// stale video.
+	receiveContext, receiveCancel := context.WithCancel(r.Context())
+	defer receiveCancel()
+	latest := make(chan h264tail.Sample, 2)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer close(latest)
+		needKeyframe := false
+		for {
+			next, nextErr := stream.Next(receiveContext)
+			if nextErr != nil {
+				return
+			}
+			if needKeyframe && !next.Keyframe {
+				continue
+			}
+			select {
+			case latest <- next:
+				needKeyframe = false
+			default:
+			drain:
+				for {
+					select {
+					case <-latest:
+					default:
+						break drain
+					}
+				}
+				needKeyframe = !next.Keyframe
+				if next.Keyframe {
+					latest <- next
+				}
+			}
+		}
+	}()
+	defer func() {
+		receiveCancel()
+		stream.Close()
+		<-done
+	}()
 	sequence, dts := uint32(1), uint64(0)
 	for {
 		fragment, err := stream.config.Fragment(sequence, dts, []h264tail.Sample{sample})
@@ -218,13 +279,17 @@ func serveCameraEncoderH264(w http.ResponseWriter, r *http.Request, source strin
 		}
 		sequence++
 		dts += uint64(stream.config.SampleDuration)
-		// DriveRec can suspend its encoder when the vehicle/bench state no
-		// longer requests ordinary recording.  End this response after a short
-		// idle period so the browser can reconnect as soon as output resumes.
-		next, nextCancel := context.WithTimeout(r.Context(), 4*time.Second)
-		sample, err = stream.Next(next)
-		nextCancel()
-		if err != nil {
+		select {
+		case next, open := <-latest:
+			if !open {
+				return nil
+			}
+			sample = next
+		case <-time.After(2 * time.Second):
+			// A short response lets the browser reconnect at the newest IDR when
+			// DriveRec resumes, without retaining an old TCP queue.
+			return nil
+		case <-r.Context().Done():
 			return nil
 		}
 	}
