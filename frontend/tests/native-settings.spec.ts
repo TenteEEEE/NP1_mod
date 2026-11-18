@@ -8,6 +8,7 @@ test.describe('native settings isolated component review',()=>{
   let missing=false;const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message))
   await page.route('**/api/v1/**',async route=>{const path=new URL(route.request().url()).pathname;let data:any={};if(path.endsWith('/auth/session'))data={csrf:'test'};if(path.endsWith('/settings'))data={revision:1,theme:'light',locale:'ja',favorites:[]};if(path.endsWith('/capabilities'))data=[];if(path.endsWith('/device/native-settings'))data=observe([{...item,...(missing?{value:null,valueLabel:undefined,status:'unknown'}:{})}],missing?'unknown':'available');if(path.endsWith('/events'))return route.fulfill({contentType:'text/event-stream',body:': fixture\n\n'});await route.fulfill({contentType:'application/json',body:JSON.stringify(data)})})
   await page.goto(url!+'/#native')
+  await page.getByRole('button',{name:/運転支援/}).click()
   await expect(page.locator('.native-row').filter({hasText:'Test preference'}).locator('.native-value')).toContainText('OFF')
   await expect(page.locator('.native-row input,.native-row select,.native-row button')).toHaveCount(0)
   await page.screenshot({path:info.outputPath('native-desktop.png'),fullPage:true})

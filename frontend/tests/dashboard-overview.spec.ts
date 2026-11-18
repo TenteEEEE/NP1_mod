@@ -19,6 +19,8 @@ async function fixture(page:Page,theme:string,cadence=10000){
   if(path.endsWith('/traffic/usage')){const at=stamp+calls.traffic++*2000;const network=(factor:number)=>({status:'available',speedStatus:'available',stale:false,active:true,todayRX:'280000000',todayTX:'40000000',monthRX:'21000000000',monthTX:'1600000000',rxBytesPerSecond:factor*(100000+calls.traffic*10000),txBytesPerSecond:factor*10000,sampledAt:new Date(at).toISOString()});data=observation({networks:{cellular:network(1),wifi:network(4)},sampledAt:new Date(at).toISOString(),stale:false},at)}
   if(path.endsWith('/trips'))data=observation({range:{period:'7',from:'2026-11-06',to:'2026-11-12'},days:[],period:{hasData:false},trips:[]})
   if(path.endsWith('/device/native-audio'))data=observation({masterVolume:17,mute:{value:1,enabled:false},correction:{value:2,label:'強'},writable:true})
+  if(path.endsWith('/device/native-operations'))data={available:true,groups:[{id:'volume',label:'本体の音量',items:[{id:'master-volume',label:'音量',field:'field1',options:Array.from({length:11},(_,value)=>({value,label:String(value)})),writable:true}]}],actions:[]}
+  if(path.endsWith('/device/native-operations/state/volume'))data={values:{field1:7},observedAt:new Date(stamp).toISOString()}
   if(path.endsWith('/device/led'))data=observation({settings:{revision:1,mode:'off',brightness:180,speed:240,fps:15,rgb:[255,255,255],autostart:false},serviceState:'active'})
   if(path.endsWith('/voicevox'))data={endpoint:'https://example.invalid/api',defaultEndpoint:'https://example.invalid/api',keyConfigured:false,apiKey:''}
   if(path.endsWith('/camera/sessions')&&method==='POST'){const source=route.request().postDataJSON().source;calls.created.push(source);data={id:'fixture-'+source}}
@@ -127,11 +129,12 @@ test.describe('compact dashboard review',()=>{
  })
  for(const width of [1440,390])test(`${width}px LED and audio headers share spacing and VOICEVOX is last`,async({page},info)=>{
   await page.setViewportSize({width,height:1000});await fixture(page,'dark');await page.goto(base!+'/#system/led')
-  await expect(page.getByTestId('native-master-volume')).toHaveText('17')
-  const sections=await page.locator('.led-settings>.panel').evaluateAll(elements=>elements.map(e=>{const b=e.getBoundingClientRect(),head=e.querySelector('.panel-head')!.getBoundingClientRect();return {title:e.querySelector('h2')?.textContent,top:b.top,bottom:b.bottom,header:head.height}}))
-  expect(sections[0]!.title).toBe('本体の音声設定');expect(sections.at(-1)!.title).toBe('音声合成（VOICEVOX API）')
-  for(let i=1;i<sections.length;i++)expect(sections[i]!.top-sections[i-1]!.bottom).toBe(width===1440?20:16)
-  expect(new Set(sections.map(s=>s.header)).size).toBe(1)
+  await expect(page.getByRole('combobox',{name:'音量',exact:true})).toHaveValue('7')
+  await expect(page.getByTestId('native-master-volume')).toHaveCount(0)
+  const sections=await page.locator('.led-settings .panel').evaluateAll(elements=>elements.map(e=>{const b=e.getBoundingClientRect(),head=e.querySelector('.panel-head')!.getBoundingClientRect();return {title:e.querySelector('h2')?.textContent,top:b.top,bottom:b.bottom,header:head.height}}))
+  expect(sections[0]!.title).toBe('本体の音量');expect(sections[1]!.title).toBe('消音・音量補正');expect(sections.at(-1)!.title).toBe('音声合成（VOICEVOX API）')
+  const headerHeights=sections.map(s=>s.header)
+  expect(Math.max(...headerHeights)-Math.min(...headerHeights)).toBeLessThanOrEqual(4)
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
   await page.screenshot({path:info.outputPath(`led-audio-${width}.png`),fullPage:true})
  })

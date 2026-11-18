@@ -7,7 +7,7 @@ import {chartPath,finite,remember,resourceHistory,type MetricHistory} from '../s
 const props=defineProps<{summary:Summary;compact?:boolean}>(),emit=defineEmits<{open:[]}>(),minutes=ref(5),now=ref(Date.now()),history=ref<MetricHistory>(resourceHistory.value)
 const {cellular,wifi,sampledAt,stale}=useTraffic(()=>props.summary)
 let timer:ReturnType<typeof setInterval>|undefined
-const valid=(key:string)=>{const value=props.summary[key],at=Date.parse(value?.observedAt||'');return value?.status==='available'&&Number.isFinite(at)&&now.value-at<=30000&&at-now.value<=2000?value:undefined}
+const valid=(key:string)=>{const value=props.summary[key],at=Date.parse(value?.observedAt||'');return value?.status==='available'&&value.data!==null&&value.data!==undefined&&Number.isFinite(at)&&now.value-at<=30000&&at-now.value<=2000?value:undefined}
 const percent=(value:unknown)=>finite(value)&&value>=0&&value<=100?value:null
 const temperatures=computed(()=>{const raw=valid('temperatures')?.data,values=Array.isArray(raw)?raw.filter(t=>typeof t.name==='string'&&finite(t.celsius)&&t.celsius>=-40&&t.celsius<=150):[]
  const cpu=values.filter(t=>/^(cpu|cpuss)/i.test(t.name)&&!/-step$/i.test(t.name)).map(t=>t.celsius)
