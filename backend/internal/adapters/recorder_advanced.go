@@ -26,10 +26,10 @@ const (
 	recorderHookConfig      = "/overlay/owner-apps/np1-control/recorder-hook/config"
 	recorderHookApplied     = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
 	recorderHookDeferred    = "/overlay/owner-apps/np1-control/recorder-hook/deferred-until-restart"
-	recorderHookLibrarySHA  = "ef355014917626378f62a8d31652e48b43f9e531abca8f29a7aec48cde4e2436"
-	recorderHookStatusOff   = 0x36470
+	recorderHookLibrarySHA  = "29e2984c16ad7501d3b8bfac445fa2dd96ae70749d4b396dc1403c1dd78c5bf6"
+	recorderHookStatusOff   = 0x365e0
 	recorderHookInjector    = "/run/np1-control-native/recorder-injector"
-	recorderHookInjectorSHA = "b7dd18637aefd4ac09f2a406e47dcbbf8c6b1d28da936feaf92aee361588475c"
+	recorderHookInjectorSHA = "c79616d51adee1560d35dd5cf2a54d4fb3ed28ee616c316667ca7b8eaa280d29"
 	recorderDriveRecSHA     = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
 	recorderConfigSize      = 64
 	recorderConfigVersion   = 1

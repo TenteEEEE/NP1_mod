@@ -16,6 +16,8 @@ FILES = (
     "systemd/np1-control-native.service",
     "tools/recorder-hook-update.sh",
     "tools/recorder-hook-prune.sh",
+    "tools/web-worker-prune.sh",
+    "tools/web-worker-update.sh",
     "tools/run.sh",
     "tools/verify.sh",
     "LICENSE",

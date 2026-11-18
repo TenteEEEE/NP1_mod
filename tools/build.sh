@@ -59,6 +59,7 @@ if test -f "$ROOT/artifacts/recorder-injector/ncc-recorder-injector"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/recorder-injector/ncc-recorder-injector" "$ROOT/artifacts/ncc/experimental/"
 fi
+python3 "$ROOT/tools/verify-recorder-artifacts.py"
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 mkdir -p "$ROOT/artifacts/ncc/plate/models" "$ROOT/artifacts/ncc/plate/licenses"

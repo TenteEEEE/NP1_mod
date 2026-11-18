@@ -55,6 +55,7 @@ type Settings struct {
 }
 type cameraSession struct {
 	Source, Owner, Color, Resolution string
+	PeerID                           string
 	Expires                          time.Time
 	Active                           int
 }
@@ -436,19 +437,24 @@ func (s *Server) routes() {
 			return
 		}
 		s.mu.Lock()
-		defer s.mu.Unlock()
+		stalePeers := make([]string, 0, 1)
 		for k, c := range s.cameras {
-			if c.Active == 0 && time.Now().After(c.Expires) {
+			if (c.Active == 0 && time.Now().After(c.Expires)) || (c.Owner == session.CSRF && c.Source == v.Source) {
+				if c.PeerID != "" {
+					stalePeers = append(stalePeers, c.PeerID)
+				}
 				delete(s.cameras, k)
 			}
 		}
 		if len(s.cameras) >= 4 {
+			s.mu.Unlock()
 			fail(w, 429, "RESOURCE_BUSY", "配信数の上限です")
 			return
 		}
 		b := make([]byte, 16)
 		_, e := rand.Read(b)
 		if e != nil {
+			s.mu.Unlock()
 			fail(w, 500, "RANDOM_FAILED", "セッション生成失敗")
 			return
 		}
@@ -464,10 +470,14 @@ func (s *Server) routes() {
 			width, height = 1920, 1080
 		}
 		s.cameras[id] = cameraSession{Source: v.Source, Owner: session.CSRF, Color: v.Color, Resolution: v.Resolution, Expires: time.Now().Add(30 * time.Second)}
+		s.mu.Unlock()
+		for _, peerID := range stalePeers {
+			s.closeCameraWebRTC(peerID)
+		}
 		s.audit("camera.start", "started")
 		jsonOut(w, 201, map[string]any{"id": id, "idleTimeout": 30, "fps": 1, "width": width, "height": height})
 	})
-	s.mux.HandleFunc("GET /api/v1/camera/sessions/{id}/h264", s.cameraH264)
+	s.mux.HandleFunc("POST /api/v1/camera/sessions/{id}/webrtc", s.cameraWebRTC)
 	s.mux.HandleFunc("GET /api/v1/camera/sessions/{id}/stream", func(w http.ResponseWriter, r *http.Request) {
 		session, _ := s.auth.Get(r)
 		s.mu.Lock()
@@ -489,10 +499,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/v1/camera/sessions/{id}", func(w http.ResponseWriter, r *http.Request) {
 		session, _ := s.auth.Get(r)
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		c, ok := s.cameras[r.PathValue("id")]
 		if ok && c.Owner == session.CSRF {
 			delete(s.cameras, r.PathValue("id"))
+		}
+		s.mu.Unlock()
+		if ok && c.Owner == session.CSRF && c.PeerID != "" {
+			s.closeCameraWebRTC(c.PeerID)
 		}
 		jsonOut(w, 200, map[string]bool{"ok": true})
 	})

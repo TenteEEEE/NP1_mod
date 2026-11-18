@@ -182,6 +182,11 @@ static void update_parameter_cache(struct live_source*source,const u8*data,u32 s
  }
  if(source->sps_size&&source->pps_size){u32 at=0;source->config[at++]=0;source->config[at++]=0;source->config[at++]=0;source->config[at++]=1;bytes_copy(source->config+at,source->sps,source->sps_size);at+=source->sps_size;source->config[at++]=0;source->config[at++]=0;source->config[at++]=0;source->config[at++]=1;bytes_copy(source->config+at,source->pps,source->pps_size);at+=source->pps_size;source->config_size=at;}
 }
+static int access_unit_has_idr(const u8*data,u32 size){
+ u32 prefix=0;int start=annex_start(data,size,0,&prefix);
+ while(start>=0){u32 payload=(u32)start+prefix;if(payload<size&&(data[payload]&31u)==5u)return 1;u32 next_prefix=0;start=annex_start(data,size,payload,&next_prefix);prefix=next_prefix;}
+ return 0;
+}
 static int live_connect(struct live_source*source){
  if(source->fd>=0)return 1;int fd=socket(AF_UNIX,SOCK_DGRAM|SOCK_NONBLOCK|SOCK_CLOEXEC,0);if(fd<0)return 0;
  struct ncc_sockaddr_un address;address.family=AF_UNIX;for(size_t i=0;i<sizeof(address.path);i++)address.path[i]=0;const char*path=source->source==1?"/run/np1-control/camera-encoder-front.sock":"/run/np1-control/camera-encoder-in.sock";size_t n=0;while(path[n]&&n+1<sizeof(address.path)){address.path[n]=path[n];n++;}if(path[n]||connect(fd,&address,(unsigned)sizeof(address))){close(fd);return 0;}source->fd=fd;source->config_sent=0;return 1;
@@ -193,7 +198,7 @@ static int live_send(struct live_source*source,const u8*data,u32 size,u32 sequen
 }
 static void hook_stream_write(void*self,void*packet){
  struct live_source*source=0;for(u32 i=0;i<live_front.object_count;i++)if(self==live_front.objects[i])source=&live_front;for(u32 i=0;i<live_cabin.object_count;i++)if(self==live_cabin.objects[i])source=&live_cabin;
- if(source&&packet){const u8*data=*(const u8**)packet;unsigned long length=*(unsigned long*)((u8*)packet+8);if(data&&length>0&&length<=LIVE_MAX_FRAME){if(!source->active_object){update_parameter_cache(source,data,(u32)length);if(live_connect(source)){source->active_object=self;if(!source->observed){source->observed=1;log_line(source->source==1?"ncc-recorder-hook: front encoder output observed\n":"ncc-recorder-hook: cabin encoder output observed\n");}}}if(source->active_object==self){update_parameter_cache(source,data,(u32)length);if(!source->config_sent&&source->config_size&&live_send(source,source->config,source->config_size,0,0,0))source->config_sent=1;source->frame_sequence++;if(!source->frame_sequence)source->frame_sequence=1;(void)live_send(source,data,(u32)length,source->frame_sequence,*(unsigned long*)((u8*)packet+24),(u32)*(unsigned long*)((u8*)packet+32));}}}
+ if(source&&packet){const u8*data=*(const u8**)packet;unsigned long length=*(unsigned long*)((u8*)packet+8);if(data&&length>0&&length<=LIVE_MAX_FRAME){if(!source->active_object){update_parameter_cache(source,data,(u32)length);if(live_connect(source)){source->active_object=self;if(!source->observed){source->observed=1;log_line(source->source==1?"ncc-recorder-hook: front encoder output observed\n":"ncc-recorder-hook: cabin encoder output observed\n");}}}if(source->active_object==self){update_parameter_cache(source,data,(u32)length);int idr=access_unit_has_idr(data,(u32)length);if((!source->config_sent||idr)&&source->config_size&&live_send(source,source->config,source->config_size,0,0,0))source->config_sent=1;source->frame_sequence++;if(!source->frame_sequence)source->frame_sequence=1;(void)live_send(source,data,(u32)length,source->frame_sequence,*(unsigned long*)((u8*)packet+24),(u32)*(unsigned long*)((u8*)packet+32));}}}
  if(source==&live_cabin&&!__atomic_load_n(&applied_cabin_enabled,__ATOMIC_ACQUIRE))return;stream_write_original(self,packet);
 }
 static void install_stream_write_hook(void){

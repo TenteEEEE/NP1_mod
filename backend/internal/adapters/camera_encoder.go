@@ -5,12 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"log"
 	"net"
-	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/h264tail"
@@ -21,7 +18,6 @@ const (
 	cameraEncoderChunk  = 60000
 	cameraEncoderMaxAU  = 4 << 20
 	cameraEncoderBuffer = 4 << 20
-	cameraSlowWrite     = 500 * time.Millisecond
 )
 
 type cameraEncoderFrame struct {
@@ -42,6 +38,9 @@ type cameraEncoderStream struct {
 	locked          bool
 	acceptedDropped uint64
 	received        uint64
+	parameterSets   []byte
+	timingStarted   time.Time
+	timingFrames    uint32
 }
 
 func cameraEncoderPath(source string) (string, uint32, error) {
@@ -144,12 +143,39 @@ func (s *cameraEncoderStream) Next(ctx context.Context) (h264tail.Sample, error)
 		if err != nil {
 			return h264tail.Sample{}, err
 		}
-		if frame.sequence == 0 || len(s.config.AVC) == 0 {
-			if config, configErr := h264tail.ConfigFromAnnexB(frame.data, frame.fpsMilli); configErr == nil {
-				s.config = config
+		if frame.sequence == 0 {
+			s.parameterSets = bytes.Clone(frame.data)
+			if frame.fpsMilli >= 1000 && frame.fpsMilli <= 120000 {
+				s.config, _ = h264tail.ConfigFromAnnexB(s.parameterSets, frame.fpsMilli)
 			}
-			if frame.sequence == 0 {
-				continue
+			continue
+		}
+		if len(s.config.AVC) == 0 && len(s.parameterSets) != 0 {
+			fpsMilli := frame.fpsMilli
+			if fpsMilli < 1000 || fpsMilli > 120000 {
+				if s.timingStarted.IsZero() {
+					s.timingStarted = time.Now()
+				}
+				s.timingFrames++
+				if s.timingFrames >= 16 {
+					elapsed := time.Since(s.timingStarted)
+					if elapsed >= time.Second {
+						fpsMilli = uint32((uint64(s.timingFrames-1)*uint64(time.Second)*1000 + uint64(elapsed)/2) / uint64(elapsed))
+					}
+				}
+			}
+			if fpsMilli >= 1000 && fpsMilli <= 120000 {
+				if config, configErr := h264tail.ConfigFromAnnexB(s.parameterSets, fpsMilli); configErr == nil {
+					s.config = config
+					log.Printf("camera encoder parameters ready source=%d fpsMilli=%d width=%d height=%d", s.source, fpsMilli, config.Width, config.Height)
+				}
+			}
+			if len(s.config.AVC) == 0 && s.received <= 3 {
+				limit := len(frame.data)
+				if limit > 64 {
+					limit = 64
+				}
+				log.Printf("camera encoder timing pending source=%d sequence=%d nalType=%d pts=%d bytes=%d fpsMilli=%d width=%d height=%d prefix=%x", s.source, frame.sequence, frame.nalType, frame.pts, len(frame.data), frame.fpsMilli, frame.width, frame.height, frame.data[:limit])
 			}
 		}
 		if len(s.config.AVC) == 0 {
@@ -170,127 +196,5 @@ func (s *cameraEncoderStream) Next(ctx context.Context) (h264tail.Sample, error)
 			continue
 		}
 		return sample, nil
-	}
-}
-
-// serveCameraEncoderH264 returns an error only before committing an HTTP
-// response. Once the first validated IDR is available, all output is sourced
-// directly from the stock encoder's access-unit stream.
-func serveCameraEncoderH264(w http.ResponseWriter, r *http.Request, source string) error {
-	stream, err := openCameraEncoderStream(source)
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-	start, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	var sample h264tail.Sample
-	for !sample.Keyframe {
-		sample, err = stream.Next(start)
-		if err != nil {
-			log.Printf("camera encoder unavailable source=%s frames=%d configured=%t dropped=%d: %v", source, stream.received, len(stream.config.AVC) != 0, stream.dropped, err)
-			return err
-		}
-	}
-	init, err := stream.config.InitSegment()
-	if err != nil {
-		return err
-	}
-	codec, err := stream.config.Codec()
-	if err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "video/mp4")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Camera-Codec", codec)
-	w.Header().Set("X-Camera-Width", strconv.Itoa(int(stream.config.Width)))
-	w.Header().Set("X-Camera-Height", strconv.Itoa(int(stream.config.Height)))
-	w.Header().Set("X-Camera-FPS", fmt.Sprintf("%.3f", float64(stream.config.Timescale)/float64(stream.config.SampleDuration)))
-	w.Header().Set("X-Camera-Audio", "none")
-	w.Header().Set("X-Camera-Source", "encoder")
-	controller := http.NewResponseController(w)
-	write := func(data []byte) error {
-		started := time.Now()
-		_ = controller.SetWriteDeadline(started.Add(time.Second))
-		defer controller.SetWriteDeadline(time.Time{})
-		if _, err := w.Write(data); err != nil {
-			return err
-		}
-		if err := controller.Flush(); err != nil {
-			return err
-		}
-		if time.Since(started) > cameraSlowWrite {
-			return errors.New("camera client fell behind live edge")
-		}
-		return nil
-	}
-	if err := write(init); err != nil {
-		return nil
-	}
-	// Keep consuming the nonblocking encoder tap even while the network is
-	// backpressured.  If the client cannot keep up, discard the dependent P
-	// frames and resume at the newest IDR instead of delivering seconds of
-	// stale video.
-	receiveContext, receiveCancel := context.WithCancel(r.Context())
-	defer receiveCancel()
-	latest := make(chan h264tail.Sample, 2)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		defer close(latest)
-		needKeyframe := false
-		for {
-			next, nextErr := stream.Next(receiveContext)
-			if nextErr != nil {
-				return
-			}
-			if needKeyframe && !next.Keyframe {
-				continue
-			}
-			select {
-			case latest <- next:
-				needKeyframe = false
-			default:
-			drain:
-				for {
-					select {
-					case <-latest:
-					default:
-						break drain
-					}
-				}
-				needKeyframe = !next.Keyframe
-				if next.Keyframe {
-					latest <- next
-				}
-			}
-		}
-	}()
-	defer func() {
-		receiveCancel()
-		stream.Close()
-		<-done
-	}()
-	sequence, dts := uint32(1), uint64(0)
-	for {
-		fragment, err := stream.config.Fragment(sequence, dts, []h264tail.Sample{sample})
-		if err != nil || write(fragment) != nil {
-			return nil
-		}
-		sequence++
-		dts += uint64(stream.config.SampleDuration)
-		select {
-		case next, open := <-latest:
-			if !open {
-				return nil
-			}
-			sample = next
-		case <-time.After(2 * time.Second):
-			// A short response lets the browser reconnect at the newest IDR when
-			// DriveRec resumes, without retaining an old TCP queue.
-			return nil
-		case <-r.Context().Done():
-			return nil
-		}
 	}
 }

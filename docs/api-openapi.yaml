@@ -83,20 +83,41 @@ paths:
       responses:
         '200': {description: 中断要求を受理。同じ録画の手動再開または該当設定の保存で自動実行を再開。}
         '409': {description: 終了済み・存在しないジョブ}
-  /camera/sessions/{id}/h264:
-    get:
-      summary: 前方または車内の既存H.264をvideo-only fMP4でライブ配信
-      description: 同じブラウザー所有セッションのみ。同時2配信。再エンコードせずSD書込中の映像を読む。停止・切断で配信枠を解放。音声は含めない。
+  /camera/sessions/{id}/webrtc:
+    post:
+      summary: WebRTCによる前方または車内カメラの低遅延ライブ配信
+      description: 同一ブラウザー所有セッションへ、純正H.264エンコーダー出力をMP4へ変換せずRTP/UDPで配信する。音声は含まない。
       parameters:
         - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, sdp]
+              properties:
+                type: {type: string, enum: [offer]}
+                sdp: {type: string, maxLength: 122880}
       responses:
         '200':
-          description: MSE向け初期化segmentと連続moof/mdat。各カメラのcodec・寸法・fpsをheaderに返す。
+          description: 非trickle ICEのSDP answerと実測した映像情報
           content:
-            video/mp4: {schema: {type: string, format: binary}}
-        '403': {description: 未所有・期限切れセッション}
-        '429': {description: 同時配信上限・準備中}
-        '503': {description: 現在の純正録画が取得不能・未稼働・未対応}
+            application/json:
+              schema:
+                type: object
+                required: [type, sdp, width, height, fps, transport]
+                properties:
+                  type: {type: string, enum: [answer]}
+                  sdp: {type: string}
+                  width: {type: integer}
+                  height: {type: integer}
+                  fps: {type: number}
+                  transport: {type: string, enum: [webrtc-udp-h264]}
+        '403': {description: 未所有または期限切れセッション}
+        '429': {description: 同時配信上限}
+        '503': {description: 現在のエンコーダー出力を取得できない}
   /system/services:
     get:
       summary: 固定allowlistの純正サービス状態と操作可否

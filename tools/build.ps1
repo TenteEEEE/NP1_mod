@@ -67,6 +67,8 @@ if (Test-Path "$repo/artifacts/recorder-injector/ncc-recorder-injector") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/recorder-injector/ncc-recorder-injector" "$repo/artifacts/ncc/experimental/"
 }
+python "$repo/tools/verify-recorder-artifacts.py"
+Check
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null
