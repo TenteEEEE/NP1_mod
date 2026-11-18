@@ -11,16 +11,17 @@ import sys
 parser = argparse.ArgumentParser()
 parser.add_argument('--serial', required=True)
 parser.add_argument('--password-file', type=pathlib.Path)
-parser.add_argument('--action', choices=('install', 'install-vpn', 'verify', 'rollback', 'uninstall', 'stock-start-install', 'nas-backup-install', 'web-worker-update', 'journey-update', 'native-worker-update', 'modem-worker-update', 'ap-worker-update', 'ap-smoke', 'ap-dhcp-smoke', 'gobinet-readonly', 'gobinet-status-readonly', 'gobinet-profiles-readonly', 'gobinet-profile-list-readonly', 'native-apn-status-readonly', 'native-apn-network-readonly', 'native-apn-same-profile-trial', 'native-apn-route-recover', 'apn-editor-seed', 'native-alexa-preflight', 'native-alexa-get', 'native-alexa-roundtrip', 'native-preflight', 'native-vendor-read', 'native-sensitivity-trial', 'native-detection-trial', 'firewall-update'), default='install')
+parser.add_argument('--action', choices=('install', 'install-owner-recovery', 'rollback-owner-recovery', 'install-vpn', 'verify', 'rollback', 'uninstall', 'stock-start-install', 'nas-backup-install', 'web-worker-update', 'recorder-hook-update', 'recorder-hook-prune', 'journey-update', 'native-worker-update', 'modem-worker-update', 'ap-worker-update', 'ap-smoke', 'ap-dhcp-smoke', 'gobinet-readonly', 'gobinet-status-readonly', 'gobinet-profiles-readonly', 'gobinet-profile-list-readonly', 'native-apn-status-readonly', 'native-apn-network-readonly', 'native-apn-same-profile-trial', 'native-apn-route-recover', 'apn-editor-seed', 'native-alexa-preflight', 'native-alexa-get', 'native-alexa-roundtrip', 'native-preflight', 'native-vendor-read', 'native-sensitivity-trial', 'native-detection-trial', 'firewall-update'), default='install')
 args = parser.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9._:-]+', args.serial):
     raise SystemExit('Invalid serial')
 root = pathlib.Path(__file__).resolve().parent.parent
 profile_action = args.action in ('gobinet-profiles-readonly', 'gobinet-profile-list-readonly', 'native-apn-status-readonly', 'apn-editor-seed')
 native_apn_action = args.action in ('native-apn-status-readonly', 'native-apn-network-readonly', 'native-apn-same-profile-trial', 'native-apn-route-recover')
-bundle = root / 'artifacts' / ('ncc-native-apn-readonly' if native_apn_action else 'ncc-profiles-readonly' if profile_action else 'ncc')
+recorder_action = args.action in ('recorder-hook-update', 'recorder-hook-prune')
+bundle = root / 'artifacts' / ('ncc-recorder-hook' if recorder_action else 'ncc-native-apn-readonly' if native_apn_action else 'ncc-profiles-readonly' if profile_action else 'ncc')
 adb = ['adb', '-s', args.serial]
-stage = '/tmp/ncc-native-apn-stage' if native_apn_action else '/tmp/ncc-profiles-stage' if profile_action else '/tmp/ncc-stage'
+stage = '/tmp/ncc-recorder-hook-stage' if recorder_action else '/tmp/ncc-native-apn-stage' if native_apn_action else '/tmp/ncc-profiles-stage' if profile_action else '/tmp/ncc-stage'
 def run(*cmd, **kwargs):
     return subprocess.run(cmd, check=True, **kwargs)
 run(*adb, 'get-state')

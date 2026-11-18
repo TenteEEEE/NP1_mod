@@ -16,6 +16,13 @@ try {
 Copy-Item -Recurse -Force "$repo/systemd" "$repo/artifacts/ncc/"
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/tools" | Out-Null
 Copy-Item -Force "$repo/tools/device/*" "$repo/artifacts/ncc/tools/"
+# A fresh NP1CC installation includes the pinned official Tailscale build.
+# prepare-tailscale.py verifies the publisher-provided SHA-256 before staging it.
+python "$repo/tools/prepare-tailscale.py"
+Check
+New-Item -ItemType Directory -Force "$repo/artifacts/ncc/vpn/bin" | Out-Null
+Copy-Item -Force "$repo/artifacts/ncc-vpn/bin/tailscale","$repo/artifacts/ncc-vpn/bin/tailscaled" "$repo/artifacts/ncc/vpn/bin/"
+Copy-Item -Force "$repo/artifacts/ncc-vpn/source.json" "$repo/artifacts/ncc/vpn/source.json"
 if (Test-Path "$repo/artifacts/native-helper/ncc-native-setting-helper") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/native-helper/ncc-native-setting-helper" "$repo/artifacts/ncc/experimental/"
@@ -52,6 +59,16 @@ if (Test-Path "$repo/artifacts/stock-start-helper/ncc-stock-start-helper") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/stock-start-helper/ncc-stock-start-helper" "$repo/artifacts/ncc/experimental/"
 }
+if (Test-Path "$repo/artifacts/recorder-hook/libncc-driverec-hook.so") {
+    New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
+    Copy-Item -Force "$repo/artifacts/recorder-hook/libncc-driverec-hook.so" "$repo/artifacts/ncc/experimental/"
+}
+if (Test-Path "$repo/artifacts/recorder-injector/ncc-recorder-injector") {
+    New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
+    Copy-Item -Force "$repo/artifacts/recorder-injector/ncc-recorder-injector" "$repo/artifacts/ncc/experimental/"
+}
+python "$repo/tools/verify-recorder-artifacts.py"
+Check
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null
@@ -70,4 +87,6 @@ Copy-Item -Force "$repo/LICENSE" "$repo/artifacts/ncc/LICENSE"
 Copy-Item -Force "$repo/THIRD_PARTY_LICENSES.md" "$repo/artifacts/ncc/THIRD_PARTY_LICENSES.md"
 Copy-Item -Recurse -Force "$repo/licenses" "$repo/artifacts/ncc/"
 python "$repo/tools/package.py" "$repo/artifacts/ncc"
+Check
+python "$repo/tools/package-recorder-hook-update.py"
 Check

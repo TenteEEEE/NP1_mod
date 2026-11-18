@@ -19,6 +19,7 @@ sha256sum -c SHA256SUMS
 bin/ncc --mode self-test
 if test ! -d /overlay/owner-apps; then mkdir -m 0755 /overlay/owner-apps; fi
 mkdir -p "$BASE/recovery" "$BASE/bin" "$BASE/config" "$BASE/state"
+mkdir -p "$BASE/recorder-hook"
 mkdir -p "$BASE/private/led"
 mkdir -p "$BASE/private/apn"
 mkdir -p "$BASE/private/wifi" "$BASE/private/ap"
@@ -31,7 +32,7 @@ chmod 0700 "$BASE/private/ota-policy"
 chmod 0700 "$BASE/private/wifi" "$BASE/private/ap"
 chmod 0700 "$BASE/private/apn"
 chmod 0700 "$BASE/private" "$BASE/private/led"
-chmod 0755 "$BASE" "$BASE/bin"
+chmod 0755 "$BASE" "$BASE/bin" "$BASE/recorder-hook"
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUP="$BASE/recovery/$STAMP"
 test ! -e "$BACKUP"
@@ -45,6 +46,16 @@ done
 if test -f "$BASE/bin/ncc"; then cp -p "$BASE/bin/ncc" "$BACKUP/ncc"; fi
 if test -f "$BASE/config/config.json"; then cp -p "$BASE/config/config.json" "$BACKUP/config.json"; fi
 if test -f "$BASE/tools/firewall.sh"; then cp -p "$BASE/tools/firewall.sh" "$BACKUP/firewall.sh"; fi
+RECORDER_DROPIN_DIR=/etc/systemd/system/app-@DriveRec.service.d
+RECORDER_DROPIN="$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf"
+RECORDER_LIBRARY="$BASE/recorder-hook/libncc-driverec-hook.so"
+RECORDER_INJECTOR="$BASE/experimental/ncc-recorder-injector"
+test ! -L "$RECORDER_DROPIN_DIR"
+test ! -L "$RECORDER_DROPIN"
+test ! -L "$RECORDER_LIBRARY"
+if test -f "$RECORDER_DROPIN"; then cp -p "$RECORDER_DROPIN" "$BACKUP/90-ncc-recorder-hook.conf"; else touch "$BACKUP/recorder-hook-dropin.absent"; fi
+if test -f "$RECORDER_LIBRARY"; then cp -p "$RECORDER_LIBRARY" "$BACKUP/libncc-driverec-hook.so"; else touch "$BACKUP/recorder-hook-library.absent"; fi
+if test -f "$RECORDER_INJECTOR"; then cp -p "$RECORDER_INJECTOR" "$BACKUP/ncc-recorder-injector"; else touch "$BACKUP/recorder-injector.absent"; fi
 printf '%s\n' "$BACKUP" > "$BASE/recovery/latest"
 trap 'code=$?; if test "$code" -ne 0; then echo "Install failed; restoring NCC only" >&2; sh "$STAGE/tools/rollback.sh" || true; fi' 0
 if test ! -f "$BASE/private/ota-policy/ledger.json"; then touch "$BACKUP/ota-policy-initialized"; fi
@@ -96,6 +107,14 @@ if test -f experimental/ncc-stock-start-helper; then
     chmod 0600 "$BASE/experimental/ncc-stock-start-helper.new"
     mv -f "$BASE/experimental/ncc-stock-start-helper.new" "$BASE/experimental/ncc-stock-start-helper"
 fi
+if test -f experimental/libncc-driverec-hook.so; then
+    cp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY.new"
+    chmod 0555 "$RECORDER_LIBRARY.new"
+    mv -f "$RECORDER_LIBRARY.new" "$RECORDER_LIBRARY"
+    # Runtime injection is performed only after stock recording is healthy.
+    # Remove the legacy LD_PRELOAD drop-in, which runs too early in DriveRec.
+    rm -f "$RECORDER_DROPIN"
+fi
 if test -f experimental/ncc-native-setting-helper; then
     mkdir -p "$BASE/experimental"
     chmod 0700 "$BASE/experimental"
@@ -127,6 +146,11 @@ if test -f experimental/ncc-native-setting-helper; then
         cp experimental/ncc-native-operations-helper "$BASE/experimental/ncc-native-operations-helper.new"
         chmod 0600 "$BASE/experimental/ncc-native-operations-helper.new"
         mv -f "$BASE/experimental/ncc-native-operations-helper.new" "$BASE/experimental/ncc-native-operations-helper"
+    fi
+    if test -f experimental/ncc-recorder-injector; then
+        cp experimental/ncc-recorder-injector "$BASE/experimental/ncc-recorder-injector.new"
+        chmod 0600 "$BASE/experimental/ncc-recorder-injector.new"
+        mv -f "$BASE/experimental/ncc-recorder-injector.new" "$BASE/experimental/ncc-recorder-injector"
     fi
     if test -f experimental/ncc-native-audio-helper; then
         cp experimental/ncc-native-audio-helper "$BASE/experimental/ncc-native-audio-helper.new"
@@ -171,6 +195,11 @@ sh -n /etc/init.post_boot.sh
 touch "$BASE/enabled"
 sync
 systemctl daemon-reload
+if test -f experimental/libncc-driverec-hook.so; then
+    cmp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY"
+    test ! -e "$RECORDER_DROPIN"
+    ! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
+fi
 touch /run/xtables.lock
 systemctl restart np1-control-firewall.service
 systemctl restart np1-control-ota-guard.service
@@ -183,6 +212,11 @@ systemctl restart np1-control-broker.service
 systemctl restart np1-control-apn.service
 systemctl restart np1-control.service
 if test -f /etc/systemd/system/np1-control-plate.service; then systemctl restart np1-control-plate.service; fi
+# Tailscale is part of a fresh NP1CC installation.  Existing installations are
+# left untouched here so their running service and authenticated state are not
+# needlessly cycled during an ordinary NP1CC update.  install-vpn remains the
+# explicit, idempotent migration path for installations created by older builds.
+if test ! -f "$BACKUP/ncc"; then sh tools/install-vpn.sh; fi
 sh tools/verify.sh
 for unit in app-@Communication app-@DriveRec app-@ImageRecog app-@Voice qmmf-server NEventWatcherCom; do systemctl show "$unit.service" -p Id -p ActiveState -p SubState; done > "$BACKUP/stock-after.txt"
 cmp "$BACKUP/stock-before.txt" "$BACKUP/stock-after.txt"

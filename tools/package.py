@@ -4,7 +4,7 @@ import pathlib
 import sys
 root = pathlib.Path(sys.argv[1]).resolve()
 for path in root.rglob('*'):
-    if path.is_file() and path.suffix in ('.sh', '.py', '.service'):
+    if path.is_file() and path.suffix in ('.sh', '.py', '.service', '.path'):
         original = path.read_bytes()
         normalized = original.replace(b'\r\n', b'\n')
         if normalized != original:

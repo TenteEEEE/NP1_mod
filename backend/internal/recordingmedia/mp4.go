@@ -9,15 +9,17 @@ import (
 )
 
 type Metadata struct {
-	DurationSeconds float64 `json:"durationSeconds"`
-	VideoCodec      string  `json:"videoCodec,omitempty"`
-	AudioCodec      string  `json:"audioCodec,omitempty"`
-	Width           int     `json:"width,omitempty"`
-	Height          int     `json:"height,omitempty"`
-	AudioChannels   int     `json:"audioChannels,omitempty"`
-	AudioSampleRate int     `json:"audioSampleRate,omitempty"`
-	avcConfig       bool
-	aacConfig       bool
+	DurationSeconds  float64 `json:"durationSeconds"`
+	VideoCodec       string  `json:"videoCodec,omitempty"`
+	VideoBitrate     uint64  `json:"videoBitrate,omitempty"` // average video sample bits/second
+	AudioCodec       string  `json:"audioCodec,omitempty"`
+	Width            int     `json:"width,omitempty"`
+	Height           int     `json:"height,omitempty"`
+	AudioChannels    int     `json:"audioChannels,omitempty"`
+	AudioSampleRate  int     `json:"audioSampleRate,omitempty"`
+	avcConfig        bool
+	aacConfig        bool
+	videoSampleBytes uint64
 }
 type mp4Box struct {
 	kind                string
@@ -27,6 +29,8 @@ type mp4Track struct {
 	kind, codec                         string
 	width, height, channels, sampleRate int
 	configurationValid                  bool
+	duration                            float64
+	sampleSizes                         mp4Box
 }
 
 func readMP4Box(r io.ReaderAt, offset, limit int64) (mp4Box, error) {
@@ -65,7 +69,9 @@ func readMP4Bytes(r io.ReaderAt, b mp4Box, n int) ([]byte, error) {
 	_, e := r.ReadAt(v, b.payload)
 	return v, e
 }
-func mp4MovieDuration(r io.ReaderAt, b mp4Box) (float64, error) {
+
+// mvhd and mdhd share their versioned timescale and duration fields.
+func mp4Duration(r io.ReaderAt, b mp4Box) (float64, error) {
 	h, e := readMP4Bytes(r, b, 4)
 	if e != nil {
 		return 0, e
@@ -88,7 +94,7 @@ func mp4MovieDuration(r io.ReaderAt, b mp4Box) (float64, error) {
 		scale = binary.BigEndian.Uint32(v[20:24])
 		duration = binary.BigEndian.Uint64(v[24:32])
 	default:
-		return 0, errors.New("unknown mvhd version")
+		return 0, errors.New("unknown MP4 duration version")
 	}
 	if scale == 0 {
 		return 0, errors.New("invalid MP4 timescale")
@@ -99,6 +105,33 @@ func mp4MovieDuration(r io.ReaderAt, b mp4Box) (float64, error) {
 	}
 	return 0, errors.New("invalid recording duration")
 }
+
+func mp4SampleBytes(r io.ReaderAt, b mp4Box) uint64 {
+	header, err := readMP4Bytes(r, b, 12)
+	if err != nil || binary.BigEndian.Uint32(header) != 0 {
+		return 0
+	}
+	sampleSize := binary.BigEndian.Uint32(header[4:8])
+	count := binary.BigEndian.Uint32(header[8:12])
+	// Typical NP1 files contain fewer than 10,000 video samples.
+	if count == 0 || count > 20000 {
+		return 0
+	}
+	if sampleSize != 0 {
+		return uint64(sampleSize) * uint64(count)
+	}
+	b.payload += 12
+	sizes, err := readMP4Bytes(r, b, 4*int(count))
+	if err != nil {
+		return 0
+	}
+	var total uint64
+	for offset := 0; offset < len(sizes); offset += 4 {
+		total += uint64(binary.BigEndian.Uint32(sizes[offset:]))
+	}
+	return total
+}
+
 func parseMP4Container(r io.ReaderAt, start, end int64, depth int, track *mp4Track, meta *Metadata, budget *int) error {
 	if depth > 6 {
 		return errors.New("MP4 nesting limit")
@@ -116,7 +149,7 @@ func parseMP4Container(r io.ReaderAt, start, end int64, depth int, track *mp4Tra
 		switch b.kind {
 		case "mvhd":
 			if depth == 1 {
-				meta.DurationSeconds, e = mp4MovieDuration(r, b)
+				meta.DurationSeconds, e = mp4Duration(r, b)
 				if e != nil {
 					return e
 				}
@@ -134,6 +167,13 @@ func parseMP4Container(r io.ReaderAt, start, end int64, depth int, track *mp4Tra
 						meta.Width = t.width
 						meta.Height = t.height
 						meta.avcConfig = t.configurationValid
+						if t.duration > 0 {
+							meta.videoSampleBytes = mp4SampleBytes(r, t.sampleSizes)
+							rate := math.Round(float64(meta.videoSampleBytes) * 8 / t.duration)
+							if rate <= math.MaxUint32 {
+								meta.VideoBitrate = uint64(rate)
+							}
+						}
 					}
 				case "soun":
 					if meta.AudioCodec == "" {
@@ -149,6 +189,14 @@ func parseMP4Container(r io.ReaderAt, start, end int64, depth int, track *mp4Tra
 				if e = parseMP4Container(r, b.payload, b.end, depth+1, track, meta, budget); e != nil {
 					return e
 				}
+			}
+		case "mdhd":
+			if track != nil && depth == 3 {
+				track.duration, _ = mp4Duration(r, b)
+			}
+		case "stsz":
+			if track != nil && depth == 5 {
+				track.sampleSizes = b
 			}
 		case "hdlr":
 			if track != nil {
@@ -236,6 +284,9 @@ func ReadMetadata(r io.ReaderAt, size int64) (Metadata, error) {
 	}
 	if !hasFTYP || !hasMOOV || meta.DurationSeconds <= 0 || meta.VideoCodec == "" {
 		return meta, fmt.Errorf("recording not finalized or unsupported metadata")
+	}
+	if meta.videoSampleBytes > uint64(size) {
+		meta.VideoBitrate = 0
 	}
 	return meta, nil
 }

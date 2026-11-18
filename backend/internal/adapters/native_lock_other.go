@@ -8,4 +8,5 @@ func lockNativeControl() (func(), error) { return nil, errors.New("native contro
 func lockNativeControlExisting() (func(), error) {
 	return nil, errors.New("native controls require Linux")
 }
+func lockRecorderApply() (func(), error) { return func() {}, nil }
 func InitializeNativeControlLock() error { return errors.New("native controls require Linux") }

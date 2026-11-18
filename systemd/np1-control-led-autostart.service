@@ -1,0 +1,7 @@
+[Unit]
+Description=Start the saved NP1 Control Center LED mode at boot
+ConditionPathExists=/overlay/owner-apps/np1-control/private/led/autostart
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl --no-block start np1-control-led.service

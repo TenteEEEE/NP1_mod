@@ -20,7 +20,7 @@ const options:{value:Mode;label:string;detail:string;icon:any}[]=[
 ]
 const status=computed(()=>view.value?.status||undefined)
 const uplinkLabel=computed(()=>({wifi:'Wi-Fi',cellular:'4G',none:'未接続',other:'その他'} as Record<string,string>)[status.value?.uplink||'']||'—')
-const reasonText:Record<string,string>={'wifi-unavailable':'Wi-Fiが圏外になったため4Gへ','saved-network-seen':'保存済みWi-Fiが見えたためWi-Fiへ','near-last-connected-place':'Wi-Fiの近くに戻ったためWi-Fiへ','owner-manual':'手動の設定に合わせて','auto-disabled':'自動切替を止めたためWi-Fiへ'}
+const reasonText:Record<string,string>={'wifi-unavailable':'Wi-Fiが圏外になったため4Gへ','saved-network-seen':'保存済みWi-Fiが見えたためWi-Fiへ','near-last-connected-place':'Wi-Fiの近くに戻ったためWi-Fiへ','owner-manual':'手動の設定に合わせて','auto-disabled':'自動切替を止めたためWi-Fiへ','periodic-recheck':'保存済みWi-Fiへの再接続を試すため','probe-timeout':'Wi-Fi回線を確認できなかったため4Gへ','wifi-setup-ended':'周辺検索・接続確認を終えたため4Gへ'}
 const lastSwitch=computed(()=>{const s=status.value?.state;if(!s?.lastReason)return '';return reasonText[s.lastReason]||s.lastReason})
 const pendingMode=computed(()=>!!view.value&&!!status.value&&status.value.mode!==view.value.mode)
 async function load(){try{view.value=await api<View>('/network/uplink');if(!busy.value)draft.value=view.value.mode;emit('state',{mode:view.value.mode,staOn:view.value.status?.staOn??null});error.value=''}catch{error.value='回線の設定を取得できません。'}finally{loading.value=false}}

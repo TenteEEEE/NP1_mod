@@ -6,6 +6,7 @@ import json
 import pathlib
 import re
 import subprocess
+import sys
 import time
 parser = argparse.ArgumentParser()
 parser.add_argument('--serial', required=True)
@@ -18,8 +19,11 @@ adb = ['adb', '-s', args.serial]
 results = []
 for cycle in range(args.count):
     before = subprocess.check_output(adb + ['shell', 'cat', '/proc/sys/kernel/random/boot_id']).strip()
-    subprocess.run(adb + ['push', str(root/'tools/device/reboot-check.sh'), '/tmp/ncc-stage/tools/reboot-check.sh'], check=True)
-    subprocess.run(adb + ['shell', '/bin/sh', '/tmp/ncc-stage/tools/reboot-check.sh'], timeout=30)
+    stage = '/tmp/ncc-reboot-stage'
+    subprocess.run(adb + ['shell', 'mkdir', '-p', stage], check=True)
+    for name in ('verify.sh', 'reboot-check.sh'):
+        subprocess.run(adb + ['push', str(root/'tools/device'/name), stage+'/'+name], check=True)
+    subprocess.run(adb + ['shell', '/bin/sh', stage+'/reboot-check.sh'], check=True, timeout=30)
     start = time.monotonic()
     time.sleep(5)
     while time.monotonic() - start < 180:
@@ -35,7 +39,18 @@ for cycle in range(args.count):
     else:
         raise SystemExit('Reboot recovery timed out; do not issue another reboot')
     subprocess.run(['python',str(root/'tools/connect.py'),'--serial',args.serial],check=True)
-    subprocess.run(['python',str(root/'tools/hardware_verify.py'),'--camera'],check=True)
+    verify_deadline = time.monotonic() + 90
+    while True:
+        verification = subprocess.run(['python',str(root/'tools/hardware_verify.py'),'--camera'], capture_output=True)
+        if verification.returncode == 0:
+            sys.stdout.buffer.write(verification.stdout)
+            sys.stderr.buffer.write(verification.stderr)
+            break
+        if time.monotonic() >= verify_deadline:
+            sys.stdout.buffer.write(verification.stdout)
+            sys.stderr.buffer.write(verification.stderr)
+            raise SystemExit('Hardware verification did not become ready after reboot')
+        time.sleep(3)
     results.append({'cycle':cycle+1,'seconds':round(time.monotonic()-start,1),'status':'PASS'})
     (root/'tmp/reboot-results.json').write_text(json.dumps(results,indent=2),encoding='utf8')
     print('Reboot cycle',cycle+1,'PASS',flush=True)

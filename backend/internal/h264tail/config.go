@@ -261,6 +261,52 @@ func ConfigFromMP4(r io.ReaderAt, size int64) (Config, error) {
 	return result.validated()
 }
 
+// ConfigFromAnnexB builds the MSE codec configuration from parameter sets
+// emitted by the already-running stock encoder. It does not decode or
+// re-encode video. fpsMilli is the encoder's configured frame rate multiplied
+// by 1000.
+func ConfigFromAnnexB(data []byte, fpsMilli uint32) (Config, error) {
+	if fpsMilli < 1000 || fpsMilli > 120000 {
+		return Config{}, ErrUnsupported
+	}
+	nals, err := annexBNALs(data)
+	if err != nil {
+		return Config{}, err
+	}
+	var sps, pps []byte
+	for _, nal := range nals {
+		if len(nal) == 0 {
+			continue
+		}
+		switch nal[0] & 31 {
+		case 7:
+			if len(nal) > 1024 || sps != nil {
+				return Config{}, ErrUnsupported
+			}
+			sps = bytes.Clone(nal)
+		case 8:
+			if len(nal) > 1024 || pps != nil {
+				return Config{}, ErrUnsupported
+			}
+			pps = bytes.Clone(nal)
+		}
+	}
+	if len(sps) < 4 || len(pps) < 2 {
+		return Config{}, ErrUnsupported
+	}
+	sequence, err := parseSequence(sps)
+	if err != nil || sequence.width == 0 || sequence.height == 0 || sequence.width > 65535 || sequence.height > 65535 {
+		return Config{}, ErrUnsupported
+	}
+	avc := []byte{1, sps[1], sps[2], sps[3], 0xff, 0xe1, byte(len(sps) >> 8), byte(len(sps))}
+	avc = append(avc, sps...)
+	avc = append(avc, 1, byte(len(pps)>>8), byte(len(pps)))
+	avc = append(avc, pps...)
+	const timescale = uint32(90000)
+	duration := uint32((uint64(timescale)*1000 + uint64(fpsMilli)/2) / uint64(fpsMilli))
+	return (Config{AVC: avc, Timescale: timescale, SampleDuration: duration, Width: uint16(sequence.width), Height: uint16(sequence.height)}).validated()
+}
+
 func (c Config) validated() (Config, error) {
 	if c.Timescale == 0 || c.Timescale > 10000000 || c.SampleDuration == 0 || uint64(c.Timescale) < uint64(c.SampleDuration) || uint64(c.Timescale) > uint64(c.SampleDuration)*120 {
 		return Config{}, ErrUnsupported

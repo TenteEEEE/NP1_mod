@@ -45,3 +45,18 @@ func TestHighlightBalanceOnlyWithReferencePixels(t *testing.T) {
 		t.Fatal("invented balance without highlights")
 	}
 }
+
+func TestSnapshotDimensionsAreFixedChoices(t *testing.T) {
+	for _, test := range []struct {
+		name                 string
+		width, height, scale int
+	}{{"360p", 640, 360, 3}, {"1080p", 1920, 1080, 1}} {
+		width, height, scale, err := snapshotDimensions(test.name)
+		if err != nil || width != test.width || height != test.height || scale != test.scale {
+			t.Fatalf("%s = %dx%d scale %d, %v", test.name, width, height, scale, err)
+		}
+	}
+	if _, _, _, err := snapshotDimensions("720p"); err == nil {
+		t.Fatal("unsupported JPEG resolution accepted")
+	}
+}

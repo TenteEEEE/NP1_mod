@@ -14,6 +14,7 @@ import VoicevoxSettings from './components/VoicevoxSettings.vue'
 import Dashboard from './components/Dashboard.vue'
 import TrafficUsage from './components/TrafficUsage.vue'
 import NativeSettings from './components/NativeSettings.vue'
+import NativeOperations from './components/NativeOperations.vue'
 import OTASettings from './components/OTASettings.vue'
 import CellularPage from './components/CellularPage.vue'
 import WifiAPPage from './components/WifiAPPage.vue'
@@ -71,7 +72,7 @@ const traffic=computed(()=>summary.value.traffic?.data as {interface:string;rxBy
 const temp=computed(()=>{const a=summary.value.temperatures?.data as {name:string;celsius:number;source:string}[]|undefined;return a?.filter(t=>t.name.toLowerCase().includes('cpu')).slice(0,4)||a?.slice(0,4)||[]})
 const fileList=computed(()=>files.value.filter(f=>f.name.toLowerCase().includes(fileSearch.value.toLowerCase())))
 
-const systemTabs=[{id:'overview',label:'本体'},{id:'routing',label:'ルーティング'},{id:'storage',label:'SDカード'},{id:'led',label:'LED / 音声'},{id:'usb',label:'USB'},{id:'logs',label:'ログ'},{id:'nas',label:'録画バックアップ'},{id:'settings',label:'設定・バックアップ'}]
+const systemTabs=[{id:'overview',label:'本体'},{id:'routing',label:'ルーティング'},{id:'storage',label:'SDカード'},{id:'recorder',label:'録画設定'},{id:'led',label:'LED / 音声'},{id:'usb',label:'USB'},{id:'logs',label:'ログ'},{id:'nas',label:'録画バックアップ'},{id:'settings',label:'設定・バックアップ'}]
 const view=computed(()=>page.value==='system'&&systemSection.value!=='overview'?systemSection.value:page.value)
 function selectRoute(id:string){const [requested,tab]=id.split('?')[0].split('/');const base=requested==='clients'?'wifi':requested==='traffic'?'internet':requested==='alexa'?'native':nativePages.some(p=>p.id===requested)?'native':requested;if(systemTabs.some(t=>t.id===base)&&base!=='overview'){page.value='system';systemSection.value=base}else if(base==='system'){page.value='system';systemSection.value=systemTabs.some(t=>t.id===tab)?tab!:'overview'}else{page.value=nav.some(n=>n.id===base)?base:'dashboard';systemSection.value='overview'}}
 function go(id:string){selectRoute(id);location.hash=page.value==='system'&&systemSection.value!=='overview'?'system/'+systemSection.value:page.value;menu.value=''}
@@ -144,6 +145,7 @@ onUnmounted(()=>{window.removeEventListener('hashchange',hashChange);narrowQuery
 
  <template v-else-if="page==='native'"><NativeSettings/></template>
  <template v-else-if="page==='recordings'"><DrivePlayback/></template>
+ <template v-else-if="view==='recorder'"><NativeOperations recorder-only/></template>
  <template v-else-if="view==='storage'"><div class="file-toolbar"><button class="secondary compact" :disabled="path==='.'||loading" @click="up"><ArrowUp :size="15"/>上へ</button><span class="mono breadcrumb-path">SD / {{path==='.'?'':path}}</span><label class="file-search"><Search :size="16"/><input v-model="fileSearch" placeholder="このフォルダーを検索" aria-label="ファイルを検索"></label></div><section class="panel"><div class="panel-head"><h2>ファイル</h2><span class="muted">最大300件 · 読み取り専用</span></div><div class="table-wrap"><table><thead><tr><th>名前</th><th>更新日時</th><th>サイズ</th><th>操作</th></tr></thead><tbody><tr v-for="f in fileList" :key="f.path"><td><button v-if="f.directory" class="file-name" @click="loadFiles(f.path)"><Folder :size="17"/>{{f.name}}<ChevronRight :size="14"/></button><span v-else class="file-name"><Video v-if="f.media==='video-candidate'" :size="17"/><HardDrive v-else :size="17"/>{{f.name}}</span></td><td class="muted nowrap">{{date(f.modified)}}</td><td class="mono nowrap">{{f.directory?'—':bytes(f.size)}}</td><td><div v-if="!f.directory" class="file-actions"><button v-if="f.media==='video-candidate'" class="text-button" @click="selectedVideo=fileURL(f.path)">再生</button><a :href="fileURL(f.path)" :download="f.name" class="icon-button" aria-label="原本をダウンロード"><Download :size="16"/></a></div></td></tr><tr v-if="!fileList.length"><td colspan="4" class="empty-line">{{loading?'読み込み中…':'ファイルがありません'}}</td></tr></tbody></table></div></section><section v-if="selectedVideo" class="panel space-top"><div class="panel-head"><h2>録画プレビュー</h2><button class="icon-button" @click="selectedVideo=''" aria-label="プレイヤーを閉じる"><X :size="17"/></button></div><video :src="selectedVideo" controls preload="metadata" class="recording-player"></video><p class="hint pad">ブラウザー非対応のコンテナ・コーデックは原本をダウンロードしてください。拡張子だけで形式を確定しません。</p></section><p class="hint">録画を時間から探す場合は「ドラレコ再生」を開いてください。ここではSDカードのファイルを確認できます。</p></template>
 
  <template v-else-if="page==='camera'"><CameraViewer ref="cameraViewer"/></template>

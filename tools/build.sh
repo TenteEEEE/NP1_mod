@@ -12,6 +12,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o "$R
 go version -m "$ROOT/artifacts/ncc/bin/ncc" > "$ROOT/artifacts/ncc/build-info.txt"
 cp -R "$ROOT/systemd" "$ROOT/artifacts/ncc/"
 cp "$ROOT/tools/device/"* "$ROOT/artifacts/ncc/tools/"
+# A fresh NP1CC installation includes the pinned official Tailscale build.
+# prepare-tailscale.py verifies the publisher-provided SHA-256 before staging it.
+python3 "$ROOT/tools/prepare-tailscale.py"
+mkdir -p "$ROOT/artifacts/ncc/vpn/bin"
+cp "$ROOT/artifacts/ncc-vpn/bin/tailscale" "$ROOT/artifacts/ncc-vpn/bin/tailscaled" "$ROOT/artifacts/ncc/vpn/bin/"
+cp "$ROOT/artifacts/ncc-vpn/source.json" "$ROOT/artifacts/ncc/vpn/source.json"
 if test -f "$ROOT/artifacts/native-helper/ncc-native-setting-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/native-helper/ncc-native-setting-helper" "$ROOT/artifacts/ncc/experimental/"
@@ -45,6 +51,15 @@ if test -f "$ROOT/artifacts/stock-start-helper/ncc-stock-start-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/stock-start-helper/ncc-stock-start-helper" "$ROOT/artifacts/ncc/experimental/"
 fi
+if test -f "$ROOT/artifacts/recorder-hook/libncc-driverec-hook.so"; then
+    mkdir -p "$ROOT/artifacts/ncc/experimental"
+    cp "$ROOT/artifacts/recorder-hook/libncc-driverec-hook.so" "$ROOT/artifacts/ncc/experimental/"
+fi
+if test -f "$ROOT/artifacts/recorder-injector/ncc-recorder-injector"; then
+    mkdir -p "$ROOT/artifacts/ncc/experimental"
+    cp "$ROOT/artifacts/recorder-injector/ncc-recorder-injector" "$ROOT/artifacts/ncc/experimental/"
+fi
+python3 "$ROOT/tools/verify-recorder-artifacts.py"
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 mkdir -p "$ROOT/artifacts/ncc/plate/models" "$ROOT/artifacts/ncc/plate/licenses"
@@ -76,3 +91,4 @@ cp "$ROOT/LICENSE" "$ROOT/artifacts/ncc/LICENSE"
 cp "$ROOT/THIRD_PARTY_LICENSES.md" "$ROOT/artifacts/ncc/THIRD_PARTY_LICENSES.md"
 cp -R "$ROOT/licenses" "$ROOT/artifacts/ncc/"
 python3 "$ROOT/tools/package.py" "$ROOT/artifacts/ncc"
+python3 "$ROOT/tools/package-recorder-hook-update.py"

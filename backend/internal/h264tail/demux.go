@@ -22,6 +22,109 @@ type Demuxer struct {
 	Dropped  uint64
 }
 
+func annexStart(data []byte, from int) (at, size int) {
+	for i := from; i+3 <= len(data); i++ {
+		if data[i] != 0 || data[i+1] != 0 {
+			continue
+		}
+		if data[i+2] == 1 {
+			return i, 3
+		}
+		if i+4 <= len(data) && data[i+2] == 0 && data[i+3] == 1 {
+			return i, 4
+		}
+	}
+	return -1, 0
+}
+
+func annexBNALs(data []byte) ([][]byte, error) {
+	if len(data) == 0 || len(data) > maxBuffered {
+		return nil, ErrUnsupported
+	}
+	start, prefix := annexStart(data, 0)
+	if start < 0 {
+		return nil, ErrUnsupported
+	}
+	for _, b := range data[:start] {
+		if b != 0 {
+			return nil, ErrUnsupported
+		}
+	}
+	var result [][]byte
+	for start >= 0 {
+		payload := start + prefix
+		next, nextPrefix := annexStart(data, payload)
+		end := len(data)
+		if next >= 0 {
+			end = next
+		}
+		for end > payload && data[end-1] == 0 {
+			end--
+		}
+		if end > payload {
+			if end-payload > MaxNAL || data[payload]&0x80 != 0 {
+				return nil, ErrUnsupported
+			}
+			result = append(result, data[payload:end])
+		}
+		start, prefix = next, nextPrefix
+	}
+	if len(result) == 0 || len(result) > 128 {
+		return nil, ErrUnsupported
+	}
+	return result, nil
+}
+
+// SampleFromAnnexB converts one stock encoder access unit to the length-prefixed
+// AVC representation required by ISO BMFF. Compressed slice bytes are copied
+// unchanged and validated against the confirmed SPS/PPS before being returned.
+func (c Config) SampleFromAnnexB(data []byte) (Sample, error) {
+	c, err := c.validated()
+	if err != nil {
+		return Sample{}, err
+	}
+	nals, err := annexBNALs(data)
+	if err != nil {
+		return Sample{}, err
+	}
+	key, slices := false, 0
+	for _, value := range nals {
+		switch value[0] & 31 {
+		case 5:
+			key = true
+			slices++
+		case 1:
+			slices++
+		}
+	}
+	if slices == 0 {
+		return Sample{}, ErrUnsupported
+	}
+	encoded := []byte{0, 0, 0, 2, 9, 0x10}
+	appendNAL := func(value []byte) {
+		encoded = append(encoded, be32(uint32(len(value)))...)
+		encoded = append(encoded, value...)
+	}
+	if key {
+		appendNAL(c.sps)
+		appendNAL(c.pps)
+	}
+	for _, value := range nals {
+		switch value[0] & 31 {
+		case 1, 5, 6:
+			appendNAL(value)
+		}
+	}
+	if len(encoded) > MaxNAL+65536 {
+		return Sample{}, ErrUnsupported
+	}
+	sample, _, ok := unit(encoded, c)
+	if !ok || sample.Keyframe != key {
+		return Sample{}, ErrUnsupported
+	}
+	return sample, nil
+}
+
 func NewDemuxer(c Config) (*Demuxer, error) {
 	c, err := c.validated()
 	if err != nil {

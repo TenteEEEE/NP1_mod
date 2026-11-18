@@ -1,0 +1,6 @@
+[Unit]
+Description=Start NP1 uplink switching after the owner saves a policy
+
+[Path]
+PathExists=/overlay/owner-apps/np1-control/private/uplink/settings.json
+Unit=np1-control-uplink.service

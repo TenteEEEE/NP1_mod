@@ -18,12 +18,11 @@ import (
 
 type UplinkInputs struct {
 	Now       time.Time
-	STAOn     bool   // stock STA mode (setting 40 == 0)
-	WPAState  string // supplicant state while the mode is on
-	Working   bool   // Wi-Fi actually carries the default route (supplicant reads can lag a restart)
-	Enabled   bool   // owner setting
-	SavedSeen bool   // a saved SSID was seen by a scan (only meaningful while OFF)
-	ScanKnown bool   // a scan result is available while OFF
+	STAOn     bool // stock STA mode (setting 40 == 0)
+	Working   bool // Wi-Fi actually carries the default route
+	Enabled   bool // owner setting
+	SavedSeen bool // a saved SSID was seen by a scan (only meaningful while OFF)
+	ScanKnown bool // a scan result is available while OFF
 	Position  *UplinkPosition
 }
 type UplinkPosition struct {
@@ -45,7 +44,7 @@ type UplinkState struct {
 	// NextProbeAt is when the supervisor may turn Wi-Fi on once more even without a scan
 	// result or a position fix, so a switch caused by a bad reading heals by itself.
 	NextProbeAt *time.Time `json:"nextProbeAt,omitempty"`
-	// ProbeUntil bounds a blind probe: if the station does not associate by then it is
+	// ProbeUntil bounds a probe: if Wi-Fi has no working route by then it is
 	// switched off again instead of waiting out the full outage delay.
 	ProbeUntil *time.Time `json:"probeUntil,omitempty"`
 	Switches   int        `json:"switches"`
@@ -92,7 +91,7 @@ func DecideUplink(in UplinkInputs, s UplinkState) (UplinkAction, string, UplinkS
 			// The mode is on again (by us, or by the owner): our marker no longer applies.
 			s.AutoOffAt = nil
 		}
-		if in.WPAState == "COMPLETED" || in.Working {
+		if in.Working {
 			s.LastConnectedAt, s.UnconnectedSince, s.RetryAfter, s.NextProbeAt = at(), nil, nil, nil
 			s.ProbeUntil = nil
 			if in.Position != nil && now.Sub(in.Position.At) <= uplinkFixMaxAge {
@@ -101,7 +100,7 @@ func DecideUplink(in UplinkInputs, s UplinkState) (UplinkAction, string, UplinkS
 			}
 			return UplinkNone, "", s
 		}
-		if s.ProbeUntil != nil {
+		if s.ProbeUntil != nil && in.Enabled {
 			if now.Before(*s.ProbeUntil) {
 				return UplinkNone, "", s // still inside the probe window
 			}
@@ -158,9 +157,7 @@ func DecideUplink(in UplinkInputs, s UplinkState) (UplinkAction, string, UplinkS
 	retry := now.Add(uplinkRetryBackoff)
 	s.RetryAfter = &retry
 	s.NextProbeAt = nil
-	if reason == "periodic-recheck" {
-		until := now.Add(uplinkProbeWindow)
-		s.ProbeUntil = &until
-	}
+	until := now.Add(uplinkProbeWindow)
+	s.ProbeUntil = &until
 	return UplinkOn, reason, s
 }

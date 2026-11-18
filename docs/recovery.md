@@ -32,6 +32,8 @@ python tools/deploy.py --serial SERIAL --action web-worker-update
 
 Web更新中は開いている画面やライブ配信が一時切断します。設定が変わらないのに接続を繰り返し失う場合は、ブラウザーだけでなく専用サービスのログと本体の起動状態を確認してください。
 
+所有者用復旧サービス経由の導入には `web-worker-update` を使用できます。初回導入全体を取り消す場合は `python tools/deploy.py --serial SERIAL --action rollback-owner-recovery` を実行します。専用unitsと起動時の依存登録を取り除き、設定・状態と検証記録を `/overlay/owner-apps/np1-control.removed-<UTC時刻>` に保存します。
+
 ## ロールバック
 
 ```powershell

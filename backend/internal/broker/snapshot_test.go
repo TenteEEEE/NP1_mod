@@ -13,7 +13,10 @@ func TestConcurrentSnapshotReadersWaitAndRemainSerial(t *testing.T) {
 	entered, release := make(chan string, 2), make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
-	handler := snapshotHandler(func(source, color string) ([]byte, error) {
+	handler := snapshotHandler(func(source, color, resolution string) ([]byte, error) {
+		if resolution != "360p" {
+			t.Fatalf("unexpected resolution %q", resolution)
+		}
 		entered <- source
 		if source == "front" {
 			<-release
@@ -23,7 +26,7 @@ func TestConcurrentSnapshotReadersWaitAndRemainSerial(t *testing.T) {
 	first, second := httptest.NewRecorder(), httptest.NewRecorder()
 	doneFirst, doneSecond := make(chan struct{}), make(chan struct{})
 	go func() {
-		handler.ServeHTTP(first, httptest.NewRequest("GET", "/?source=front&color=auto", nil))
+		handler.ServeHTTP(first, httptest.NewRequest("GET", "/?source=front&color=auto&resolution=360p", nil))
 		close(doneFirst)
 	}()
 	select {
@@ -32,7 +35,7 @@ func TestConcurrentSnapshotReadersWaitAndRemainSerial(t *testing.T) {
 		t.Fatal("first snapshot never started")
 	}
 	go func() {
-		handler.ServeHTTP(second, httptest.NewRequest("GET", "/?source=in&color=auto", nil))
+		handler.ServeHTTP(second, httptest.NewRequest("GET", "/?source=in&color=auto&resolution=360p", nil))
 		close(doneSecond)
 	}()
 	select {
@@ -61,7 +64,7 @@ func TestSnapshotWaitHonorsCancellation(t *testing.T) {
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	defer once.Do(func() { close(release) })
-	handler := snapshotHandler(func(source, color string) ([]byte, error) {
+	handler := snapshotHandler(func(source, color, resolution string) ([]byte, error) {
 		if source == "front" {
 			close(entered)
 			<-release
@@ -70,21 +73,21 @@ func TestSnapshotWaitHonorsCancellation(t *testing.T) {
 	})
 	done := make(chan struct{})
 	go func() {
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/?source=front&color=auto", nil))
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/?source=front&color=auto&resolution=360p", nil))
 		close(done)
 	}()
 	<-entered
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest("GET", "/?source=in&color=auto", nil).WithContext(ctx))
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "/?source=in&color=auto&resolution=360p", nil).WithContext(ctx))
 	if response.Code != http.StatusRequestTimeout {
 		t.Fatalf("canceled reader: %d", response.Code)
 	}
 	once.Do(func() { close(release) })
 	<-done
 	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest("GET", "/?source=in&color=auto", nil))
+	handler.ServeHTTP(response, httptest.NewRequest("GET", "/?source=in&color=auto&resolution=360p", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("reader after cancellation: %d", response.Code)
 	}

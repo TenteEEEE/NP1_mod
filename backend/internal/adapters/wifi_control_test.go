@@ -14,16 +14,21 @@ import (
 )
 
 type fakeWiFi struct {
-	mu      sync.Mutex
-	current int
-	next    int
-	fields  map[int]map[string]string
-	calls   []string
-	fail    string
+	mu       sync.Mutex
+	current  int
+	next     int
+	fields   map[int]map[string]string
+	disabled map[int]bool
+	calls    []string
+	fail     string
+	noIP     bool
 }
 
 func newFakeWiFi() *fakeWiFi {
-	return &fakeWiFi{current: 4, next: 12, fields: map[int]map[string]string{4: {"ssid": "stock-lan"}, 7: {"ssid": "other-lan"}}}
+	return &fakeWiFi{current: 4, next: 12, fields: map[int]map[string]string{4: {"ssid": "stock-lan"}, 7: {"ssid": "other-lan"}}, disabled: map[int]bool{}}
+}
+func (f *fakeWiFi) Scan(ctx context.Context) (string, error) {
+	return f.Request(ctx, "SCAN_RESULTS")
 }
 func (f *fakeWiFi) Request(ctx context.Context, command string) (string, error) {
 	f.mu.Lock()
@@ -41,13 +46,20 @@ func (f *fakeWiFi) Request(ctx context.Context, command string) (string, error) 
 		if f.current < 0 {
 			return "wpa_state=DISCONNECTED", nil
 		}
-		return fmt.Sprintf("wpa_state=COMPLETED\nid=%d\nssid=%s\nip_address=192.0.2.5", f.current, f.fields[f.current]["ssid"]), nil
+		reply := fmt.Sprintf("wpa_state=COMPLETED\nid=%d\nssid=%s", f.current, f.fields[f.current]["ssid"])
+		if !f.noIP {
+			reply += "\nip_address=192.0.2.5"
+		}
+		return reply, nil
 	case "LIST_NETWORKS":
 		s := "network id / ssid / bssid / flags\n"
 		for id, values := range f.fields {
 			flag := ""
 			if id == f.current {
 				flag = "[CURRENT]"
+			}
+			if f.disabled[id] {
+				flag += "[DISABLED]"
 			}
 			s += fmt.Sprintf("%d\t%s\tany\t%s\n", id, values["ssid"], flag)
 		}
@@ -56,10 +68,18 @@ func (f *fakeWiFi) Request(ctx context.Context, command string) (string, error) 
 		return "OK", nil
 	case "SCAN_RESULTS":
 		return "bssid / frequency / signal level / flags / ssid\n00:11:22:33:44:55\t2412\t-61\t[WPA2-PSK-CCMP][ESS]\tNearby\n", nil
+	case "ENABLE_NETWORK", "DISABLE_NETWORK":
+		id, _ := strconv.Atoi(p[1])
+		if f.fields[id] == nil {
+			return "FAIL", nil
+		}
+		f.disabled[id] = p[0] == "DISABLE_NETWORK"
+		return "OK", nil
 	case "ADD_NETWORK":
 		id := f.next
 		f.next++
 		f.fields[id] = map[string]string{}
+		f.disabled[id] = true
 		return strconv.Itoa(id), nil
 	case "SET_NETWORK":
 		id, _ := strconv.Atoi(p[1])
@@ -86,6 +106,9 @@ func (f *fakeWiFi) Request(ctx context.Context, command string) (string, error) 
 			return "FAIL", nil
 		}
 		f.current = id
+		for other := range f.fields {
+			f.disabled[other] = other != id
+		}
 		return "OK", nil
 	case "REMOVE_NETWORK":
 		id, _ := strconv.Atoi(p[1])
@@ -93,6 +116,7 @@ func (f *fakeWiFi) Request(ctx context.Context, command string) (string, error) 
 			return "FAIL", nil
 		}
 		delete(f.fields, id)
+		delete(f.disabled, id)
 		return "OK", nil
 	case "DISCONNECT":
 		f.current = -1
@@ -153,6 +177,53 @@ func TestWiFiNewConnectionConfirmReturnsSavedPasswordToOwnerUI(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("PSK did not preserve exact bytes inside stock quotes")
+	}
+}
+
+func TestWiFiRequiresDHCPAndRestoresSavedProfileAfterSupplicantRestart(t *testing.T) {
+	c, first := wifiTestController(t)
+	ctx := context.Background()
+	first.noIP = true
+	transaction, err := c.ConnectNew(ctx, WiFiNewConnection{"Private home", "open", ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := c.List(ctx)
+	if err != nil || view.Transaction == nil || view.Transaction.CanConfirm {
+		t.Fatalf("association without an IP should not be confirmable: %v", err)
+	}
+	if _, err := c.Confirm(ctx, transaction.ID); err == nil || err.Error() != "WIFI_TARGET_NOT_CONNECTED" {
+		t.Fatalf("unexpected confirmation result: %v", err)
+	}
+	first.noIP = false
+	if _, err := c.Confirm(ctx, transaction.ID); err != nil {
+		t.Fatal(err)
+	}
+	if first.disabled[4] || first.disabled[7] {
+		t.Fatal("selection disabled other previously available networks")
+	}
+	// Only the stock profiles survive the stock supplicant restart.
+	fresh := newFakeWiFi()
+	restarted := NewWiFiController(c.directory, fresh)
+	for i := 0; i < 2; i++ {
+		ssids, err := restarted.restoreProfiles(ctx)
+		if err != nil || !strings.Contains(strings.Join(ssids, "|"), "Private home") {
+			t.Fatalf("saved profile restore failed: %v", err)
+		}
+	}
+	if len(fresh.fields) != 3 || fresh.disabled[12] || fresh.fields[12]["ssid"] != "Private home" {
+		t.Fatal("private profile was not enabled exactly once")
+	}
+}
+
+func TestWiFiScanAcceptsTransitionSecurityAndSkipsInvalidRadioRows(t *testing.T) {
+	raw := "bssid / frequency / signal level / flags / ssid\n" +
+		"00:11:22:33:44:55\t2412\t-62\t[WPA2-PSK+SAE-CCMP][ESS]\tMixed\n" +
+		"00:11:22:33:44:66\t2437\t-66\t[OWE-CCMP][ESS]\tEnhanced open\n" +
+		"00:11:22:33:44:77\t2437\tinvalid\t[ESS]\tBad radio row\n"
+	results, err := parseWiFiScan(raw)
+	if err != nil || len(results) != 2 || results[0].Security != "wpa2" || results[1].Security != "unsupported" {
+		t.Fatalf("unexpected scan results: %#v, %v", results, err)
 	}
 }
 func TestWiFiRollbackRestoresOldBeforeRemovingOnlyOwnedNetwork(t *testing.T) {
@@ -275,7 +346,7 @@ func TestWiFiFailedSelectRollsBackAndDoesNotPersist(t *testing.T) {
 func TestWiFiBoundedParsersAndCachedScan(t *testing.T) {
 	c, _ := wifiTestController(t)
 	scan, e := c.Scan(context.Background())
-	if e != nil || len(scan.Results) != 1 || scan.Results[0].Security != "wpa2" || !scan.ResultsAreCached {
+	if e != nil || len(scan.Results) != 1 || scan.Results[0].Security != "wpa2" || scan.ResultsAreCached {
 		t.Fatalf("scan %#v %v", scan, e)
 	}
 	connection, e := parseWiFiStatus("wpa_state=COMPLETED\nid=4\nssid=Test\\x20LAN")

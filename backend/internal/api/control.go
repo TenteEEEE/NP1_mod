@@ -10,13 +10,17 @@ func (s *Server) forwardControl(w http.ResponseWriter, r *http.Request, target, 
 	s.forwardControlLimit(w, r, target, action, 8192)
 }
 func (s *Server) forwardControlLimit(w http.ResponseWriter, r *http.Request, target, action string, limit int64) {
+	s.forwardControlWithClient(w, r, target, action, limit, s.client)
+}
+
+func (s *Server) forwardControlWithClient(w http.ResponseWriter, r *http.Request, target, action string, limit int64, client *http.Client) {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	request, e := http.NewRequestWithContext(r.Context(), r.Method, "http://broker"+target, r.Body)
 	if e != nil {
 		fail(w, 400, "INVALID_CONTROL_REQUEST", "入力を確認してください")
 		return
 	}
-	response, e := s.client.Do(request)
+	response, e := client.Do(request)
 	if e != nil {
 		fail(w, 503, "CONTROL_UNAVAILABLE", "本体の設定処理へ接続できません")
 		return

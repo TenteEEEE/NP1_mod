@@ -15,6 +15,7 @@ apply)
     iptables -w 5 -F "$CHAIN"
     for iface in wlan0 wlan1 bridge0 nccap0 tailscale0; do
         iptables -w 5 -A "$CHAIN" -i "$iface" -p tcp -m multiport --dports 80,443 -j ACCEPT
+        iptables -w 5 -A "$CHAIN" -i "$iface" -p udp --dport 50000:50019 -j ACCEPT
     done
     iptables -w 5 -A "$CHAIN" -i nccap0 -p udp --dport 67 -j ACCEPT
     # Existing recovery adbd; expose it only on the authenticated tailnet interface.

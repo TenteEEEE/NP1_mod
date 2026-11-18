@@ -94,6 +94,28 @@ func lockNativeControlExisting() (func(), error) {
 	return func() { syscall.Flock(int(file.Fd()), syscall.LOCK_UN); file.Close(); releaseUpdate() }, nil
 }
 
+func lockRecorderApply() (func(), error) {
+	file, err := os.OpenFile("/run/np1-control-native/recorder.lock", os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || owner.Uid != 0 || owner.Nlink != 1 {
+		file.Close()
+		return nil, errors.New("recorder apply lock identity invalid")
+	}
+	if syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+		file.Close()
+		return nil, errors.New("recorder settings operation in progress")
+	}
+	return func() { syscall.Flock(int(file.Fd()), syscall.LOCK_UN); file.Close() }, nil
+}
+
 func InitializeNativeControlLock() error {
 	file, err := os.OpenFile("/run/np1-control-native/control.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
