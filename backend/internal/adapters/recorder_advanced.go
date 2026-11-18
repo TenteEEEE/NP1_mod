@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,26 +22,47 @@ import (
 )
 
 const (
-	recorderHookSource      = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
-	recorderHookLibrary     = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
-	recorderHookConfig      = "/overlay/owner-apps/np1-control/recorder-hook/config"
-	recorderHookApplied     = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
-	recorderHookDeferred    = "/overlay/owner-apps/np1-control/recorder-hook/deferred-until-restart"
-	recorderHookLibrarySHA  = "29e2984c16ad7501d3b8bfac445fa2dd96ae70749d4b396dc1403c1dd78c5bf6"
-	recorderHookStatusOff   = 0x365e0
-	recorderHookInjector    = "/run/np1-control-native/recorder-injector"
-	recorderHookInjectorSHA = "c79616d51adee1560d35dd5cf2a54d4fb3ed28ee616c316667ca7b8eaa280d29"
-	recorderDriveRecSHA     = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
-	recorderConfigSize      = 64
-	recorderConfigVersion   = 1
-	recorderApplyPhrase     = "即時適用する"
-	recorderMinimumBitrate  = 128
-	recorderMaximumBitrate  = 50000
-	recorderMinimumGOP      = 250
-	recorderMaximumGOP      = 10000
-	recorderMinimumSegment  = 30
-	recorderMaximumSegment  = 600
+	recorderHookSource     = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
+	recorderHookLibrary    = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
+	recorderHookConfig     = "/overlay/owner-apps/np1-control/recorder-hook/config"
+	recorderHookApplied    = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
+	recorderHookDeferred   = "/overlay/owner-apps/np1-control/recorder-hook/deferred-until-restart"
+	recorderHookInjector   = "/run/np1-control-native/recorder-injector"
+	recorderDriveRecSHA    = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
+	recorderConfigSize     = 64
+	recorderConfigVersion  = 1
+	recorderApplyPhrase    = "即時適用する"
+	recorderMinimumBitrate = 128
+	recorderMaximumBitrate = 50000
+	recorderMinimumGOP     = 250
+	recorderMaximumGOP     = 10000
+	recorderMinimumSegment = 30
+	recorderMaximumSegment = 600
 )
+
+// Filled by -ldflags from the hook and injector built in the same invocation.
+// Empty defaults keep public Web-only builds safe: recorder controls remain
+// unavailable instead of trusting an artifact from a different toolchain.
+var recorderHookLibrarySHA string
+var recorderHookInjectorSHA string
+var recorderHookStatusOffText string
+
+func recorderArtifactContract() (uint64, bool) {
+	for _, value := range []string{recorderHookLibrarySHA, recorderHookInjectorSHA} {
+		decoded, err := hex.DecodeString(value)
+		if err != nil || len(decoded) != 32 {
+			return 0, false
+		}
+	}
+	offset, err := strconv.ParseUint(recorderHookStatusOffText, 0, 64)
+	return offset, err == nil && offset > 0
+}
+
+// RecorderArtifactContractReady is checked by the device install self-test.
+func RecorderArtifactContractReady() bool {
+	_, ok := recorderArtifactContract()
+	return ok
+}
 
 type RecorderAdvancedSettings struct {
 	FrontBitrateKbps uint32 `json:"frontBitrateKbps"`
@@ -69,7 +91,10 @@ var recorderAdvancedMu sync.Mutex
 var recorderAdvancedConfigPath = recorderHookConfig
 var recorderAdvancedAppliedPath = recorderHookApplied
 var recorderAdvancedDeferredPath = recorderHookDeferred
-var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA) }
+var recorderAdvancedAvailable = func() bool {
+	_, contractOK := recorderArtifactContract()
+	return contractOK && nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA)
+}
 var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
 var recorderAdvancedHealthy = verifyRecorderFunction
@@ -313,6 +338,11 @@ func recorderDeferredForCurrent(generation uint32) bool {
 }
 
 func recorderHookLoaded(ctx context.Context) bool {
+	statusOffset, contractOK := recorderArtifactContract()
+	if !contractOK {
+		log.Printf("recorder-hook readback failed: build contract unavailable")
+		return false
+	}
 	if !nativeFirmwareMatches(recorderHookLibrary, recorderHookLibrarySHA) {
 		log.Printf("recorder-hook readback failed: runtime library identity mismatch")
 		return false
@@ -429,7 +459,7 @@ func recorderHookLoaded(ctx context.Context) bool {
 		return false
 	}
 	var applied [52]byte
-	if _, err = memory.ReadAt(applied[:], int64(hookBase+recorderHookStatusOff)); err != nil || binary.LittleEndian.Uint64(applied[:8]) != 0x314445494c505041 || binary.LittleEndian.Uint32(applied[8:12]) != generation || binary.LittleEndian.Uint32(applied[12:16]) != 3 {
+	if _, err = memory.ReadAt(applied[:], int64(hookBase+statusOffset)); err != nil || binary.LittleEndian.Uint64(applied[:8]) != 0x314445494c505041 || binary.LittleEndian.Uint32(applied[8:12]) != generation || binary.LittleEndian.Uint32(applied[12:16]) != 3 {
 		log.Printf("recorder-hook readback failed: applied encoder generation mismatch")
 		return false
 	}
@@ -458,6 +488,9 @@ func recorderHookLoaded(ctx context.Context) bool {
 }
 
 func restartDriveRecForRecorderHook(ctx context.Context) error {
+	if _, contractOK := recorderArtifactContract(); !contractOK {
+		return errors.New("recorder build contract unavailable")
+	}
 	if !nativeFirmwareMatches(recorderHookInjector, recorderHookInjectorSHA) {
 		return errors.New("recorder runtime injector unavailable")
 	}

@@ -4,15 +4,26 @@ $repo = Split-Path -Parent $PSScriptRoot
 function Check { if ($LASTEXITCODE -ne 0) { throw "Command failed: $LASTEXITCODE" } }
 Push-Location "$repo/frontend"
 try { if (-not $SkipInstall) { npm.cmd ci; Check }; npm.cmd run build; Check } finally { Pop-Location }
+python "$repo/tools/prepare-full-native.py"
+Check
+$recorderContractJSON = python "$repo/tools/verify-recorder-artifacts.py" --json
+Check
+$recorderContract = $recorderContractJSON | ConvertFrom-Json
+$recorderLdflags = '-s -w' +
+    " -X github.com/np1-control-center/ncc/internal/adapters.recorderHookLibrarySHA=$($recorderContract.hookSha256)" +
+    " -X github.com/np1-control-center/ncc/internal/adapters.recorderHookInjectorSHA=$($recorderContract.injectorSha256)" +
+    " -X github.com/np1-control-center/ncc/internal/adapters.recorderHookStatusOffText=$($recorderContract.statusOffset)"
 Push-Location "$repo/backend"
 try {
     & $Go test ./...; Check
     & $Go vet ./...; Check
     $env:CGO_ENABLED='0'; $env:GOOS='linux'; $env:GOARCH='arm64'
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/bin" | Out-Null
-    & $Go build -trimpath -ldflags '-s -w' -o "$repo/artifacts/ncc/bin/ncc" ./cmd/ncc; Check
+    & $Go build -trimpath -ldflags $recorderLdflags -o "$repo/artifacts/ncc/bin/ncc" ./cmd/ncc; Check
     & $Go version -m "$repo/artifacts/ncc/bin/ncc" | Out-File -Encoding utf8 "$repo/artifacts/ncc/build-info.txt"
 } finally { Remove-Item Env:GOOS,Env:GOARCH,Env:CGO_ENABLED -ErrorAction SilentlyContinue; Pop-Location }
+python "$repo/tools/verify-recorder-artifacts.py" --binary "$repo/artifacts/ncc/bin/ncc"
+Check
 Copy-Item -Recurse -Force "$repo/systemd" "$repo/artifacts/ncc/"
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/tools" | Out-Null
 Copy-Item -Force "$repo/tools/device/*" "$repo/artifacts/ncc/tools/"
@@ -23,8 +34,6 @@ Check
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/vpn/bin" | Out-Null
 Copy-Item -Force "$repo/artifacts/ncc-vpn/bin/tailscale","$repo/artifacts/ncc-vpn/bin/tailscaled" "$repo/artifacts/ncc/vpn/bin/"
 Copy-Item -Force "$repo/artifacts/ncc-vpn/source.json" "$repo/artifacts/ncc/vpn/source.json"
-python "$repo/tools/prepare-full-native.py"
-Check
 if (Test-Path "$repo/artifacts/native-helper/ncc-native-setting-helper") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/native-helper/ncc-native-setting-helper" "$repo/artifacts/ncc/experimental/"
@@ -69,8 +78,6 @@ if (Test-Path "$repo/artifacts/recorder-injector/ncc-recorder-injector") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/recorder-injector/ncc-recorder-injector" "$repo/artifacts/ncc/experimental/"
 }
-python "$repo/tools/verify-recorder-artifacts.py"
-Check
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null

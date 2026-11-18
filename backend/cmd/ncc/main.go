@@ -319,6 +319,9 @@ func main() {
 		}
 		return
 	case "self-test":
+		if !adapters.RecorderArtifactContractReady() {
+			log.Fatal("recorder artifact build contract is missing")
+		}
 		fmt.Printf("ncc self-test ok: %s/%s\n", runtime.GOOS, runtime.GOARCH)
 		return
 	case "at-probe":

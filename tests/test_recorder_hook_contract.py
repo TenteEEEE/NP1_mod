@@ -1,12 +1,13 @@
-import hashlib
 import pathlib
-import re
+import subprocess
+import sys
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "artifacts/recorder-hook/libncc-driverec-hook.so"
 INJECTOR = ROOT / "artifacts/recorder-injector/ncc-recorder-injector"
+NCC = ROOT / "artifacts/ncc/bin/ncc"
 
 
 class RecorderHookContractTests(unittest.TestCase):
@@ -211,21 +212,34 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertIn("remote_hook+@REAPPLY_OFFSET@", injector)
         self.assertIn("thaw_threads();", injector)
 
-    @unittest.skipUnless(INJECTOR.is_file(), "recorder injector has not been built")
-    def test_backend_pins_the_packaged_injector_hash(self):
-        source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(encoding="utf8")
-        match = re.search(r'recorderHookInjectorSHA\s*=\s*"([0-9a-f]{64})"', source)
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(1), hashlib.sha256(INJECTOR.read_bytes()).hexdigest())
-
-    @unittest.skipUnless(LIBRARY.is_file(), "recorder hook has not been built")
-    def test_backend_pins_the_packaged_hook_hash(self):
+    def test_build_embeds_the_locally_generated_recorder_contract(self):
         source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
             encoding="utf8"
         )
-        match = re.search(r'recorderHookLibrarySHA\s*=\s*"([0-9a-f]{64})"', source)
-        self.assertIsNotNone(match)
-        self.assertEqual(match.group(1), hashlib.sha256(LIBRARY.read_bytes()).hexdigest())
+        main = (ROOT / "backend/cmd/ncc/main.go").read_text(encoding="utf8")
+        verifier = (ROOT / "tools/verify-recorder-artifacts.py").read_text(encoding="utf8")
+        self.assertIn("var recorderHookLibrarySHA string", source)
+        self.assertIn("var recorderHookInjectorSHA string", source)
+        self.assertIn("var recorderHookStatusOffText string", source)
+        self.assertNotIn("29e2984c16ad7501d3b8bfac445fa2dd96ae70749d4b396dc1403c1dd78c5bf6", source)
+        self.assertIn("RecorderArtifactContractReady()", main)
+        self.assertIn('parser.add_argument("--binary"', verifier)
+        self.assertNotIn("recorder_advanced.go", verifier)
+        for relative in ("tools/build.ps1", "tools/build.sh"):
+            build = (ROOT / relative).read_text(encoding="utf8")
+            self.assertLess(build.index("prepare-full-native.py"), build.index("build -trimpath"), relative)
+            self.assertIn("recorderHookLibrarySHA", build, relative)
+            self.assertIn("recorderHookInjectorSHA", build, relative)
+            self.assertIn("recorderHookStatusOffText", build, relative)
+            self.assertIn("verify-recorder-artifacts.py", build, relative)
+            self.assertIn("--binary", build, relative)
+
+    @unittest.skipUnless(LIBRARY.is_file() and INJECTOR.is_file() and NCC.is_file(), "recorder build outputs are unavailable")
+    def test_packaged_binary_contains_its_generated_contract(self):
+        subprocess.run(
+            [sys.executable, str(ROOT / "tools/verify-recorder-artifacts.py"), "--binary", str(NCC)],
+            check=True,
+        )
 
 
 if __name__ == "__main__":
