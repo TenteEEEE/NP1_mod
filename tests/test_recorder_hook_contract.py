@@ -10,6 +10,54 @@ INJECTOR = ROOT / "artifacts/recorder-injector/ncc-recorder-injector"
 
 
 class RecorderHookContractTests(unittest.TestCase):
+    def test_full_install_build_and_deploy_cannot_silently_omit_native_features(self):
+        required = (
+            "libncc-driverec-hook.so",
+            "ncc-recorder-injector",
+            "ncc-native-setting-helper",
+            "ncc-native-alexa-helper",
+            "ncc-native-setting-extended-helper",
+            "ncc-native-setting-choice-helper",
+            "ncc-native-setting-notification-helper",
+            "ncc-native-audio-helper",
+            "ncc-native-operations-helper",
+            "ncc-native-wifi-sta-helper",
+            "ncc-stock-start-helper",
+        )
+        contract = (ROOT / "tools/full_install_contract.py").read_text(encoding="utf8")
+        prepare = (ROOT / "tools/prepare-full-native.py").read_text(encoding="utf8")
+        deploy = (ROOT / "tools/deploy.py").read_text(encoding="utf8")
+        for name in required:
+            self.assertIn(name, contract)
+        for builder in (
+            "build-native-helper.py",
+            "build-native-operations-helper.py",
+            "build-recorder-hook.py",
+            "build-recorder-injector.py",
+        ):
+            self.assertIn(builder, prepare)
+        self.assertIn("missing_full_install_files(bundle)", deploy)
+        self.assertLess(deploy.index("missing_full_install_files(bundle)"), deploy.index("'push'"))
+        for build in ("tools/build.ps1", "tools/build.sh"):
+            self.assertIn("prepare-full-native.py", (ROOT / build).read_text(encoding="utf8"))
+
+    def test_both_fresh_installers_require_full_hook_before_device_mutation(self):
+        for relative in ("tools/device/install.sh", "tools/device/install-owner-recovery.sh"):
+            source = (ROOT / relative).read_text(encoding="utf8")
+            for name in (
+                "experimental/libncc-driverec-hook.so",
+                "experimental/ncc-recorder-injector",
+                "experimental/ncc-native-setting-helper",
+                "experimental/ncc-native-operations-helper",
+            ):
+                self.assertIn(name, source, relative)
+            self.assertIn("Full install component missing", source)
+        verify = (ROOT / "tools/device/verify.sh").read_text(encoding="utf8")
+        self.assertIn("np1-control-native.service", verify)
+        self.assertIn("/api/v1/device/recorder-advanced", verify)
+        self.assertIn("H.264 recorder hook was not loaded", verify)
+        self.assertIn('b\'"applied":true\' in recorder', verify)
+
     def test_drive_rec_preload_dropin_is_removed(self):
         self.assertFalse((ROOT / "systemd/90-ncc-recorder-hook.conf").exists())
         for relative in ("tools/device/install.sh", "tools/device/install-owner-recovery.sh", "tools/device/recorder-hook-update.sh"):

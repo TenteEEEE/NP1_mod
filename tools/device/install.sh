@@ -13,6 +13,21 @@ grep -q '^VERSION_ID="202404231204"' /etc/os-release
 test -f /etc/init.post_boot.sh
 test ! -L "$BASE"
 for cmd in sha256sum systemctl useradd python3; do command -v "$cmd" >/dev/null; done
+for required in \
+    experimental/libncc-driverec-hook.so \
+    experimental/ncc-recorder-injector \
+    experimental/ncc-native-setting-helper \
+    experimental/ncc-native-alexa-helper \
+    experimental/ncc-native-setting-extended-helper \
+    experimental/ncc-native-setting-choice-helper \
+    experimental/ncc-native-setting-notification-helper \
+    experimental/ncc-native-audio-helper \
+    experimental/ncc-native-operations-helper \
+    experimental/ncc-native-wifi-sta-helper \
+    experimental/ncc-stock-start-helper
+do
+    test -f "$STAGE/$required" || { echo "Full install component missing: $required" >&2; exit 1; }
+done
 cd "$STAGE"
 sha256sum -c SHA256SUMS
 /bin/chmod 0755 bin/ncc
@@ -107,14 +122,12 @@ if test -f experimental/ncc-stock-start-helper; then
     chmod 0600 "$BASE/experimental/ncc-stock-start-helper.new"
     mv -f "$BASE/experimental/ncc-stock-start-helper.new" "$BASE/experimental/ncc-stock-start-helper"
 fi
-if test -f experimental/libncc-driverec-hook.so; then
-    cp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY.new"
-    chmod 0555 "$RECORDER_LIBRARY.new"
-    mv -f "$RECORDER_LIBRARY.new" "$RECORDER_LIBRARY"
-    # Runtime injection is performed only after stock recording is healthy.
-    # Remove the legacy LD_PRELOAD drop-in, which runs too early in DriveRec.
-    rm -f "$RECORDER_DROPIN"
-fi
+cp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY.new"
+chmod 0555 "$RECORDER_LIBRARY.new"
+mv -f "$RECORDER_LIBRARY.new" "$RECORDER_LIBRARY"
+# Runtime injection is performed only after stock recording is healthy.
+# Remove the legacy LD_PRELOAD drop-in, which runs too early in DriveRec.
+rm -f "$RECORDER_DROPIN"
 if test -f experimental/ncc-native-setting-helper; then
     mkdir -p "$BASE/experimental"
     chmod 0700 "$BASE/experimental"
@@ -195,11 +208,10 @@ sh -n /etc/init.post_boot.sh
 touch "$BASE/enabled"
 sync
 systemctl daemon-reload
-if test -f experimental/libncc-driverec-hook.so; then
-    cmp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY"
-    test ! -e "$RECORDER_DROPIN"
-    ! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
-fi
+cmp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY"
+cmp experimental/ncc-recorder-injector "$RECORDER_INJECTOR"
+test ! -e "$RECORDER_DROPIN"
+! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
 touch /run/xtables.lock
 systemctl restart np1-control-firewall.service
 systemctl restart np1-control-ota-guard.service
