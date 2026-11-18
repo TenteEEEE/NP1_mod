@@ -52,7 +52,7 @@
 - `app-@DriveRec.service` の純正 unit は変更せず、NCC 所有の `90-ncc-recorder-hook.conf` drop-in だけで起動フックを設定する。実行不可マウントの永続領域から `ExecStartPre` で `/run/np1-control-recorder-hook` へ一時コピーし、そのコピーを `LD_PRELOAD` する。起動のたびにフックが新しいプロセスへ読み込まれ、プロセス終了とともに一時コピーとメモリ変更は消える。
 - 既存の所有者用復旧サービス構成は `tools/device/recorder-hook-update.sh` で更新する。NCCバイナリ、broker unit、hook、drop-inを個別バックアップし、失敗時はすべて復元する。更新そのものでは `DriveRec` を再起動せず、純正6サービスのPID・InvocationID・状態を更新前後で比較する。
 - preload ライブラリは、`/proc/self/exe` が上記 SHA-256 と一致し、`StartOrdinaryRecording` 2種類と `StopOrdinaryRecording` の先頭命令16バイトが解析済みの値と一致した場合だけ、AArch64 の絶対ジャンプへ置き換える。未知のファームウェアでは純正動作を維持する。
-- `NPMPS_CreateVideoEncodeStreamer` を interpose し、実機で観測した純正既定値 10,000,000 bps を前方（通常・タイムラプス）、4,000,000 bps を車内として識別する。各カメラのターゲットビットレート、CBR/VBR、GOPミリ秒を、streamer 作成前のエンコード構造体へ反映する。
+- `NPMPS_CreateVideoEncodeStreamer` を interpose し、実機で観測した純正既定値 10,000,000 bps を前方（通常・タイムラプス）、4,000,000 bps（1080p）または2,000,000 bps（720p）を車内として識別する。各カメラのターゲットビットレート、CBR/VBR、GOPミリ秒を、streamer 作成前のエンコード構造体へ反映する。
 - `DriveRec` の `0x165fa8` 呼出し直前の値コピーと純正ログ文字列を突き合わせ、`NPMultimediaPlayerVideoEncodeProperty` のレイアウトを `frameRate:+0 / width:+8 / height:+12 / codecType:+16 / bitrateType:+24 / bitrate:+28 / KeyFrameInterval:+32` と確定した。実機診断で最初に `+24` を読み `2`（VBR）となったため、ビットレートは `+28` へ訂正した。実機でエンコード解像度 `1920x1080`、codec enum `9` がH.264であることも確認した。書換え時はこの解像度、H.264、純正既定ビットレートを同時に検証し、いずれかが異なる場合は純正値を保持する。
 - 車内録画 OFF では、車内カメラに対する通常録画の start / stop を成功応答で抑止し、前方カメラは純正処理へ委譲する。これは通常連続録画の経路に限定した実装であり、イベント録画や駐車録画まで停止することは未確認である。
 - テキストページの保護を RX に戻せない場合は元命令へ復元する。さらに RX 復元も失敗した場合はプロセスを終了し、RWX のまま録画を継続しない。
@@ -95,11 +95,12 @@
 ## SD未挿入時のライブビュー調査
 
 - JPEGライブビューはSDなしでも取得でき、実機でHTTP 200のJPEGフレームを確認した。
-- H.264ライブビューは純正SD上のMP4を追尾する実装のため、SD未挿入では `CAMERA_H264_UNAVAILABLE` / 「映像の準備を待っています」となる。通信速度低下ではなく、H.264入力ファイルが存在しないことが原因である。
+- 従来のH.264ライブビューは純正SD上のMP4を追尾していたため、SD未挿入では `CAMERA_H264_UNAVAILABLE` になっていた。現在は後述のエンコーダ直結経路を優先するため、ライブビュー自体はSDを必要としない。
+- ただし純正 `DriveRec` が車両状態やSD異常を理由にエンコーダを停止した場合は入力が存在しない。この場合は通信速度とは無関係に「カメラ出力の再開を待っています」となり、出力再開後に自動接続する。
 
 ## 追加検証
 
-- フック設定parser・ARM64ビルド、frontend build、全Go test/vet、Python unittest 153件に合格した。
+- フック設定parser・ARM64ビルド、frontend build、全Go test/vet、Python unittestに合格した。
 - ローカルViteを使った録画設定・再生E2Eは7件すべて合格し、分割時間240秒の送信と、純正設定カード／詳細設定カード間の16px以上の余白を検証した。
 - 実機配備時は `recorder-hook-update` を使い、更新前後の純正サービス状態を比較する。分割時間240秒でメモリread-back後、180秒へ復帰し、Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherComを最終確認する。
 
@@ -112,3 +113,45 @@
 - 永続領域と `/run` のフックSHA-256はともに `30bec62fe052808da9ad17d08be32e060143440f2543523a3bb2f75fe2dd0d40` で配布物と一致した。
 - SD未挿入状態でも前方JPEG 49,286 bytes、車内JPEG 5,154 bytesを取得した。SD範囲検証は `NO_SD` としてskipし、Webパスワードなし、パストラバーサル拒否、バックアップ情報の秘匿も合格した。
 - Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherCom はすべて `active/running`、`Result=success`、`NRestarts=0` だった。
+
+## エンコーダ直結の低遅延ライブビュー
+
+- `libNPMultimediaPlayerStack.so` の `MPS_StreamBuffer` vtableにある圧縮済みaccess unit書込みを、対象ライブラリのロードアドレスと固定offsetを検証した上でプロセスメモリ上だけ差し替える。純正ライブラリ、`DriveRec`、設定ファイルは変更しない。
+- フックはSPS/PPSとIDRを含むH.264 access unitを前方／車内の固定Unix datagram socketへ送る。60KBに分割し、`MSG_DONTWAIT | MSG_NOSIGNAL`を使うため、閲覧側の遅延や切断で純正録画スレッドを待たせない。欠落時は次のIDRまで配信を止め、破損したGOPを表示しない。
+- Web/API側はaccess unitを再エンコードせず、Annex BからAVCCへ変換して1 access unitずつfragmented MP4へ格納する。応答の `X-Camera-Source: encoder` でSD追尾ではないことを確認できる。旧プロセスとの移行互換として、直結経路が起動前の場合だけ既存MP4追尾へフォールバックする。
+- 初回IDRは5秒まで待ち、配信開始後に4秒間出力がなければHTTP応答を終了する。ブラウザは1.5秒間隔で再接続し、再生位置をbuffer末尾の約0.25秒以内へ追従させる。純正エンコーダが休止しても古い接続を保持し続けない。
+- 実機でエンコーダ稼働中の前方を直接取得し、`1920x1080`、H.264 `avc1.428028`、約27fps、映像のみ、60フレームをffprobeで確認した。約3MBの保存データはffmpegでエラーなく全フレームをデコードできた。映像・生ログはignored `tmp/`だけに保存した。
+- 検証台の最終試験ではSD容量状態を純正側が異常と判定し、通常録画を開始直後に停止した。`DriveRec`ログの「Failure to secure SD free space」と各encoder thread終了を確認しており、回線速度による待機ではない。
+
+## 録画再生と設定画面の導線
+
+- 日付を開いた時、URLに明示的な `at` がなければ、現在のカメラ表示条件に合う最新ファイルの開始時刻へシークする。URL指定がある場合は従来どおりその時刻を優先する。
+- 録画設定本体は「システム > 録画設定」タブへ移した。ドラレコ再生画面右上の「録画設定」は `#system/recorder` へのリンクであり、再生画面内に設定フォームを重複表示しない。
+- Playwrightでは最新前方ファイルの時刻への初期シーク、設定リンクからシステムタブへの遷移、任意ビットレート・車内録画OFF・分割時間の送信を検証する。
+
+## 2026-11-18 最終配備記録
+
+- `recorder-hook-update` でWeb/APIと起動フックを配備し、永続領域と `/run` のフックSHA-256が `c6d4a270733366bbccbaf3191d4c7feed5ebd983041c4c96f67b44f547b764fa` で一致した。NCC本体も永続領域と `/run` で一致した。
+- 配備処理は純正サービスを再起動せずに完了し、録画設定の即時適用操作だけが `DriveRec` を再起動した。フックvtable、設定世代、プロセスマッピングをread-backし、`hookLoaded:true` / `applied:true` を確認した。
+- 試験中だけ純正相当の前方10,000／車内2,000kbpsを使用し、試験後は利用者設定の前方2,000／車内1,000kbps、VBR、GOP 1,000ms、車内録画ON、分割180秒へ復元した。ブート自動適用の最終generationは26。
+- 配備途中にoverlay空き容量が不足した際は、当該作業中に生成された不完全な復旧世代3件だけを削除し、完全な復旧世代からNCCを復元した。その3件は復元不能だが、成功配備後の完全な復旧バックアップを保持している。
+- Windows側のWi-Fi接続先、プロファイル、接続状態は変更していない。ADBは利用者指定の実機だけに固定した。
+
+## 本体案内音量
+
+- 利用者指示により純正 function `0x400` のmaster volumeを1から0へ変更した。変更要求の相関応答はタイムアウトしたため再送せず、純正起動系列を復旧した後の独立GETで0を確認した。
+- 対象実機を1回再起動し、純正 `Setting` の通常起動完了後にもmaster volumeが0であることをread-backした。プロセス内だけの一時変更ではなく、再起動後も維持される保存設定である。
+- この過程で `tools/reboot-test.py` が `verify.sh` をstageしていない不具合と、再起動直後にハードウェア検証を1回しか試さない競合を修正した。再起動前の検証を必須にし、復帰後は最大90秒だけ検証可能状態を待つ。
+
+## ブート時の録画フック自動適用
+
+- 実機では純正 `DriveRec` がブート直後に起動し、永続 `/etc` overlay上のNCC所有drop-inがsystemdから見えるのはNCC broker起動時だった。この順序では、drop-in自体が永続でも初回 `DriveRec` プロセスには `LD_PRELOAD` されない。
+- broker起動8秒後にフックのプロセスメモリread-backを1回行い、未ロードの場合だけ既存の型付きサービス操作で `DriveRec` を再起動する。再起動後は純正AppManager起動バリアを通知し、ライブラリmapping、4か所のメモリフック、設定世代を確認する。
+- この自動調停はuptime 15分以内に限定した。走行中などにbrokerだけを後から再起動した場合、利用者確認なしで録画を中断しない。
+- 配備後に実機を再起動し、ADB、HTTP/HTTPS、前後JPEG、SD range、純正サービスを検証した。その後、手動適用なしで `hookLoaded:true`、`applied:true`、generation 26、前方2,000／車内1,000kbps、分割180秒をread-backした。
+- 同じ再起動後にmaster volume 0も再確認した。Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherComはすべてactive/running、`Result=success`、`NRestarts=0`。
+
+## 復旧世代の容量管理
+
+- `/overlay` が99%に達して更新余地がなくなったため、固定ディレクトリを`readlink -f`で検証する `recorder-hook-prune` を追加した。録画フック復旧世代だけを対象にし、最新4世代を残す。
+- 実機では古い11世代を削除して172.9MBを確保し、その後の成功配備で新しい完全バックアップを1世代追加した。現在は最新の完全な復旧世代を5件保持し、空き158.4MB。

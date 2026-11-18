@@ -43,6 +43,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
  test('desktop calendar, recorded intervals, empty gaps and original audio',async({page})=>{
   const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
   await page.setViewportSize({width:1440,height:1100});await open(page)
+  await expect(page.getByRole('slider',{name:'前方カメラの録画時間バー'})).toHaveAttribute('aria-valuetext','12:00:19')
   await expect(page.locator('.drive-calendar')).toBeVisible()
   await expect(page.locator('.drive-calendar-grid button.recorded')).toHaveCount(1)
   await expect(page.locator('.recorded-range-list button')).toHaveCount(2)
@@ -84,7 +85,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
   await page.screenshot({path:'../tmp/review-playback-narrow.png',fullPage:true})
   const lane=page.getByRole('slider',{name:'前方カメラの録画時間バー'})
   await lane.focus();await page.keyboard.press('ArrowRight')
-  await expect(lane).toHaveAttribute('aria-valuetext','12:00:10')
+  await expect(lane).toHaveAttribute('aria-valuetext','12:00:29')
  })
  test('recording settings apply one camera preset and playback shows both measured rates',async({page})=>{
   await page.setViewportSize({width:320,height:780})
@@ -109,7 +110,8 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
    }
    return route.fulfill({json:advanced})
   })
-  await page.getByRole('button',{name:'録画設定',exact:true}).click()
+  await page.getByRole('link',{name:'録画設定',exact:true}).click()
+  await expect(page).toHaveURL(/#system\/recorder$/)
   const stockCard=page.locator('section[aria-label="ドライブレコーダーの本体操作"]'),advancedCard=page.locator('section[aria-label="H.264詳細録画設定"]')
   const [stockBox,advancedBox]=await Promise.all([stockCard.boundingBox(),advancedCard.boundingBox()])
   expect(stockBox).not.toBeNull();expect(advancedBox).not.toBeNull();expect(advancedBox!.y-(stockBox!.y+stockBox!.height)).toBeGreaterThanOrEqual(16)
@@ -124,6 +126,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
   await page.getByLabel('録画サービスの再起動を許可する').check()
   await page.getByRole('button',{name:'保存して録画サービスを再起動'}).click()
   await expect(page.getByRole('status').filter({hasText:'起動時フック'})).toBeVisible()
+  await page.goto(reviewURL!+'/#recordings')
   await page.getByRole('button',{name:'並べて表示',exact:true}).click()
   await expect(page.locator('.drive-video-label').nth(0)).toContainText('平均 9.50 Mbps')
   await expect(page.locator('.drive-video-label').nth(1)).toContainText('平均 3.25 Mbps')
@@ -141,6 +144,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
  test('overlapping file boundary continues without replaying the overlap',async({page})=>{
   test.skip(!existsSync(mediaPath),'Generate optional synthetic MP4 with tools/create-playback-test-media.ps1')
   await open(page)
+  await page.getByLabel('再生する時刻を指定').fill('12:00:00')
   let video=page.locator('.drive-videos video')
   await expect.poll(()=>video.evaluate(element=>(element as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(2)
   await video.evaluate(element=>{const media=element as HTMLVideoElement;media.currentTime=19.9;return media.play()})

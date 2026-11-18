@@ -301,15 +301,19 @@ func (t *cameraH264Tail) Next(ctx context.Context) ([]h264tail.Sample, error) {
 var cameraH264Slots = make(chan struct{}, 2)
 var cameraH264StartMu sync.Mutex
 var cameraH264DiagnosticMu sync.Mutex
+var cameraH264SourceMu [2]sync.Mutex
 
-// HandleCameraH264 reads only stock MP4 data. The original AVC access-unit bytes
-// are remuxed for MSE. No camera device/session/encoder or source file is changed.
+// HandleCameraH264 first consumes access units copied immediately after the
+// stock encoder. The SD tail remains a compatibility fallback for a DriveRec
+// process that has not yet restarted with the current hook. Neither path opens
+// a camera, creates an encoder, nor changes a stock recording.
 func HandleCameraH264(w http.ResponseWriter, r *http.Request) {
 	if len(r.URL.Query()) != 1 || len(r.URL.Query()["source"]) != 1 {
 		http.Error(w, "invalid camera source", 400)
 		return
 	}
-	if source := r.URL.Query().Get("source"); source != "front" && source != "in" {
+	source := r.URL.Query().Get("source")
+	if source != "front" && source != "in" {
 		http.Error(w, "invalid camera source", 400)
 		return
 	}
@@ -318,6 +322,18 @@ func HandleCameraH264(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-cameraH264Slots }()
 	default:
 		http.Error(w, "camera streams busy", 429)
+		return
+	}
+	sourceIndex := 0
+	if source == "in" {
+		sourceIndex = 1
+	}
+	if !cameraH264SourceMu[sourceIndex].TryLock() {
+		http.Error(w, "camera source busy", 429)
+		return
+	}
+	defer cameraH264SourceMu[sourceIndex].Unlock()
+	if err := serveCameraEncoderH264(w, r, source); err == nil {
 		return
 	}
 	if !cameraH264StartMu.TryLock() {
@@ -329,7 +345,7 @@ func HandleCameraH264(w http.ResponseWriter, r *http.Request) {
 			return "", errors.New("no SD")
 		}
 		return recordingMountToken(SDRoot)
-	}, time.Now}, r.URL.Query().Get("source"))
+	}, time.Now}, source)
 	cameraH264StartMu.Unlock()
 	if err != nil {
 		http.Error(w, "camera recording unavailable", 503)
@@ -360,6 +376,7 @@ func HandleCameraH264(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Camera-Height", strconv.Itoa(int(tail.config.Height)))
 	w.Header().Set("X-Camera-FPS", fmt.Sprintf("%.3f", float64(tail.config.Timescale)/float64(tail.config.SampleDuration)))
 	w.Header().Set("X-Camera-Audio", "none")
+	w.Header().Set("X-Camera-Source", "sd-tail")
 	controller := http.NewResponseController(w)
 	write := func(data []byte) error {
 		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))

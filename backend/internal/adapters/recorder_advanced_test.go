@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
@@ -91,5 +92,48 @@ func TestRecorderAdvancedHandlerRequiresGenerationAndRestartConfirmation(t *test
 	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
 	if response.Code != 202 || restarts != 2 || readRecorderApplied(recorderAdvancedAppliedPath) != 0 {
 		t.Fatalf("failed restart retained applied generation: %d %d", response.Code, restarts)
+	}
+}
+
+func TestEnsureRecorderHookAtBootRestartsOnceAndCommitsGeneration(t *testing.T) {
+	directory := t.TempDir()
+	originalPath, originalAppliedPath := recorderAdvancedConfigPath, recorderAdvancedAppliedPath
+	originalAvailable, originalLoaded := recorderAdvancedAvailable, recorderAdvancedLoaded
+	originalRestart, originalUptime := recorderAdvancedRestart, recorderBootUptime
+	recorderAdvancedConfigPath = filepath.Join(directory, "recorder", "config")
+	recorderAdvancedAppliedPath = filepath.Join(directory, "recorder", "applied-generation")
+	settings := defaultRecorderAdvancedSettings()
+	if err := writeRecorderAdvanced(recorderAdvancedConfigPath, settings, 7); err != nil {
+		t.Fatal(err)
+	}
+	recorderBootUptime = func() (time.Duration, error) { return 30 * time.Second, nil }
+	recorderAdvancedAvailable = func() bool { return true }
+	loaded, restarts := false, 0
+	recorderAdvancedLoaded = func(context.Context) bool { return loaded }
+	recorderAdvancedRestart = func(context.Context) error { restarts++; loaded = true; return nil }
+	t.Cleanup(func() {
+		recorderAdvancedConfigPath, recorderAdvancedAppliedPath = originalPath, originalAppliedPath
+		recorderAdvancedAvailable, recorderAdvancedLoaded = originalAvailable, originalLoaded
+		recorderAdvancedRestart, recorderBootUptime = originalRestart, originalUptime
+	})
+	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if restarts != 1 || readRecorderApplied(recorderAdvancedAppliedPath) != 7 {
+		t.Fatalf("restarts=%d applied=%d", restarts, readRecorderApplied(recorderAdvancedAppliedPath))
+	}
+}
+
+func TestEnsureRecorderHookAtBootDoesNotInterruptLateBrokerRestart(t *testing.T) {
+	originalUptime, originalAvailable, originalRestart := recorderBootUptime, recorderAdvancedAvailable, recorderAdvancedRestart
+	recorderBootUptime = func() (time.Duration, error) { return 16 * time.Minute, nil }
+	recorderAdvancedAvailable = func() bool { return true }
+	restarts := 0
+	recorderAdvancedRestart = func(context.Context) error { restarts++; return nil }
+	t.Cleanup(func() {
+		recorderBootUptime, recorderAdvancedAvailable, recorderAdvancedRestart = originalUptime, originalAvailable, originalRestart
+	})
+	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil || restarts != 0 {
+		t.Fatalf("late reconciliation = %v, restarts=%d", err, restarts)
 	}
 }

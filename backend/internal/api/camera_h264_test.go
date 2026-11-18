@@ -69,7 +69,7 @@ func TestCameraH264KeepsSessionOwnerAndFixedSource(t *testing.T) {
 		if r.URL.Host != "broker" || r.URL.Path != "/camera/h264" || r.URL.RawQuery != "source=front" {
 			t.Error("nonfixed camera target", r.URL)
 		}
-		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"video/mp4"}, "X-Camera-Codec": []string{"avc1.42c028"}}, Body: io.NopCloser(strings.NewReader("synthetic-fragment"))}, nil
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"video/mp4"}, "X-Camera-Codec": []string{"avc1.42c028"}, "X-Camera-Source": []string{"encoder"}}, Body: io.NopCloser(strings.NewReader("synthetic-fragment"))}, nil
 	})
 	server := httptest.NewServer(s.Handler())
 	defer server.Close()
@@ -98,7 +98,7 @@ func TestCameraH264KeepsSessionOwnerAndFixedSource(t *testing.T) {
 	r = request(t, client, server, "GET", "/camera/sessions/"+camera.ID+"/h264", "", nil)
 	data, _ := io.ReadAll(r.Body)
 	r.Body.Close()
-	if r.StatusCode != 200 || r.Header.Get("X-Camera-Codec") != "avc1.42c028" || string(data) != "synthetic-fragment" || calls != 1 {
+	if r.StatusCode != 200 || r.Header.Get("X-Camera-Codec") != "avc1.42c028" || r.Header.Get("X-Camera-Source") != "encoder" || string(data) != "synthetic-fragment" || calls != 1 {
 		t.Fatal("MSE stream metadata/body not forwarded", r.StatusCode)
 	}
 	s.mu.Lock()

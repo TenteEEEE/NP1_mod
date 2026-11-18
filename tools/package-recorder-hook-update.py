@@ -13,6 +13,7 @@ FILES = (
     "systemd/90-ncc-recorder-hook.conf",
     "systemd/np1-control-broker.service",
     "tools/recorder-hook-update.sh",
+    "tools/recorder-hook-prune.sh",
     "tools/run.sh",
     "tools/verify.sh",
     "LICENSE",

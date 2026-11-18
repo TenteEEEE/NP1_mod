@@ -73,13 +73,14 @@ class RecorderHookContractTests(unittest.TestCase):
             "u32 keyframe_interval_ms;",
             "u32 tail_padding;",
         ]
-        positions = [source.index(field) for field in fields]
+        layout = source[source.index("struct video_encode_property {") :]
+        positions = [layout.index(field) for field in fields]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("property->width==1920u", source)
         self.assertIn("property->height==1080u", source)
         self.assertIn("property->codec_type==9u", source)
-        self.assertIn("property->bitrate_bps==10000000u", source)
-        self.assertIn("property->bitrate_bps==4000000u", source)
+        self.assertIn("stock_bitrate==10000000u", source)
+        self.assertIn("stock_bitrate==4000000u", source)
         self.assertIn("front encoder bitrate applied=", source)
         self.assertIn("cabin encoder bitrate applied=", source)
         self.assertNotIn("property[6]", source)
@@ -103,6 +104,16 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertIn("0x14c774:'86168052'", build)
         self.assertIn("imageBase+0x14c774", backend)
         self.assertIn("settings.SegmentSeconds<<5", backend)
+
+    def test_encoder_live_tap_is_nonblocking_and_read_back(self):
+        hook = (ROOT / "tools/native/recorder-hook.c").read_text(encoding="utf8")
+        backend = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
+            encoding="utf8"
+        )
+        self.assertIn('dlsym(RTLD_NEXT,"_ZTV16MPS_StreamBuffer")', hook)
+        self.assertIn("MSG_DONTWAIT|MSG_NOSIGNAL", hook)
+        self.assertIn("LIVE_CHUNK_SIZE 60000", hook)
+        self.assertIn("multimediaBase+0x1970a0", backend)
 
     def test_loaded_readback_hashes_the_runtime_copy(self):
         source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(

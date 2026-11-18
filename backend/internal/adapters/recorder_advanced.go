@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"log"
@@ -23,7 +24,7 @@ const (
 	recorderHookLibrary    = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
 	recorderHookConfig     = "/overlay/owner-apps/np1-control/recorder-hook/config"
 	recorderHookApplied    = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
-	recorderHookLibrarySHA = "30bec62fe052808da9ad17d08be32e060143440f2543523a3bb2f75fe2dd0d40"
+	recorderHookLibrarySHA = "c6d4a270733366bbccbaf3191d4c7feed5ebd983041c4c96f67b44f547b764fa"
 	recorderDriveRecSHA    = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
 	recorderConfigSize     = 64
 	recorderConfigVersion  = 1
@@ -65,6 +66,21 @@ var recorderAdvancedAppliedPath = recorderHookApplied
 var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA) }
 var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
+var recorderBootUptime = func() (time.Duration, error) {
+	data, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0, err
+	}
+	fields := strings.Fields(string(data))
+	if len(fields) == 0 {
+		return 0, errors.New("missing uptime")
+	}
+	seconds, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil || seconds < 0 {
+		return 0, errors.New("invalid uptime")
+	}
+	return time.Duration(seconds * float64(time.Second)), nil
+}
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
 	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true, SegmentSeconds: 180}
@@ -264,7 +280,7 @@ func recorderHookLoaded(ctx context.Context) bool {
 		log.Printf("recorder-hook readback failed: process maps unavailable")
 		return false
 	}
-	var imageBase, hookStart, hookEnd uint64
+	var imageBase, multimediaBase, hookStart, hookEnd uint64
 	for _, line := range strings.Split(string(maps), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
@@ -283,11 +299,14 @@ func recorderHookLoaded(ctx context.Context) bool {
 		if fields[5] == "/usr/local/bin/DriveRec" && offset == 0 {
 			imageBase = start
 		}
+		if strings.HasSuffix(fields[5], "/libNPMultimediaPlayerStack.so") && offset == 0 {
+			multimediaBase = start
+		}
 		if fields[5] == recorderHookLibrary && strings.Contains(fields[1], "x") {
 			hookStart, hookEnd = start, end
 		}
 	}
-	if imageBase == 0 || hookStart == 0 || hookEnd <= hookStart {
+	if imageBase == 0 || multimediaBase == 0 || hookStart == 0 || hookEnd <= hookStart {
 		log.Printf("recorder-hook readback failed: executable mapping unavailable")
 		return false
 	}
@@ -320,6 +339,19 @@ func recorderHookLoaded(ctx context.Context) bool {
 			return false
 		}
 	}
+	// The pinned MPS_StreamBuffer vtable has write() at symbol+40
+	// (image offset 0x1970a0). It must point into the executable hook mapping;
+	// a loaded .so without this process-memory patch is not sufficient proof.
+	var streamWrite [8]byte
+	if _, err = memory.ReadAt(streamWrite[:], int64(multimediaBase+0x1970a0)); err != nil {
+		log.Printf("recorder-hook readback failed: stream write vtable unavailable")
+		return false
+	}
+	streamWriteTarget := binary.LittleEndian.Uint64(streamWrite[:])
+	if streamWriteTarget < hookStart || streamWriteTarget >= hookEnd {
+		log.Printf("recorder-hook readback failed: stream write hook target mismatch")
+		return false
+	}
 	return true
 }
 
@@ -335,6 +367,37 @@ func restartDriveRecForRecorderHook(ctx context.Context) error {
 	defer stockServiceMu.Unlock()
 	_, err = controlStockService(ctx, "drive-rec", stockServiceRequest{Action: "restart", ExpectedInvocationID: services[0].InvocationID, ExpectedState: services[0].State}, stockServiceRuntime())
 	return err
+}
+
+// EnsureRecorderHookAtBoot reconciles the boot-order case where DriveRec is
+// started before the persistent /etc overlay (and therefore its NCC-owned
+// drop-in) becomes visible to systemd.  It is intentionally limited to the
+// early boot window: a later broker restart must not interrupt an in-progress
+// recording without an explicit owner action.
+func EnsureRecorderHookAtBoot(ctx context.Context) error {
+	uptime, err := recorderBootUptime()
+	if err != nil {
+		return fmt.Errorf("recorder boot uptime: %w", err)
+	}
+	if uptime > 15*time.Minute || !recorderAdvancedAvailable() || recorderAdvancedLoaded(ctx) {
+		return nil
+	}
+	if err = recorderAdvancedRestart(ctx); err != nil {
+		return fmt.Errorf("recorder boot hook restart: %w", err)
+	}
+	if !recorderAdvancedLoaded(ctx) {
+		return errors.New("recorder boot hook read-back failed")
+	}
+	_, generation, configured, err := readRecorderAdvanced(recorderAdvancedConfigPath)
+	if err != nil {
+		return fmt.Errorf("recorder boot config read-back: %w", err)
+	}
+	if configured && readRecorderApplied(recorderAdvancedAppliedPath) != generation {
+		if err = writeRecorderApplied(recorderAdvancedAppliedPath, generation); err != nil {
+			return fmt.Errorf("recorder boot generation: %w", err)
+		}
+	}
+	return nil
 }
 
 func recorderAdvancedState(ctx context.Context) (RecorderAdvancedState, error) {

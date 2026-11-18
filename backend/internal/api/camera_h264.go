@@ -58,7 +58,7 @@ func (s *Server) cameraH264(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "CAMERA_H264_UNAVAILABLE", "映像の準備を待っています")
 		return
 	}
-	for _, key := range []string{"Content-Type", "X-Camera-Codec", "X-Camera-Width", "X-Camera-Height", "X-Camera-FPS", "X-Camera-Audio"} {
+	for _, key := range []string{"Content-Type", "X-Camera-Codec", "X-Camera-Width", "X-Camera-Height", "X-Camera-FPS", "X-Camera-Audio", "X-Camera-Source"} {
 		if value := response.Header.Get(key); value != "" {
 			w.Header().Set(key, value)
 		}

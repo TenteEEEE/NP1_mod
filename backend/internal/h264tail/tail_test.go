@@ -109,6 +109,60 @@ func au(c Config, frame uint32, key bool) []byte {
 	return b
 }
 
+func annexFromAVCC(t *testing.T, data []byte) []byte {
+	t.Helper()
+	if len(data) < 6 {
+		t.Fatal("short AVCC fixture")
+	}
+	var out []byte
+	for at := 6; at < len(data); {
+		if at+4 > len(data) {
+			t.Fatal("truncated AVCC fixture")
+		}
+		n := int(binary.BigEndian.Uint32(data[at : at+4]))
+		at += 4
+		if n <= 0 || at+n > len(data) {
+			t.Fatal("invalid AVCC fixture")
+		}
+		out = append(out, 0, 0, 0, 1)
+		out = append(out, data[at:at+n]...)
+		at += n
+	}
+	return out
+}
+
+func TestAnnexBEncoderOutputConversion(t *testing.T) {
+	want := fixture(t)
+	parameters := append([]byte{0, 0, 0, 1}, want.sps...)
+	parameters = append(parameters, 0, 0, 1)
+	parameters = append(parameters, want.pps...)
+	got, err := ConfigFromAnnexB(parameters, 27000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Width != want.Width || got.Height != want.Height || got.Timescale != 90000 || got.SampleDuration != 3333 || !bytes.Equal(got.sps, want.sps) || !bytes.Equal(got.pps, want.pps) {
+		t.Fatalf("unexpected encoder configuration: %+v", got)
+	}
+	for frame, key := range []bool{true, false} {
+		converted, err := got.SampleFromAnnexB(annexFromAVCC(t, au(want, uint32(frame), key)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if converted.Keyframe != key || converted.FrameNumber != uint32(frame) {
+			t.Fatalf("unexpected sample: %+v", converted)
+		}
+		if _, err := got.Fragment(uint32(frame+1), uint64(frame)*uint64(got.SampleDuration), []Sample{converted}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := ConfigFromAnnexB(parameters, 0); err == nil {
+		t.Fatal("zero encoder frame rate accepted")
+	}
+	if _, err := got.SampleFromAnnexB([]byte{0, 0, 1, 0x41}); err == nil {
+		t.Fatal("truncated slice accepted")
+	}
+}
+
 func TestIncrementalAVCCOnly(t *testing.T) {
 	c := fixture(t)
 	stream := append(au(c, 0, true), bytes.Repeat([]byte{0xee}, 17)...)

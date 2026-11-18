@@ -6,7 +6,6 @@ import { api,bytes,type Observation } from '../services/api'
 import '../drive-playback.css'
 import CameraViewSwitch from './CameraViewSwitch.vue'
 import PlaybackTrack from './PlaybackTrack.vue'
-import NativeOperations from './NativeOperations.vue'
 
 type Camera='front'|'in'
 type ViewMode=Camera|'both'
@@ -15,7 +14,6 @@ type Day={date:string;count:number;frontCount:number;cabinCount:number;recordedS
 type Catalog={clips:Clip[];days:Day[];pendingFiles:number;unreadableFiles:number;truncated:boolean;timezone:string;indexedAt:string}
 const catalog=ref<Catalog>(),loading=ref(true),error=ref(''),notice=ref(''),viewMode=ref<ViewMode>('front'),speed=ref(1),zoomHours=ref(24),cursor=ref(0),windowStart=ref(0),playing=ref(false),calendarOpen=ref(false)
 const selectedDate=ref(todayJST()),month=ref(selectedDate.value.slice(0,7)),selected=ref<Record<Camera,Clip|null>>({front:null,in:null}),playIntent=ref(false)
-const recordingSettingsOpen=ref(false)
 const videoElements:Partial<Record<Camera,HTMLVideoElement>>={};const targetOffsets:Partial<Record<Camera,number>>={};let fetchVersion=0,disposed=false;let refreshTimer:ReturnType<typeof setInterval>|undefined;let pointer: {camera:Camera;target:HTMLElement;id:number;time:number}|undefined
 const cameraNames:Record<Camera,string>={front:'前方カメラ',in:'車内カメラ'}
 const weekday=['日','月','火','水','木','金','土']
@@ -55,18 +53,19 @@ async function load(){
    if(version!==fetchVersion)return
   }
   catalog.value=value.data
-  if(wasEmpty){windowStart.value=dayStart(selectedDate.value);const first=allDayClips.value[0];if(first)await seekAvailable(Math.max(dayStart(selectedDate.value),Date.parse(first.startAt)),false);else cursor.value=dayStart(selectedDate.value);focusFirstInterval()}
+  if(wasEmpty){windowStart.value=dayStart(selectedDate.value);const latest=latestClipForView();if(latest)await seekAvailable(Math.max(dayStart(selectedDate.value),Date.parse(latest.startAt)),false);else cursor.value=dayStart(selectedDate.value);focusCursorInterval()}
   else if(previousIDs.some(id=>!value.data.clips.some(clip=>clip.id===id))){pauseAll();await seekAt(cursor.value,false);notice.value='SDカードまたは録画が更新されました。再生する時刻を選び直してください。'}
  }catch(e){if(version===fetchVersion)error.value=e instanceof Error?e.message:String(e)}
  finally{if(version===fetchVersion)loading.value=false}
 }
-async function chooseDay(date:string){pauseAll();selectedDate.value=date;month.value=date.slice(0,7);calendarOpen.value=false;windowStart.value=dayStart(date);zoomHours.value=24;selected.value={front:null,in:null};notice.value='';cursor.value=dayStart(date);await load();const first=allDayClips.value[0];if(first)await seekAvailable(Math.max(cursor.value,Date.parse(first.startAt)),false);focusFirstInterval()}
+async function chooseDay(date:string){pauseAll();selectedDate.value=date;month.value=date.slice(0,7);calendarOpen.value=false;windowStart.value=dayStart(date);zoomHours.value=24;selected.value={front:null,in:null};notice.value='';cursor.value=0;await load()}
 function streamURL(clip:Clip){return '/api/v1/recordings/'+encodeURIComponent(clip.id)+'/stream'}
 function downloadURL(clip:Clip){return '/api/v1/recordings/'+encodeURIComponent(clip.id)+'/download'}
 function setVideo(camera:Camera,element:Element|ComponentPublicInstance|null){if(element instanceof HTMLVideoElement)videoElements[camera]=element;else delete videoElements[camera]}
 function clipAt(camera:Camera,time:number){return allDayClips.value.reduce<Clip|null>((best,clip)=>clip.camera===camera&&Date.parse(clip.startAt)<=time&&Date.parse(clip.endAt)>time&&(!best||Date.parse(clip.startAt)>Date.parse(best.startAt))?clip:best,null)}
+function latestClipForView(){const matching=allDayClips.value.filter(clip=>viewMode.value==='both'||clip.camera===viewMode.value),candidates=matching.length?matching:allDayClips.value;return candidates.reduce<Clip|null>((latest,clip)=>!latest||Date.parse(clip.startAt)>Date.parse(latest.startAt)?clip:latest,null)}
 function seekAvailable(time:number,play=true){const camera:Camera=clipAt('front',time)?'front':'in';return seekAt(time,play,camera)}
-function focusFirstInterval(){const interval=availableSpans.value[0];if(!interval)return;zoomHours.value=interval.end-interval.start<=900000?.25:1;changeZoom()}
+function focusCursorInterval(){const interval=availableSpans.value.find(item=>item.start<=cursor.value&&item.end>cursor.value)||availableSpans.value.at(-1);if(!interval)return;zoomHours.value=interval.end-interval.start<=900000?.25:1;changeZoom()}
 function ensureWindow(time:number){const start=dayStart(selectedDate.value),maxStart=start+86400000-span.value;if(time<windowStart.value||time>=endOfWindow.value){windowStart.value=Math.min(maxStart,Math.max(start,time-span.value/3))}}
 async function seekAt(time:number,play=true,camera?:Camera){time=Math.max(dayStart(selectedDate.value),Math.min(dayStart(selectedDate.value)+86400000-1,time));if(camera&&viewMode.value!=='both')viewMode.value=camera;cursor.value=time;playIntent.value=play;notice.value='';ensureWindow(time);const next={front:clipAt('front',time),in:clipAt('in',time)};for(const c of ['front','in'] as Camera[]){const clip=next[c];if(clip)targetOffsets[c]=Math.max(0,(time-Date.parse(clip.startAt))/1000)}selected.value=next;await nextTick();for(const camera of cameras.value){const element=videoElements[camera];if(element&&element.readyState>=1)metadataReady(camera)}if(!next[primary.value]){playing.value=false;notice.value='この時刻には、選択したカメラの録画がありません。青・橙の録画区間を選んでください。'}}
 function metadataReady(camera:Camera){const video=videoElements[camera],clip=selected.value[camera];if(!video||!clip)return;const target=targetOffsets[camera];if(target!==undefined){video.currentTime=Math.max(0,Math.min(clip.durationSeconds-.01,target));delete targetOffsets[camera]}video.playbackRate=speed.value;if(playIntent.value)video.play().catch(()=>{if(camera===primary.value)notice.value='再生ボタンを押して映像・音声を開始してください。'})}
@@ -92,8 +91,7 @@ onUnmounted(()=>{disposed=true;fetchVersion++;if(refreshTimer)clearInterval(refr
 </script>
 
 <template>
- <div class="drive-toolbar"><div><h2>{{dayLabel(selectedDate)}}</h2><span>{{selectedDay?`${selectedDay.count} 本 · ${duration(selectedDay.recordedSeconds)}の記録`:'この日の確定録画はありません'}}</span></div><div class="drive-toolbar-actions"><button class="secondary compact" aria-controls="recording-settings" :aria-expanded="recordingSettingsOpen" @click="recordingSettingsOpen=!recordingSettingsOpen"><Settings2 :size="14"/>録画設定</button><button class="secondary compact" :disabled="loading" @click="load"><RefreshCw :size="14" :class="{spinning:loading}"/>{{loading?'更新中…':'更新'}}</button></div></div>
- <div id="recording-settings"><NativeOperations v-if="recordingSettingsOpen" recorder-only/></div>
+ <div class="drive-toolbar"><div><h2>{{dayLabel(selectedDate)}}</h2><span>{{selectedDay?`${selectedDay.count} 本 · ${duration(selectedDay.recordedSeconds)}の記録`:'この日の確定録画はありません'}}</span></div><div class="drive-toolbar-actions"><a class="secondary compact" href="#system/recorder"><Settings2 :size="14"/>録画設定</a><button class="secondary compact" :disabled="loading" @click="load"><RefreshCw :size="14" :class="{spinning:loading}"/>{{loading?'更新中…':'更新'}}</button></div></div>
  <div v-if="error" class="banner error" role="alert">{{error}} <button class="text-button" @click="load">再試行</button></div>
  <div class="drive-layout">
   <aside class="drive-sidebar">
