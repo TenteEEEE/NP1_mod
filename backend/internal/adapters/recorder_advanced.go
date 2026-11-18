@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -20,21 +21,24 @@ import (
 )
 
 const (
-	recorderHookSource     = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
-	recorderHookLibrary    = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
-	recorderHookConfig     = "/overlay/owner-apps/np1-control/recorder-hook/config"
-	recorderHookApplied    = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
-	recorderHookLibrarySHA = "c6d4a270733366bbccbaf3191d4c7feed5ebd983041c4c96f67b44f547b764fa"
-	recorderDriveRecSHA    = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
-	recorderConfigSize     = 64
-	recorderConfigVersion  = 1
-	recorderApplyPhrase    = "録画サービスを再起動"
-	recorderMinimumBitrate = 128
-	recorderMaximumBitrate = 50000
-	recorderMinimumGOP     = 250
-	recorderMaximumGOP     = 10000
-	recorderMinimumSegment = 30
-	recorderMaximumSegment = 600
+	recorderHookSource      = "/overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so"
+	recorderHookLibrary     = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
+	recorderHookConfig      = "/overlay/owner-apps/np1-control/recorder-hook/config"
+	recorderHookApplied     = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
+	recorderHookLibrarySHA  = "ef355014917626378f62a8d31652e48b43f9e531abca8f29a7aec48cde4e2436"
+	recorderHookStatusOff   = 0x36470
+	recorderHookInjector    = "/run/np1-control-native/recorder-injector"
+	recorderHookInjectorSHA = "b7dd18637aefd4ac09f2a406e47dcbbf8c6b1d28da936feaf92aee361588475c"
+	recorderDriveRecSHA     = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
+	recorderConfigSize      = 64
+	recorderConfigVersion   = 1
+	recorderApplyPhrase     = "即時適用する"
+	recorderMinimumBitrate  = 128
+	recorderMaximumBitrate  = 50000
+	recorderMinimumGOP      = 250
+	recorderMaximumGOP      = 10000
+	recorderMinimumSegment  = 30
+	recorderMaximumSegment  = 600
 )
 
 type RecorderAdvancedSettings struct {
@@ -66,21 +70,7 @@ var recorderAdvancedAppliedPath = recorderHookApplied
 var recorderAdvancedAvailable = func() bool { return nativeFirmwareMatches(recorderHookSource, recorderHookLibrarySHA) }
 var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
-var recorderBootUptime = func() (time.Duration, error) {
-	data, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0, err
-	}
-	fields := strings.Fields(string(data))
-	if len(fields) == 0 {
-		return 0, errors.New("missing uptime")
-	}
-	seconds, err := strconv.ParseFloat(fields[0], 64)
-	if err != nil || seconds < 0 {
-		return 0, errors.New("invalid uptime")
-	}
-	return time.Duration(seconds * float64(time.Second)), nil
-}
+var recorderAdvancedHealthy = verifyRecorderFunction
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
 	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true, SegmentSeconds: 180}
@@ -280,7 +270,7 @@ func recorderHookLoaded(ctx context.Context) bool {
 		log.Printf("recorder-hook readback failed: process maps unavailable")
 		return false
 	}
-	var imageBase, multimediaBase, hookStart, hookEnd uint64
+	var imageBase, multimediaBase, hookBase, hookStart, hookEnd uint64
 	for _, line := range strings.Split(string(maps), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 6 {
@@ -305,8 +295,11 @@ func recorderHookLoaded(ctx context.Context) bool {
 		if fields[5] == recorderHookLibrary && strings.Contains(fields[1], "x") {
 			hookStart, hookEnd = start, end
 		}
+		if fields[5] == recorderHookLibrary && offset == 0 {
+			hookBase = start
+		}
 	}
-	if imageBase == 0 || multimediaBase == 0 || hookStart == 0 || hookEnd <= hookStart {
+	if imageBase == 0 || multimediaBase == 0 || hookBase == 0 || hookStart == 0 || hookEnd <= hookStart {
 		log.Printf("recorder-hook readback failed: executable mapping unavailable")
 		return false
 	}
@@ -316,7 +309,7 @@ func recorderHookLoaded(ctx context.Context) bool {
 		return false
 	}
 	defer memory.Close()
-	settings, _, _, err := readRecorderAdvanced(recorderAdvancedConfigPath)
+	settings, generation, _, err := readRecorderAdvanced(recorderAdvancedConfigPath)
 	if err != nil {
 		log.Printf("recorder-hook readback failed: config unavailable")
 		return false
@@ -339,6 +332,16 @@ func recorderHookLoaded(ctx context.Context) bool {
 			return false
 		}
 	}
+	var streamerGOT [8]byte
+	if _, err = memory.ReadAt(streamerGOT[:], int64(imageBase+0x22cdb0)); err != nil {
+		log.Printf("recorder-hook readback failed: streamer GOT unavailable")
+		return false
+	}
+	streamerTarget := binary.LittleEndian.Uint64(streamerGOT[:])
+	if streamerTarget < hookStart || streamerTarget >= hookEnd {
+		log.Printf("recorder-hook readback failed: streamer GOT target mismatch")
+		return false
+	}
 	// The pinned MPS_StreamBuffer vtable has write() at symbol+40
 	// (image offset 0x1970a0). It must point into the executable hook mapping;
 	// a loaded .so without this process-memory patch is not sufficient proof.
@@ -352,35 +355,253 @@ func recorderHookLoaded(ctx context.Context) bool {
 		log.Printf("recorder-hook readback failed: stream write hook target mismatch")
 		return false
 	}
+	var applied [52]byte
+	if _, err = memory.ReadAt(applied[:], int64(hookBase+recorderHookStatusOff)); err != nil || binary.LittleEndian.Uint64(applied[:8]) != 0x314445494c505041 || binary.LittleEndian.Uint32(applied[8:12]) != generation || binary.LittleEndian.Uint32(applied[12:16]) != 3 {
+		log.Printf("recorder-hook readback failed: applied encoder generation mismatch")
+		return false
+	}
+	frontRate, _ := recorderRateValue(settings.FrontRateControl)
+	cabinRate, _ := recorderRateValue(settings.CabinRateControl)
+	expected := []uint32{settings.FrontBitrateKbps * 1000, frontRate, settings.FrontGOPMillis, settings.CabinBitrateKbps * 1000, cabinRate, settings.CabinGOPMillis}
+	for i, value := range expected {
+		if binary.LittleEndian.Uint32(applied[16+i*4:20+i*4]) != value {
+			log.Printf("recorder-hook readback failed: applied encoder value mismatch")
+			return false
+		}
+	}
+	if binary.LittleEndian.Uint32(applied[40:44]) != 2 || binary.LittleEndian.Uint32(applied[44:48]) != settings.SegmentSeconds {
+		log.Printf("recorder-hook readback failed: live segment duration mismatch")
+		return false
+	}
+	expectedCabin := uint32(0)
+	if settings.CabinRecording {
+		expectedCabin = 1
+	}
+	if binary.LittleEndian.Uint32(applied[48:52]) != expectedCabin {
+		log.Printf("recorder-hook readback failed: cabin recording mismatch")
+		return false
+	}
 	return true
 }
 
 func restartDriveRecForRecorderHook(ctx context.Context) error {
-	return errors.New("DriveRec standalone restart is disabled because it terminates stock recording")
+	if !nativeFirmwareMatches(recorderHookInjector, recorderHookInjectorSHA) {
+		return errors.New("recorder runtime injector unavailable")
+	}
+	if !nativeControlMu.TryLock() {
+		return errors.New("another native control operation is in progress")
+	}
+	defer nativeControlMu.Unlock()
+	release, err := lockNativeControlExisting()
+	if err != nil {
+		return err
+	}
+	defer release()
+	text, err := command("systemctl", "show", "app-@DriveRec.service", "-p", "MainPID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
+	if err != nil {
+		return err
+	}
+	properties := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if pair := strings.SplitN(line, "=", 2); len(pair) == 2 {
+			properties[pair[0]] = pair[1]
+		}
+	}
+	pid, err := strconv.ParseUint(properties["MainPID"], 10, 31)
+	if err != nil || pid <= 1 || properties["ActiveState"] != "active" || properties["SubState"] != "running" || properties["Job"] != "" {
+		return errors.New("DriveRec is not stable for runtime injection")
+	}
+	if !nativeFirmwareMatches("/proc/"+strconv.FormatUint(pid, 10)+"/exe", recorderDriveRecSHA) {
+		return errors.New("DriveRec executable identity mismatch")
+	}
+	cmd := exec.CommandContext(ctx, recorderHookInjector, strconv.FormatUint(pid, 10), recorderHookLibrary)
+	cmd.Env = []string{"PATH=/usr/bin:/bin"}
+	output, runErr := cmd.CombinedOutput()
+	if runErr != nil {
+		return fmt.Errorf("recorder runtime injection failed: %w", runErr)
+	}
+	if string(output) != "injected=1\nreapply=scheduled\nregisters=restored\nstack=restored\n" {
+		return errors.New("recorder runtime injection restoration was not confirmed")
+	}
+	deadline := time.Now().Add(25 * time.Second)
+	for time.Now().Before(deadline) {
+		if recorderAdvancedLoaded(ctx) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return errors.New("recorder runtime apply read-back failed")
 }
 
-// EnsureRecorderHookAtBoot reconciles the boot-order case where DriveRec is
-// started before the persistent /etc overlay (and therefore its NCC-owned
-// drop-in) becomes visible to systemd.  It is intentionally limited to the
-// early boot window: a later broker restart must not interrupt an in-progress
-// recording without an explicit owner action.
-func EnsureRecorderHookAtBoot(ctx context.Context) error {
-	uptime, err := recorderBootUptime()
+type recorderHealthFile struct {
+	name     string
+	size     int64
+	modified time.Time
+}
+
+func recorderSDMounted() bool {
+	data, err := os.ReadFile("/proc/mounts")
 	if err != nil {
-		return fmt.Errorf("recorder boot uptime: %w", err)
+		return false
 	}
-	if uptime > 15*time.Minute || !recorderAdvancedAvailable() || recorderAdvancedLoaded(ctx) {
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[1] == SDRoot {
+			return true
+		}
+	}
+	return false
+}
+
+func recorderHealthSnapshot() (map[string]recorderHealthFile, error) {
+	directory := filepath.Join(SDRoot, recordingDirectory)
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) > 20000 {
+		return nil, errors.New("recording directory inventory is too large")
+	}
+	files := map[string]recorderHealthFile{}
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		camera, _, valid := parseRecordingFilename(entry.Name())
+		if !valid {
+			continue
+		}
+		info, statErr := entry.Info()
+		if statErr != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		candidate := recorderHealthFile{entry.Name(), info.Size(), info.ModTime()}
+		current, exists := files[camera]
+		if !exists || candidate.modified.After(current.modified) || candidate.modified.Equal(current.modified) && candidate.name > current.name {
+			files[camera] = candidate
+		}
+	}
+	return files, nil
+}
+
+func recorderHealthAdvanced(before, after recorderHealthFile) bool {
+	return after.name != "" && (before.name != after.name || after.size > before.size || after.modified.After(before.modified))
+}
+
+func verifyRecorderFunction(ctx context.Context) error {
+	text, err := command("systemctl", "show", "app-@DriveRec.service", "-p", "MainPID", "-p", "ActiveState", "-p", "SubState", "-p", "Job")
+	if err != nil {
+		return err
+	}
+	properties := map[string]string{}
+	for _, line := range strings.Split(text, "\n") {
+		if pair := strings.SplitN(line, "=", 2); len(pair) == 2 {
+			properties[pair[0]] = pair[1]
+		}
+	}
+	pid, err := strconv.ParseUint(properties["MainPID"], 10, 31)
+	if err != nil || pid <= 1 || properties["ActiveState"] != "active" || properties["SubState"] != "running" || properties["Job"] != "" {
+		return errors.New("DriveRec is not running after settings apply")
+	}
+	tasks, err := os.ReadDir("/proc/" + strconv.FormatUint(pid, 10) + "/task")
+	if err != nil || len(tasks) < 8 {
+		return errors.New("DriveRec recording workers are unavailable")
+	}
+	encoderThreads := 0
+	for _, task := range tasks {
+		name, readErr := os.ReadFile("/proc/" + strconv.FormatUint(pid, 10) + "/task/" + task.Name() + "/comm")
+		if readErr == nil && strings.HasPrefix(strings.TrimSpace(string(name)), "VideoEncodeStre") {
+			encoderThreads++
+		}
+	}
+	if encoderThreads < 2 {
+		return errors.New("DriveRec encoder workers did not resume")
+	}
+	if !recorderSDMounted() {
 		return nil
 	}
-	if err = recorderAdvancedRestart(ctx); err != nil {
-		return fmt.Errorf("recorder boot hook restart: %w", err)
+	before, err := recorderHealthSnapshot()
+	if err != nil {
+		return fmt.Errorf("recording progress before apply: %w", err)
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(3 * time.Second):
+	}
+	after, err := recorderHealthSnapshot()
+	if err != nil {
+		return fmt.Errorf("recording progress after apply: %w", err)
+	}
+	settings, _, _, err := readRecorderAdvanced(recorderAdvancedConfigPath)
+	if err != nil {
+		return err
+	}
+	if !recorderHealthAdvanced(before["front"], after["front"]) {
+		return errors.New("front recording did not resume on SD")
+	}
+	if settings.CabinRecording && !recorderHealthAdvanced(before["in"], after["in"]) {
+		return errors.New("cabin recording did not resume on SD")
+	}
+	if !settings.CabinRecording && recorderHealthAdvanced(before["in"], after["in"]) {
+		return errors.New("cabin recording did not stop on SD")
+	}
+	return nil
+}
+
+func recorderProcessMapsLibrary(pid uint32, library string) bool {
+	data, err := os.ReadFile("/proc/" + strconv.FormatUint(uint64(pid), 10) + "/maps")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 6 && fields[5] == library {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureRecorderHookAtBoot reconciles every new DriveRec process without a
+// systemd drop-in. It injects before DriveRec creates its encoders, then proves
+// exact process-memory settings and both recording outputs before committing
+// the applied generation.
+func EnsureRecorderHookAtBoot(ctx context.Context) error {
+	if !recorderAdvancedMu.TryLock() {
+		return errors.New("recorder settings operation in progress")
+	}
+	defer recorderAdvancedMu.Unlock()
+	if !recorderAdvancedAvailable() {
+		return nil
+	}
+	releaseApply, err := lockRecorderApply()
+	if err != nil {
+		return err
+	}
+	defer releaseApply()
+	_, generation, configured, err := readRecorderAdvanced(recorderAdvancedConfigPath)
+	if err != nil {
+		return fmt.Errorf("recorder boot config read-back: %w", err)
+	}
+	loaded := recorderAdvancedLoaded(ctx)
+	if configured && loaded && readRecorderApplied(recorderAdvancedAppliedPath) == generation {
+		return nil
+	}
+	if !loaded {
+		if err = recorderAdvancedRestart(ctx); err != nil {
+			return fmt.Errorf("recorder boot hook restart: %w", err)
+		}
 	}
 	if !recorderAdvancedLoaded(ctx) {
 		return errors.New("recorder boot hook read-back failed")
 	}
-	_, generation, configured, err := readRecorderAdvanced(recorderAdvancedConfigPath)
-	if err != nil {
-		return fmt.Errorf("recorder boot config read-back: %w", err)
+	if err = recorderAdvancedHealthy(ctx); err != nil {
+		return fmt.Errorf("recorder boot health: %w", err)
 	}
 	if configured && readRecorderApplied(recorderAdvancedAppliedPath) != generation {
 		if err = writeRecorderApplied(recorderAdvancedAppliedPath, generation); err != nil {
@@ -426,7 +647,7 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	decoder.DisallowUnknownFields()
 	if decoder.Decode(&body) != nil || decoder.Decode(&struct{}{}) != io.EOF || !validRecorderAdvanced(body.Settings) {
-		nativeError(w, 400, "INVALID_RECORDER_HOOK_SETTINGS", "ビットレート、レート制御、GOP間隔を確認してください")
+		nativeError(w, 400, "INVALID_RECORDER_HOOK_SETTINGS", "ビットレート、レート制御、GOP間隔、分割時間を確認してください")
 		return
 	}
 	if body.ApplyNow && (body.Confirmation != recorderApplyPhrase || !body.AcknowledgeRecording) {
@@ -434,11 +655,11 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !recorderAdvancedAvailable() {
-		nativeError(w, 503, "RECORDER_HOOK_UNAVAILABLE", "対応する録画フックが配備されていません")
+		nativeError(w, 503, "RECORDER_HOOK_UNAVAILABLE", "この本体では詳細録画設定を利用できません")
 		return
 	}
 	if !recorderAdvancedMu.TryLock() {
-		nativeError(w, 409, "RECORDER_HOOK_BUSY", "別の録画設定操作を確認中です")
+		nativeError(w, 409, "RECORDER_HOOK_BUSY", "別の録画設定を適用中です。しばらくしてから再試行してください")
 		return
 	}
 	defer recorderAdvancedMu.Unlock()
@@ -451,6 +672,15 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 		nativeError(w, 409, "RECORDER_HOOK_STATE_CHANGED", "録画設定が変わりました。最新の状態を取得してください")
 		return
 	}
+	var releaseApply func()
+	if body.ApplyNow {
+		releaseApply, err = lockRecorderApply()
+		if err != nil {
+			nativeError(w, 409, "RECORDER_HOOK_BUSY", "別の録画設定を適用中です。しばらくしてから再試行してください")
+			return
+		}
+		defer releaseApply()
+	}
 	if err = os.Remove(recorderAdvancedAppliedPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		nativeError(w, 503, "RECORDER_HOOK_SAVE_FAILED", "録画設定の適用状態を安全に更新できません")
 		return
@@ -461,29 +691,27 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 	}
 	state, _ := recorderAdvancedState(r.Context())
 	state.Configured, state.Generation, state.Settings, state.RestartRequired, state.Applied = true, generation+1, body.Settings, true, false
-	state.Message = "設定を保存しました。DriveRecの次回起動時に適用されます。"
+	state.Message = "設定を保存しました。"
 	if body.ApplyNow {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 25*time.Second)
-		defer cancel()
-		if err = recorderAdvancedRestart(ctx); err != nil {
-			state.Message = "設定は保存しましたが、録画サービスの再起動を確認できません。次回起動時に適用されます。"
+		if err = recorderAdvancedRestart(r.Context()); err != nil {
+			state.Message = "設定を保存しましたが、即時適用できませんでした。もう一度お試しください。"
 			recordingJSON(w, 202, state)
 			return
 		}
-		state.HookLoaded = recorderAdvancedLoaded(ctx)
-		state.RestartRequired = !state.HookLoaded
-		if state.HookLoaded {
-			if err = writeRecorderApplied(recorderAdvancedAppliedPath, generation+1); err != nil {
-				state.RestartRequired = true
-				state.Message = "録画サービスと起動時フックは確認しましたが、適用済み世代を記録できません。再適用してください。"
-				recordingJSON(w, 202, state)
-				return
-			}
-			state.Applied = true
-			state.Message = "録画サービスを再起動し、起動時フックと設定世代の読込みを確認しました。"
-		} else {
-			state.Message = "録画サービスは再起動しましたが、起動時フックを確認できません。純正動作を維持しています。"
+		if err = recorderAdvancedHealthy(r.Context()); err != nil {
+			state.Message = "設定を保存しましたが、録画状態を確認できませんでした。"
+			recordingJSON(w, 202, state)
+			return
 		}
+		if err = writeRecorderApplied(recorderAdvancedAppliedPath, generation+1); err != nil {
+			state.Message = "設定は反映されましたが、適用状態を保存できませんでした。"
+			recordingJSON(w, 202, state)
+			return
+		}
+		state.HookLoaded, state.RestartRequired, state.Applied = true, false, true
+		state.Message = "設定を即時適用しました。"
+		recordingJSON(w, 200, state)
+		return
 	}
 	recordingJSON(w, 200, state)
 }

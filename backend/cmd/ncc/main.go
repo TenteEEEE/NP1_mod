@@ -279,6 +279,28 @@ func main() {
 		}
 		return
 	case "native-worker":
+		go func() {
+			verified := false
+			failures := 0
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+				if err := adapters.EnsureRecorderHookAtBoot(ctx); err != nil {
+					failures++
+					if verified || failures == 1 || failures%12 == 0 {
+						log.Printf("recorder runtime reconciliation pending: %v", err)
+					}
+					verified = false
+				} else {
+					if !verified {
+						log.Printf("recorder runtime settings and recording verified")
+					}
+					verified = true
+					failures = 0
+				}
+				cancel()
+				time.Sleep(5 * time.Second)
+			}
+		}()
 		log.Fatal(broker.ServeNative())
 	case "ap-worker", "ap-smoke", "ap-cleanup":
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

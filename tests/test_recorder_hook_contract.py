@@ -6,15 +6,16 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LIBRARY = ROOT / "artifacts/recorder-hook/libncc-driverec-hook.so"
+INJECTOR = ROOT / "artifacts/recorder-injector/ncc-recorder-injector"
 
 
 class RecorderHookContractTests(unittest.TestCase):
-    def test_dropin_only_adds_drive_rec_preload(self):
-        dropin = (ROOT / "systemd/90-ncc-recorder-hook.conf").read_text(encoding="utf8")
-        self.assertEqual(
-            dropin,
-            "[Service]\nRuntimeDirectory=np1-control-recorder-hook\nRuntimeDirectoryMode=0755\nExecStartPre=+/bin/cp /overlay/owner-apps/np1-control/recorder-hook/libncc-driverec-hook.so /run/np1-control-recorder-hook/libncc-driverec-hook.so\nExecStartPre=+/bin/chmod 0555 /run/np1-control-recorder-hook/libncc-driverec-hook.so\nEnvironment=LD_PRELOAD=/run/np1-control-recorder-hook/libncc-driverec-hook.so\n",
-        )
+    def test_drive_rec_preload_dropin_is_removed(self):
+        self.assertFalse((ROOT / "systemd/90-ncc-recorder-hook.conf").exists())
+        for relative in ("tools/device/install.sh", "tools/device/install-owner-recovery.sh", "tools/device/recorder-hook-update.sh"):
+            source = (ROOT / relative).read_text(encoding="utf8")
+            self.assertNotIn("systemd/90-ncc-recorder-hook.conf", source)
+            self.assertNotIn("LD_PRELOAD=/run/np1-control-recorder-hook", source)
 
     def test_install_and_recovery_own_exact_hook_paths(self):
         install = (ROOT / "tools/device/install.sh").read_text(encoding="utf8")
@@ -29,8 +30,10 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertNotRegex(uninstall, r"systemctl\s+(?:restart|stop|start)\s+app-@DriveRec")
         self.assertIn("recorder-hook-dropin.absent", install)
         self.assertIn("recorder-hook-library.absent", install)
+        self.assertIn("recorder-injector.absent", install)
         self.assertIn("recorder-hook-dropin.absent", rollback)
         self.assertIn("recorder-hook-library.absent", rollback)
+        self.assertIn("recorder-injector.absent", rollback)
         self.assertLess(rollback.index('sh "$(dirname "$0")/uninstall.sh"'), rollback.index("restore_recorder_hook\n    systemctl daemon-reload"))
 
     def test_owner_update_never_restarts_stock_and_has_exact_rollback(self):
@@ -40,12 +43,15 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertIn("capture_stock > \"$BACKUP/stock-before.txt\"", update)
         self.assertIn("capture_stock > \"$BACKUP/stock-after.txt\"", update)
         self.assertIn("cmp \"$BACKUP/stock-before.txt\" \"$BACKUP/stock-after.txt\"", update)
-        for name in ("ncc", "np1-control-broker.service", "90-ncc-recorder-hook.conf", "libncc-driverec-hook.so"):
+        for name in ("ncc", "np1-control-broker.service", "np1-control-native.service", "libncc-driverec-hook.so", "ncc-recorder-injector", "ncc-native-operations-helper"):
             self.assertIn(name, update)
 
     def test_minimal_deployment_bundle_excludes_large_unrelated_material(self):
         package = (ROOT / "tools/package-recorder-hook-update.py").read_text(encoding="utf8")
         self.assertIn('"experimental/libncc-driverec-hook.so"', package)
+        self.assertIn('"experimental/ncc-recorder-injector"', package)
+        self.assertIn('"experimental/ncc-native-operations-helper"', package)
+        self.assertIn('"systemd/np1-control-native.service"', package)
         self.assertIn('"tools/recorder-hook-update.sh"', package)
         self.assertNotIn("plate/models", package)
         bundle = ROOT / "artifacts/ncc-recorder-hook"
@@ -59,6 +65,11 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertIn(
             "ReadWritePaths=/overlay/owner-apps/np1-control/recorder-hook", unit
         )
+        self.assertNotIn("ReadWritePaths=/run/np1-control-native", unit)
+        operations = (ROOT / "backend/internal/adapters/native_operations.go").read_text(encoding="utf8")
+        self.assertIn('[]string{"/run/np1-control-native", "/run/np1-control"}', operations)
+        self.assertIn("syscall.EROFS", operations)
+        self.assertIn("defer os.RemoveAll(dir)", operations)
 
     def test_streamer_hook_uses_the_pinned_encode_property_layout(self):
         source = (ROOT / "tools/native/recorder-hook.c").read_text(encoding="utf8")
@@ -110,7 +121,7 @@ class RecorderHookContractTests(unittest.TestCase):
         backend = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
             encoding="utf8"
         )
-        self.assertIn('dlsym(RTLD_NEXT,"_ZTV16MPS_StreamBuffer")', hook)
+        self.assertIn('dlsym(multimedia_handle,"_ZTV16MPS_StreamBuffer")', hook)
         self.assertIn("MSG_DONTWAIT|MSG_NOSIGNAL", hook)
         self.assertIn("LIVE_CHUNK_SIZE 60000", hook)
         self.assertIn("multimediaBase+0x1970a0", backend)
@@ -122,6 +133,42 @@ class RecorderHookContractTests(unittest.TestCase):
         self.assertIn(
             "nativeFirmwareMatches(recorderHookLibrary, recorderHookLibrarySHA)", source
         )
+
+    def test_runtime_apply_is_in_process_and_requires_exact_readback(self):
+        source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(encoding="utf8")
+        unit = (ROOT / "systemd/np1-control-native.service").read_text(encoding="utf8")
+        build = (ROOT / "tools/build-recorder-hook.py").read_text(encoding="utf8")
+        self.assertIn("recorderHookInjector", source)
+        self.assertIn("streamerTarget < hookStart", source)
+        self.assertIn("applied [52]byte", source)
+        self.assertIn("live segment duration mismatch", source)
+        self.assertIn("front recording did not resume on SD", source)
+        self.assertIn("cabin recording did not resume on SD", source)
+        self.assertIn("cabin recording did not stop on SD", source)
+        self.assertIn("reapply=scheduled", source)
+        self.assertNotIn("scheduleRecorderApplyReboot", source)
+        self.assertNotIn('runOperations("recorder"', source)
+        self.assertNotIn('command("systemctl", "restart", "app-@DriveRec.service")', source)
+        self.assertIn("ncc-recorder-injector", unit)
+        self.assertIn("RuntimeDirectoryMode=0750", unit)
+        self.assertIn("ExecStartPre=/bin/chmod 0755 /run/np1-control-recorder-hook", unit)
+        self.assertNotIn("ExecStartPre=/bin/chmod 0755 /run/np1-control-native", unit)
+        self.assertIn("ExecStartPre=/bin/touch /run/np1-control-native/recorder.lock", unit)
+        self.assertIn("ExecStartPre=/bin/chmod 0600 /run/np1-control-native/recorder.lock", unit)
+        self.assertIn("ReadWritePaths=/run/np1-control-native /overlay/owner-apps/np1-control/recorder-hook", unit)
+        self.assertIn("-Wl,-Bsymbolic", build)
+        injector = (ROOT / "tools/native/recorder-injector.c").read_text(encoding="utf8")
+        self.assertIn("WAIT_ALL_TRACED 0x40000000", injector)
+        self.assertIn("freeze_workers(pid)", injector)
+        self.assertIn("remote_hook+@REAPPLY_OFFSET@", injector)
+        self.assertIn("thaw_threads();", injector)
+
+    @unittest.skipUnless(INJECTOR.is_file(), "recorder injector has not been built")
+    def test_backend_pins_the_packaged_injector_hash(self):
+        source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(encoding="utf8")
+        match = re.search(r'recorderHookInjectorSHA\s*=\s*"([0-9a-f]{64})"', source)
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), hashlib.sha256(INJECTOR.read_bytes()).hexdigest())
 
     @unittest.skipUnless(LIBRARY.is_file(), "recorder hook has not been built")
     def test_backend_pins_the_packaged_hook_hash(self):

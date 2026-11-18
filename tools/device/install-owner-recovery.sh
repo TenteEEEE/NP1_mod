@@ -88,11 +88,7 @@ RECORDER_DROPIN=$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf
 if test -f experimental/libncc-driverec-hook.so; then
     test ! -L "$RECORDER_DROPIN_DIR" && test ! -e "$RECORDER_DROPIN"
     cp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
-    cp systemd/90-ncc-recorder-hook.conf "$BASE/recorder-hook/90-ncc-recorder-hook.conf"
     chmod 0555 "$BASE/recorder-hook/libncc-driverec-hook.so"
-    chmod 0644 "$BASE/recorder-hook/90-ncc-recorder-hook.conf"
-    mkdir -p -m 0755 "$RECORDER_DROPIN_DIR"
-    cp -p "$BASE/recorder-hook/90-ncc-recorder-hook.conf" "$RECORDER_DROPIN"
 fi
 
 bin/ncc --mode setup --config-dir "$BASE/config"
@@ -149,8 +145,8 @@ done
 systemctl daemon-reload
 if test -f experimental/libncc-driverec-hook.so; then
     cmp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
-    cmp systemd/90-ncc-recorder-hook.conf "$RECORDER_DROPIN"
-    systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=/run/np1-control-recorder-hook/libncc-driverec-hook.so"
+    test ! -e "$RECORDER_DROPIN"
+    ! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
 fi
 touch /run/xtables.lock
 systemctl start $start_units

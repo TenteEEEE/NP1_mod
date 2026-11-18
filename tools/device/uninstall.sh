@@ -7,6 +7,7 @@ test "$(id -u)" = 0
 # running DriveRec mapping remains until its next normal restart.
 rm -f /etc/systemd/system/app-@DriveRec.service.d/90-ncc-recorder-hook.conf
 rm -f "$BASE/recorder-hook/libncc-driverec-hook.so"
+rm -f "$BASE/experimental/ncc-recorder-injector"
 # Stop the uplink switcher first; it leaves the stock STA mode as it is (the owner can change it in the stock settings).
 systemctl stop np1-control-uplink.service || true
 python3 "$(dirname "$0")/postboot.py" remove-uplink

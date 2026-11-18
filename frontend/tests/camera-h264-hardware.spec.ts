@@ -31,7 +31,10 @@ test('both original H264 camera streams decode and survive shared view switching
  await page.getByRole('button',{name:'映像を表示',exact:true}).click()
  const videos=page.locator('.live-camera-grid video')
  await expect(videos).toHaveCount(2)
- await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>(item as HTMLVideoElement).readyState>=2&&(item as HTMLVideoElement).videoWidth===1920&&(item as HTMLVideoElement).videoHeight===1080)),{timeout:25000}).toBe(true)
+ // The pinned stock GStreamer encoders expose 1280x720 H.264 for both
+ // ordinary front and cabin outputs even when the native quality label is
+ // 1080p. Validate the encoded stream itself instead of the preset label.
+ await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>(item as HTMLVideoElement).readyState>=2&&(item as HTMLVideoElement).videoWidth===1280&&(item as HTMLVideoElement).videoHeight===720)),{timeout:25000}).toBe(true)
  const frames=await videos.evaluateAll(items=>items.map(item=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames))
  await expect.poll(()=>videos.evaluateAll((items,before)=>items.every((item,index)=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames>before[index]+8),frames),{timeout:35000}).toBe(true)
  const next=await videos.evaluateAll(items=>items.map(item=>(item as HTMLVideoElement).getVideoPlaybackQuality().totalVideoFrames))

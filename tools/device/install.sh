@@ -49,11 +49,13 @@ if test -f "$BASE/tools/firewall.sh"; then cp -p "$BASE/tools/firewall.sh" "$BAC
 RECORDER_DROPIN_DIR=/etc/systemd/system/app-@DriveRec.service.d
 RECORDER_DROPIN="$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf"
 RECORDER_LIBRARY="$BASE/recorder-hook/libncc-driverec-hook.so"
+RECORDER_INJECTOR="$BASE/experimental/ncc-recorder-injector"
 test ! -L "$RECORDER_DROPIN_DIR"
 test ! -L "$RECORDER_DROPIN"
 test ! -L "$RECORDER_LIBRARY"
 if test -f "$RECORDER_DROPIN"; then cp -p "$RECORDER_DROPIN" "$BACKUP/90-ncc-recorder-hook.conf"; else touch "$BACKUP/recorder-hook-dropin.absent"; fi
 if test -f "$RECORDER_LIBRARY"; then cp -p "$RECORDER_LIBRARY" "$BACKUP/libncc-driverec-hook.so"; else touch "$BACKUP/recorder-hook-library.absent"; fi
+if test -f "$RECORDER_INJECTOR"; then cp -p "$RECORDER_INJECTOR" "$BACKUP/ncc-recorder-injector"; else touch "$BACKUP/recorder-injector.absent"; fi
 printf '%s\n' "$BACKUP" > "$BASE/recovery/latest"
 trap 'code=$?; if test "$code" -ne 0; then echo "Install failed; restoring NCC only" >&2; sh "$STAGE/tools/rollback.sh" || true; fi' 0
 if test ! -f "$BASE/private/ota-policy/ledger.json"; then touch "$BACKUP/ota-policy-initialized"; fi
@@ -109,11 +111,9 @@ if test -f experimental/libncc-driverec-hook.so; then
     cp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY.new"
     chmod 0555 "$RECORDER_LIBRARY.new"
     mv -f "$RECORDER_LIBRARY.new" "$RECORDER_LIBRARY"
-    mkdir -p "$RECORDER_DROPIN_DIR"
-    test ! -L "$RECORDER_DROPIN_DIR"
-    cp systemd/90-ncc-recorder-hook.conf "$RECORDER_DROPIN.new"
-    chmod 0644 "$RECORDER_DROPIN.new"
-    mv -f "$RECORDER_DROPIN.new" "$RECORDER_DROPIN"
+    # Runtime injection is performed only after stock recording is healthy.
+    # Remove the legacy LD_PRELOAD drop-in, which runs too early in DriveRec.
+    rm -f "$RECORDER_DROPIN"
 fi
 if test -f experimental/ncc-native-setting-helper; then
     mkdir -p "$BASE/experimental"
@@ -146,6 +146,11 @@ if test -f experimental/ncc-native-setting-helper; then
         cp experimental/ncc-native-operations-helper "$BASE/experimental/ncc-native-operations-helper.new"
         chmod 0600 "$BASE/experimental/ncc-native-operations-helper.new"
         mv -f "$BASE/experimental/ncc-native-operations-helper.new" "$BASE/experimental/ncc-native-operations-helper"
+    fi
+    if test -f experimental/ncc-recorder-injector; then
+        cp experimental/ncc-recorder-injector "$BASE/experimental/ncc-recorder-injector.new"
+        chmod 0600 "$BASE/experimental/ncc-recorder-injector.new"
+        mv -f "$BASE/experimental/ncc-recorder-injector.new" "$BASE/experimental/ncc-recorder-injector"
     fi
     if test -f experimental/ncc-native-audio-helper; then
         cp experimental/ncc-native-audio-helper "$BASE/experimental/ncc-native-audio-helper.new"
@@ -192,8 +197,8 @@ sync
 systemctl daemon-reload
 if test -f experimental/libncc-driverec-hook.so; then
     cmp experimental/libncc-driverec-hook.so "$RECORDER_LIBRARY"
-    cmp systemd/90-ncc-recorder-hook.conf "$RECORDER_DROPIN"
-    systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD=/run/np1-control-recorder-hook/libncc-driverec-hook.so"
+    test ! -e "$RECORDER_DROPIN"
+    ! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
 fi
 touch /run/xtables.lock
 systemctl restart np1-control-firewall.service

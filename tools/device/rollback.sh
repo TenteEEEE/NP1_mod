@@ -26,9 +26,11 @@ if test -f "$BACKUP/ota-policy-initialized" && test -f "$BASE/private/ota-policy
 fi
 RECORDER_DROPIN=/etc/systemd/system/app-@DriveRec.service.d/90-ncc-recorder-hook.conf
 RECORDER_LIBRARY="$BASE/recorder-hook/libncc-driverec-hook.so"
+RECORDER_INJECTOR="$BASE/experimental/ncc-recorder-injector"
 restore_recorder_hook() {
     if test -f "$BACKUP/90-ncc-recorder-hook.conf"; then cp -p "$BACKUP/90-ncc-recorder-hook.conf" "$RECORDER_DROPIN"; elif test -f "$BACKUP/recorder-hook-dropin.absent"; then rm -f "$RECORDER_DROPIN"; fi
     if test -f "$BACKUP/libncc-driverec-hook.so"; then cp -p "$BACKUP/libncc-driverec-hook.so" "$RECORDER_LIBRARY"; elif test -f "$BACKUP/recorder-hook-library.absent"; then rm -f "$RECORDER_LIBRARY"; fi
+    if test -f "$BACKUP/ncc-recorder-injector"; then cp -p "$BACKUP/ncc-recorder-injector" "$RECORDER_INJECTOR"; elif test -f "$BACKUP/recorder-injector.absent"; then rm -f "$RECORDER_INJECTOR"; fi
 }
 if test ! -f "$BACKUP/ncc"; then
     result=0

@@ -10,8 +10,10 @@ OUTPUT = ROOT / "artifacts/ncc-recorder-hook"
 FILES = (
     "bin/ncc",
     "experimental/libncc-driverec-hook.so",
-    "systemd/90-ncc-recorder-hook.conf",
+    "experimental/ncc-recorder-injector",
+    "experimental/ncc-native-operations-helper",
     "systemd/np1-control-broker.service",
+    "systemd/np1-control-native.service",
     "tools/recorder-hook-update.sh",
     "tools/recorder-hook-prune.sh",
     "tools/run.sh",

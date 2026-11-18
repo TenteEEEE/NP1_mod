@@ -21,19 +21,23 @@ subprocess.run(common+['--target=wasm32','-nostdlib',str(ROOT/'tools/native/test
 subprocess.run(['node',str(ROOT/'tools/native/test-recorder-hook-config.cjs'),str(wasm)],check=True)
 if a.test_only:raise SystemExit
 material=ROOT/'resources/native-sysroot'
-for name in ('libc.so.6','libdl.so.2'):
+for name in ('libc.so.6','libdl.so.2','libpthread.so.0'):
  if not (material/name).is_file():raise SystemExit('Missing owner-device link material: '+name)
 out=ROOT/'artifacts/recorder-hook';out.mkdir(parents=True,exist_ok=True);library=out/'libncc-driverec-hook.so'
-subprocess.run(common+['--target=aarch64-linux-gnu','-nostdlib','-fPIC','-shared',str(ROOT/'tools/native/recorder-hook.c'),str(material/'libdl.so.2'),str(material/'libc.so.6'),'-Wl,--allow-shlib-undefined','-Wl,-z,relro','-Wl,-z,now','-Wl,-soname,libncc-driverec-hook.so','-o',str(library)],check=True)
+subprocess.run(common+['--target=aarch64-linux-gnu','-nostdlib','-fPIC','-shared',str(ROOT/'tools/native/recorder-hook.c'),str(material/'libdl.so.2'),str(material/'libpthread.so.0'),str(material/'libc.so.6'),'-Wl,--allow-shlib-undefined','-Wl,-Bsymbolic','-Wl,-z,relro','-Wl,-z,now','-Wl,-soname,libncc-driverec-hook.so','-o',str(library)],check=True)
 with library.open('rb') as stream:
  image=ELFFile(stream);dynamic=image.get_section_by_name('.dynamic');needed=[x.needed for x in dynamic.iter_tags('DT_NEEDED')];symbols={x.name for x in image.get_section_by_name('.dynsym').iter_symbols() if x['st_value']}
  if image['e_machine']!='EM_AARCH64':raise SystemExit('Incorrect architecture')
  if not any('NPMPS_CreateVideoEncodeStreamer' in x for x in symbols):raise SystemExit('Streamer interposition symbol missing')
+ if 'ncc_recorder_applied_status' not in symbols:raise SystemExit('Applied status read-back symbol missing')
+ if 'ncc_recorder_reapply' not in symbols:raise SystemExit('Runtime reapply symbol missing')
  if any('AplLib' in x or 'NStandard' in x for x in needed):raise SystemExit('Vendor library linked into startup hook')
  if any(x.entry.d_tag=='DT_TEXTREL' for x in dynamic.iter_tags()):raise SystemExit('Text relocations are forbidden')
  if not image.get_section_by_name('.init_array') or not image.get_section_by_name('.init_array').data():raise SystemExit('Startup constructor missing')
  for segment in image.iter_segments():
   if segment['p_type']=='PT_GNU_STACK' and segment['p_flags']&1:raise SystemExit('Executable stack is forbidden')
 sources=[ROOT/'tools/native'/x for x in ('recorder-hook.c','recorder-hook-config.h','native-core.h','test-recorder-hook-config.c','test-recorder-hook-config.cjs')]
-info={'architecture':'aarch64-linux-gnu','sha256':hashlib.sha256(library.read_bytes()).hexdigest(),'needed':needed,'pinnedDriveRecSha256':stock_sha,'verifiedInstructionOffsets':[f'0x{x:x}' for x in expected_instructions],'sources':{str(x.relative_to(ROOT)):hashlib.sha256(x.read_bytes()).hexdigest() for x in sources},'compiler':subprocess.check_output([a.clang,'--version'],text=True).splitlines()[0],'executedOnDevice':False}
+with library.open('rb') as stream:
+ image=ELFFile(stream);applied=next(x for x in image.get_section_by_name('.dynsym').iter_symbols() if x.name=='ncc_recorder_applied_status')['st_value']
+info={'architecture':'aarch64-linux-gnu','sha256':hashlib.sha256(library.read_bytes()).hexdigest(),'needed':needed,'pinnedDriveRecSha256':stock_sha,'verifiedInstructionOffsets':[f'0x{x:x}' for x in expected_instructions],'appliedStatusOffset':f'0x{applied:x}','sources':{str(x.relative_to(ROOT)):hashlib.sha256(x.read_bytes()).hexdigest() for x in sources},'compiler':subprocess.check_output([a.clang,'--version'],text=True).splitlines()[0],'executedOnDevice':False}
 (out/'build-info.json').write_text(json.dumps(info,indent=2)+'\n',encoding='utf8');print('PASS: pinned DriveRec hook, config parser and interposition symbol; not deployed')

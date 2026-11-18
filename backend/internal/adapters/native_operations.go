@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -175,10 +176,20 @@ func runOperations(group string, args ...string) (map[string]uint32, error) {
 	if e != nil {
 		return nil, e
 	}
-	dir, e := os.MkdirTemp("/run/np1-control-native", "operations-")
-	if e != nil {
+	var dir string
+	for _, base := range []string{"/run/np1-control-native", "/run/np1-control"} {
+		dir, e = os.MkdirTemp(base, "operations-")
+		if e == nil {
+			break
+		}
+		if !errors.Is(e, syscall.EROFS) && !errors.Is(e, syscall.EACCES) {
+			return nil, e
+		}
+	}
+	if dir == "" {
 		return nil, e
 	}
+	defer os.RemoveAll(dir)
 	stderr, e := os.OpenFile(filepath.Join(dir, "error.log"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if e != nil {
 		return nil, e

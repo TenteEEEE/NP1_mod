@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
@@ -45,15 +44,18 @@ func TestRecorderAdvancedDecodesLegacyReservedSegmentAsStockDefault(t *testing.T
 
 func TestRecorderAdvancedHandlerRequiresGenerationAndRestartConfirmation(t *testing.T) {
 	directory := t.TempDir()
-	originalPath, originalAppliedPath, originalAvailable, originalLoaded, originalRestart := recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart
+	originalPath, originalAppliedPath, originalAvailable := recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedAvailable
+	originalRestart, originalHealthy, originalLoaded := recorderAdvancedRestart, recorderAdvancedHealthy, recorderAdvancedLoaded
 	recorderAdvancedConfigPath = filepath.Join(directory, "recorder", "config")
 	recorderAdvancedAppliedPath = filepath.Join(directory, "recorder", "applied-generation")
 	recorderAdvancedAvailable = func() bool { return true }
+	applies := 0
+	recorderAdvancedRestart = func(context.Context) error { applies++; return nil }
+	recorderAdvancedHealthy = func(context.Context) error { return nil }
 	recorderAdvancedLoaded = func(context.Context) bool { return true }
-	restarts := 0
-	recorderAdvancedRestart = func(context.Context) error { restarts++; return nil }
 	t.Cleanup(func() {
-		recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart = originalPath, originalAppliedPath, originalAvailable, originalLoaded, originalRestart
+		recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedAvailable = originalPath, originalAppliedPath, originalAvailable
+		recorderAdvancedRestart, recorderAdvancedHealthy, recorderAdvancedLoaded = originalRestart, originalHealthy, originalLoaded
 	})
 	settings := defaultRecorderAdvancedSettings()
 	settings.FrontBitrateKbps = 8123
@@ -61,37 +63,37 @@ func TestRecorderAdvancedHandlerRequiresGenerationAndRestartConfirmation(t *test
 	raw, _ := json.Marshal(body)
 	response := httptest.NewRecorder()
 	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
-	if response.Code != 200 || restarts != 1 {
-		t.Fatalf("save/apply = %d restarts=%d %s", response.Code, restarts, response.Body.String())
+	if response.Code != 200 || applies != 1 {
+		t.Fatalf("save/apply = %d applies=%d %s", response.Code, applies, response.Body.String())
 	}
 	var state RecorderAdvancedState
 	if json.Unmarshal(response.Body.Bytes(), &state) != nil || !state.Applied || state.Generation != 1 || state.Settings.FrontBitrateKbps != 8123 {
 		t.Fatalf("unexpected state %#v", state)
 	}
 	if readRecorderApplied(recorderAdvancedAppliedPath) != 1 {
-		t.Fatal("applied generation was not committed after read-back")
+		t.Fatal("generation was not marked applied after exact read-back")
 	}
 	response = httptest.NewRecorder()
 	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
-	if response.Code != 409 || restarts != 1 {
-		t.Fatalf("stale generation escaped: %d %d", response.Code, restarts)
+	if response.Code != 409 || applies != 1 {
+		t.Fatalf("stale generation escaped: %d %d", response.Code, applies)
 	}
 	body["expectedGeneration"] = 1
 	body["confirmation"] = ""
 	raw, _ = json.Marshal(body)
 	response = httptest.NewRecorder()
 	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
-	if response.Code != 400 || restarts != 1 {
-		t.Fatalf("missing confirmation escaped: %d %d", response.Code, restarts)
+	if response.Code != 400 || applies != 1 {
+		t.Fatalf("missing confirmation escaped: %d %d", response.Code, applies)
 	}
-	recorderAdvancedRestart = func(context.Context) error { restarts++; return errors.New("restart unavailable") }
+	recorderAdvancedRestart = func(context.Context) error { applies++; return errors.New("runtime apply unavailable") }
 	body["confirmation"] = recorderApplyPhrase
 	body["settings"] = func() RecorderAdvancedSettings { value := settings; value.CabinRecording = false; return value }()
 	raw, _ = json.Marshal(body)
 	response = httptest.NewRecorder()
 	HandleRecorderAdvanced(response, httptest.NewRequest("PUT", "/recorder-advanced", bytes.NewReader(raw)))
-	if response.Code != 202 || restarts != 2 || readRecorderApplied(recorderAdvancedAppliedPath) != 0 {
-		t.Fatalf("failed restart retained applied generation: %d %d", response.Code, restarts)
+	if response.Code != 202 || applies != 2 || readRecorderApplied(recorderAdvancedAppliedPath) != 0 {
+		t.Fatalf("failed apply retained applied generation: %d %d", response.Code, applies)
 	}
 }
 
@@ -99,22 +101,22 @@ func TestEnsureRecorderHookAtBootRestartsOnceAndCommitsGeneration(t *testing.T) 
 	directory := t.TempDir()
 	originalPath, originalAppliedPath := recorderAdvancedConfigPath, recorderAdvancedAppliedPath
 	originalAvailable, originalLoaded := recorderAdvancedAvailable, recorderAdvancedLoaded
-	originalRestart, originalUptime := recorderAdvancedRestart, recorderBootUptime
+	originalRestart, originalHealthy := recorderAdvancedRestart, recorderAdvancedHealthy
 	recorderAdvancedConfigPath = filepath.Join(directory, "recorder", "config")
 	recorderAdvancedAppliedPath = filepath.Join(directory, "recorder", "applied-generation")
 	settings := defaultRecorderAdvancedSettings()
 	if err := writeRecorderAdvanced(recorderAdvancedConfigPath, settings, 7); err != nil {
 		t.Fatal(err)
 	}
-	recorderBootUptime = func() (time.Duration, error) { return 30 * time.Second, nil }
 	recorderAdvancedAvailable = func() bool { return true }
 	loaded, restarts := false, 0
 	recorderAdvancedLoaded = func(context.Context) bool { return loaded }
 	recorderAdvancedRestart = func(context.Context) error { restarts++; loaded = true; return nil }
+	recorderAdvancedHealthy = func(context.Context) error { return nil }
 	t.Cleanup(func() {
 		recorderAdvancedConfigPath, recorderAdvancedAppliedPath = originalPath, originalAppliedPath
 		recorderAdvancedAvailable, recorderAdvancedLoaded = originalAvailable, originalLoaded
-		recorderAdvancedRestart, recorderBootUptime = originalRestart, originalUptime
+		recorderAdvancedRestart, recorderAdvancedHealthy = originalRestart, originalHealthy
 	})
 	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil {
 		t.Fatal(err)
@@ -124,16 +126,44 @@ func TestEnsureRecorderHookAtBootRestartsOnceAndCommitsGeneration(t *testing.T) 
 	}
 }
 
-func TestEnsureRecorderHookAtBootDoesNotInterruptLateBrokerRestart(t *testing.T) {
-	originalUptime, originalAvailable, originalRestart := recorderBootUptime, recorderAdvancedAvailable, recorderAdvancedRestart
-	recorderBootUptime = func() (time.Duration, error) { return 16 * time.Minute, nil }
+func TestEnsureRecorderHookAtBootDoesNotReapplyWhenAlreadyLoaded(t *testing.T) {
+	originalAvailable, originalLoaded, originalRestart, originalHealthy := recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy
 	recorderAdvancedAvailable = func() bool { return true }
+	recorderAdvancedLoaded = func(context.Context) bool { return true }
+	recorderAdvancedHealthy = func(context.Context) error { return nil }
 	restarts := 0
 	recorderAdvancedRestart = func(context.Context) error { restarts++; return nil }
 	t.Cleanup(func() {
-		recorderBootUptime, recorderAdvancedAvailable, recorderAdvancedRestart = originalUptime, originalAvailable, originalRestart
+		recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy = originalAvailable, originalLoaded, originalRestart, originalHealthy
 	})
 	if err := EnsureRecorderHookAtBoot(context.Background()); err != nil || restarts != 0 {
-		t.Fatalf("late reconciliation = %v, restarts=%d", err, restarts)
+		t.Fatalf("loaded reconciliation = %v, restarts=%d", err, restarts)
+	}
+}
+
+func TestEnsureRecorderHookAtBootInjectsBeforeStockHealthCheck(t *testing.T) {
+	originalAvailable, originalLoaded, originalRestart, originalHealthy := recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy
+	recorderAdvancedAvailable = func() bool { return true }
+	recorderAdvancedLoaded = func(context.Context) bool { return false }
+	restarts := 0
+	recorderAdvancedRestart = func(context.Context) error {
+		restarts++
+		recorderAdvancedLoaded = func(context.Context) bool { return true }
+		return nil
+	}
+	recorderAdvancedHealthy = func(context.Context) error { return errors.New("stock encoders are still starting") }
+	t.Cleanup(func() {
+		recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy = originalAvailable, originalLoaded, originalRestart, originalHealthy
+	})
+	if err := EnsureRecorderHookAtBoot(context.Background()); err == nil || restarts != 1 {
+		t.Fatalf("startup injection did not precede health check: err=%v restarts=%d", err, restarts)
+	}
+}
+
+func TestEnsureRecorderHookAtBootDoesNotRaceUserApply(t *testing.T) {
+	recorderAdvancedMu.Lock()
+	defer recorderAdvancedMu.Unlock()
+	if err := EnsureRecorderHookAtBoot(context.Background()); err == nil {
+		t.Fatal("runtime reconciliation entered while user apply lock was held")
 	}
 }
