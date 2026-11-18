@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 systemctl is-active np1-control-broker.service np1-control.service
+systemctl is-active --quiet np1-control-ota-guard.service
 PID=$(systemctl show np1-control.service -p MainPID --value)
 test "$PID" -gt 1
 BASE=/overlay/owner-apps/np1-control
@@ -37,6 +38,22 @@ PY
 systemctl show np1-control.service -p NRestarts -p Result -p ExecMainStatus
 sh -n /etc/init.post_boot.sh
 sh -n /overlay/etc/init.post_boot.sh
+OTA_REPORT=/run/np1-control/ota-guard.json
+test -f "$OTA_REPORT" && test ! -L "$OTA_REPORT"
+ota_age=$(($(date +%s) - $(stat -c %Y "$OTA_REPORT")))
+test "$ota_age" -ge -60 && test "$ota_age" -le 120 || { echo 'OTA guard report is stale' >&2; exit 1; }
+grep -q '"managed":true' "$OTA_REPORT" || { echo 'OTA policy is not managed' >&2; exit 1; }
+grep -q '"firmwareKnown":true' "$OTA_REPORT" || { echo 'OTA firmware baseline changed' >&2; exit 1; }
+if grep -q '"wanted":true' "$OTA_REPORT"; then
+    grep -q '"flag":{"present":true,"managed":true,"protected":true' "$OTA_REPORT" &&
+        grep -q '"network":{"wanted":true,"active":true' "$OTA_REPORT" ||
+        { echo 'OTA prevention layers are incomplete' >&2; exit 1; }
+else
+    grep -q '"flag":{"present":false,"managed":true' "$OTA_REPORT" &&
+        grep -q '"network":{"wanted":false,"active":false' "$OTA_REPORT" ||
+        { echo 'Explicit OTA allowance is inconsistent' >&2; exit 1; }
+fi
+echo 'OTA guard report is fresh and consistent'
 if test -f "$BASE/recovery/owner-recovery-install"; then
     wants=$(systemctl show np1-owner-recovery.service -p Wants --value)
     for file in "$BASE"/units/*; do

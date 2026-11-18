@@ -38,6 +38,10 @@ rollback() {
             rm "$UNITS/$unit" || return 1
         fi
     done
+    if test -f "$BASE/private/ota-policy/ledger.json" && test -x "$BASE/bin/ncc"; then
+        "$BASE/bin/ncc" --mode ota-guard --ota-action release || return 1
+        "$BASE/bin/ncc" --mode ota-policy --ota-action uninstall || return 1
+    fi
     if test -f "$BASE/firewall-owned"; then sh "$BASE/tools/firewall.sh" remove || return 1; fi
     systemctl daemon-reload || return 1
     archive=$BASE.removed-$(date -u +%Y%m%dT%H%M%SZ)
@@ -82,6 +86,7 @@ chmod 0700 "$BASE/private/tailscale"
 mkdir -m 0755 "$BASE/bin"
 cp bin/ncc "$BASE/bin/ncc"
 chmod 0755 "$BASE/bin/ncc"
+bin/ncc --mode ota-policy --ota-action install >/dev/null
 cp tools/*.sh tools/postboot.py tools/ap-channel.py tools/run-owner-web.py "$BASE/tools/"
 
 RECORDER_DROPIN_DIR=$UNITS/app-@DriveRec.service.d
@@ -161,6 +166,7 @@ fi
 touch /run/xtables.lock
 systemctl start $start_units
 systemctl is-active --quiet np1-control-firewall.service
+sh "$BASE/tools/ota-policy.sh" guard-check >/dev/null
 sh tools/verify.sh
 stock_units > "$BASE/recovery/stock-after.txt"
 cmp "$BASE/recovery/stock-before.txt" "$BASE/recovery/stock-after.txt"

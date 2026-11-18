@@ -203,6 +203,7 @@ fi
 touch /run/xtables.lock
 systemctl restart np1-control-firewall.service
 systemctl restart np1-control-ota-guard.service
+sh "$BASE/tools/ota-policy.sh" guard-check >/dev/null
 if test -f /etc/systemd/system/np1-control-uplink.service; then systemctl restart np1-control-uplink.service; fi
 systemctl restart np1-control-modem.service
 if test -f "$BASE/private/ap/autostart"; then systemctl restart np1-control-ap.service; fi

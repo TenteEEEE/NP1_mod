@@ -1,6 +1,7 @@
 #!/bin/sh
 # Update the owner Web/API and broker, with an optional uplink supervisor restart.
-# Backup old owner binary; restore it on failure. No native service action.
+# The OTA guard runs a private copy of ncc, so refresh it too. Backup old owner
+# binary; restore it on failure. No stock/native service action.
 set -eu
 umask 077
 BASE=/overlay/owner-apps/np1-control
@@ -47,6 +48,7 @@ finish(){
         chmod 0755 "$BASE/bin/ncc.rollback"
         mv -f "$BASE/bin/ncc.rollback" "$BASE/bin/ncc"
         systemctl restart np1-control-broker.service np1-control.service || result=1
+        systemctl restart np1-control-ota-guard.service || result=1
         if test "$UPDATE_UPLINK" = 1; then systemctl restart np1-control-uplink.service || result=1; fi
         restore_led || result=1
         echo 'Web update failed; previous owner binary restored' >&2
@@ -59,6 +61,8 @@ chmod 0755 "$BASE/bin/ncc.web-new"
 mv -f "$BASE/bin/ncc.web-new" "$BASE/bin/ncc"
 systemctl restart np1-control-broker.service
 systemctl restart np1-control.service
+systemctl restart np1-control-ota-guard.service
+sh "$BASE/tools/ota-policy.sh" guard-check >/dev/null
 if test "$UPDATE_UPLINK" = 1; then
     systemctl restart np1-control-uplink.service
     systemctl is-active --quiet np1-control-uplink.service
@@ -72,4 +76,4 @@ sh tools/verify.sh
 capture > "$BACKUP/workers-after.txt"
 cmp "$BACKUP/workers-before.txt" "$BACKUP/workers-after.txt"
 COMPLETED=1
-echo 'Web/broker updated; AP, modem and native worker identities preserved'
+echo 'Web/broker and OTA guard updated; AP, modem and native worker identities preserved'

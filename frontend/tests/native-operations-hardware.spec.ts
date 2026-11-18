@@ -38,7 +38,7 @@ test('installed native page identifies the SD and opens confirmation without for
  expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length)).toBeGreaterThan(1)
  await grid.screenshot({path:info.outputPath('operation-grid-desktop.private.png')})
  await page.setViewportSize({width:390,height:844})
- expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.getByRole('heading',{name:'操作・診断',exact:true}).scrollIntoViewIfNeeded()
  await page.screenshot({path:info.outputPath('native-operations-mobile.private.png')})
  expect(errors).toEqual([])

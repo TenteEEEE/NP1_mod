@@ -21,7 +21,7 @@ python tools/connect.py --serial SERIAL
 
 `id`がrootであることを確認します。Goのパスを指定する場合は `tools/build.ps1 -Go PATH_TO_GO`、依存インストール済みの場合は `-SkipInstall` を使えます。Linux / macOSのビルドは `sh tools/build.sh` です。
 
-既設の所有者用 `np1-owner-recovery.service` が起動時に `/etc` overlay を読み直す機体では、初回導入に `python tools/deploy.py --serial SERIAL --action install-owner-recovery` を使えます。この方式は同サービスの `Wants` に専用unitsを登録し、専用の数値 UID/GID でWebを実行します。既設の起動スクリプト、アカウントファイル、OTA設定は導入前の状態を維持します。APとLEDの自動起動は所有者が各機能で設定した場合に有効になります。Wi-Fi / 4Gの回線切替は所有者が回線設定を初めて保存すると稼働します。この方式の復旧には `--action rollback-owner-recovery` を使用します。
+既設の所有者用 `np1-owner-recovery.service` が起動時に `/etc` overlay を読み直す機体では、初回導入に `python tools/deploy.py --serial SERIAL --action install-owner-recovery` を使えます。この方式は同サービスの `Wants` に専用unitsを登録し、専用の数値 UID/GID でWebを実行します。既設の起動スクリプトとアカウントファイルは維持し、本体の自動更新は標準導入と同じく初回導入時に停止します。アンインストール時は導入前のOTA設定へ戻します。APとLEDの自動起動は所有者が各機能で設定した場合に有効になります。Wi-Fi / 4Gの回線切替は所有者が回線設定を初めて保存すると稼働します。この方式の復旧には `--action rollback-owner-recovery` を使用します。
 
 ビルドはフロントエンド、Goのテストと静的検査、Linux ARM64バイナリ、ナンバー認識のモデルと推論エンジン、Tailscale、ライセンス一覧、配備用manifestを生成します。Tailscaleは固定バージョンの公式AArch64配布物を取得し、公開SHA-256と照合してから成果物へ同梱します。成果物は `artifacts/ncc/` に置きます。配備はハッシュを確認し、変更前の復旧コピーを本体へ保存します。本体のNode.js常駐は不要ですが、導入・起動スクリプトは既存のPython 3を使用します。
 
