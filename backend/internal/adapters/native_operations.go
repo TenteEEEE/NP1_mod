@@ -59,7 +59,7 @@ func nativeOperationGroups() []NativeOperationGroup {
 		{"vehicle", "車両・マイク", []NativeOperationItem{{"vehicle-type", "車種", "field1", operationOptions("セダン", "コンパクトカー", "SUV", "ミニバン", "軽自動車", "2シーター"), true}, {"collection-area", "車内の広さ", "field2", operationOptions("狭い", "広い"), true}, {"collection-direction", "マイクの集音方向", "field3", operationOptions("左", "前方", "右"), true}}},
 		{"installation", "取付情報", []NativeOperationItem{{"installation-direction", "取付方向", "field1", operationOptions("左側", "右側"), true}, {"installation-height", "取付高さ", "field2", nil, false}, {"installation-position", "取付位置", "field3", nil, false}}},
 		{"volume", "本体の音量", []NativeOperationItem{{"master-volume", "音量", "field1", []NativeOperationOption{{0, "0"}, {1, "1"}, {2, "2"}, {3, "3"}, {4, "4"}, {5, "5"}, {6, "6"}, {7, "7"}, {8, "8"}, {9, "9"}, {10, "10"}}, true}}},
-		{"account", "アカウントの状態", []NativeOperationItem{{"login-state", "ログイン", "field1", operationOptions("ログイン済み", "未ログイン", "起動時の認証更新中"), false}}},
+		{"account", "アカウント", []NativeOperationItem{{"login-state", "ログイン状態", "field1", operationOptions("ログイン済み", "未ログイン", "起動時の認証更新中"), false}}},
 		{"initial-setup", "初期設定の状態", []NativeOperationItem{{"initial-setup-state", "初期設定", "field1", operationOptions("完了", "通信設定以外は完了", "未完了"), false}}},
 		{"alignment", "取付チェック", []NativeOperationItem{{"installation-check", "取付設定の完了確認", "active", []NativeOperationOption{{0, "未完了"}, {1, "完了"}}, false}, {"installation-angle", "取付角度の判定", "angleOK", []NativeOperationOption{{0, "調整が必要"}, {1, "適正"}}, false}}},
 	}

@@ -4,6 +4,7 @@ const group={id:'recorder',label:'ドライブレコーダー',items:[{id:'recor
 const parking={id:'parking',label:'駐車中の録画',items:[{id:'parking-security',label:'駐車監視',field:'field1',options:[{value:1,label:'OFF'},{value:2,label:'ON'}],writable:true}]}
 const vehicle={id:'vehicle',label:'車両・マイク',items:[{id:'vehicle-type',label:'車種',field:'field1',options:[{value:1,label:'セダン'},{value:2,label:'SUV'}],writable:true}]}
 const volume={id:'volume',label:'本体の音量',items:[{id:'master-volume',label:'音量',field:'field1',options:Array.from({length:11},(_,value)=>({value,label:String(value)})),writable:true}]}
+const account={id:'account',label:'アカウント',items:[{id:'login-state',label:'ログイン状態',field:'field1',options:[{value:1,label:'ログイン済み'},{value:2,label:'未ログイン'},{value:3,label:'起動時の認証更新中'}],writable:false}]}
 const actions=[
  {id:'gnss-info',group:'GNSS・センサー',label:'GNSSの受信状態を取得',description:'受信状態を取得します。',readOnly:true,inputs:[]},
  {id:'account-login',group:'本体アカウントの操作',label:'本体にログイン',confirmation:'本体にログイン',description:'有効な認証情報が必要です。',readOnly:false,inputs:[{id:'refreshToken',label:'リフレッシュトークン',kind:'secret',max:1024},{id:'userKey',label:'ユーザーキー',kind:'secret',max:256}]},
@@ -23,7 +24,7 @@ async function open(page:Page,failWrite=false){
   else if(path.endsWith('/device/alexa'))value={status:'available',data:{wakeWord:{value:0,enabled:true,fixed:false},writable:true,linkage:{status:'not-fixed',source:'fixture'}}}
   else if(path.endsWith('/device/native-settings'))value={status:'available',data:{items:[]}}
   else if(path.endsWith('/device/native-audio'))value={status:'available',data:{masterVolume:18,mute:{value:1,enabled:false},correction:{value:2,label:'高'},writable:true}}
-  else if(path.endsWith('/device/native-operations'))value={available:true,groups:[group,parking,vehicle,volume],actions}
+  else if(path.endsWith('/device/native-operations'))value={available:true,groups:[group,parking,vehicle,volume,account],actions}
   else if(path.endsWith('/device/recorder-advanced'))value={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:1,applied:true,settings:{frontBitrateKbps:5000,cabinBitrateKbps:1000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true,segmentDurationSeconds:180}}
   else if(path.endsWith('/actions/gnss-info'))value={sent:true,acknowledged:true,completionConfirmed:true,values:{satellites:12,usedSatellites:8},message:'本体の応答を確認しました。'}
   else if(path.endsWith('/actions/wifi-saved'))value={sent:true,acknowledged:true,completionConfirmed:true,values:{networks:[]},message:'一覧を取得しました。'}
@@ -33,6 +34,7 @@ async function open(page:Page,failWrite=false){
   else if(path.endsWith('/state/parking'))value={values:{field1:2},observedAt:new Date().toISOString()}
   else if(path.endsWith('/state/vehicle'))value={values:{field1:1},observedAt:new Date().toISOString()}
   else if(path.endsWith('/state/volume'))value={values:{field1:0},observedAt:new Date().toISOString()}
+  else if(path.endsWith('/state/account'))value={values:{field1:2},observedAt:new Date().toISOString()}
   else if(path.endsWith('/sd-format/prepare'))value={token:'synthetic-confirmation',expiresAt:new Date(await page.evaluate(()=>Date.now())+60000).toISOString(),capacityBytes:64*1024**3}
   else if(path.endsWith('/sd-format/execute')){
    if(failWrite)return route.fulfill({status:503,json:{reason:'本体の応答を確認できません'}})
@@ -43,6 +45,9 @@ async function open(page:Page,failWrite=false){
  await page.goto(url!+'/#native')
  await expect(page.getByRole('button',{name:'SDカードをフォーマット',exact:true})).toBeEnabled()
  await expect(page.getByRole('button',{name:'本体の状態を更新',exact:true})).toBeEnabled()
+  const accountState=page.getByLabel('ログイン状態：未ログイン')
+  await expect(accountState).toHaveText('未ログイン')
+  await expect(accountState).toHaveClass(/status-warning/)
  return {writes,errors}
 }
 test.describe('native app operations',()=>{
