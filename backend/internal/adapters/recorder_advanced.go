@@ -74,6 +74,7 @@ var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
 var recorderAdvancedHealthy = verifyRecorderFunction
 var recorderAdvancedIdentity = recorderDriveRecIdentity
+var recorderAdvancedLock = lockRecorderApply
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
 	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true, SegmentSeconds: 180}
@@ -651,7 +652,7 @@ func EnsureRecorderHookAtBoot(ctx context.Context) error {
 	if !recorderAdvancedAvailable() {
 		return nil
 	}
-	releaseApply, err := lockRecorderApply()
+	releaseApply, err := recorderAdvancedLock()
 	if err != nil {
 		return err
 	}
@@ -755,7 +756,7 @@ func HandleRecorderAdvanced(w http.ResponseWriter, r *http.Request) {
 	}
 	var releaseApply func()
 	if body.ApplyNow {
-		releaseApply, err = lockRecorderApply()
+		releaseApply, err = recorderAdvancedLock()
 		if err != nil {
 			nativeError(w, 409, "RECORDER_HOOK_BUSY", "別の録画設定を適用中です。しばらくしてから再試行してください")
 			return

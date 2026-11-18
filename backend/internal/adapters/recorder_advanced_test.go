@@ -12,6 +12,13 @@ import (
 	"testing"
 )
 
+func stubRecorderAdvancedLock(t *testing.T) {
+	t.Helper()
+	original := recorderAdvancedLock
+	recorderAdvancedLock = func() (func(), error) { return func() {}, nil }
+	t.Cleanup(func() { recorderAdvancedLock = original })
+}
+
 func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
 	settings := RecorderAdvancedSettings{FrontBitrateKbps: 9876, CabinBitrateKbps: 654, FrontRateControl: "cbr", CabinRateControl: "vbr", FrontGOPMillis: 750, CabinGOPMillis: 2250, CabinRecording: false, SegmentSeconds: 240}
 	data, err := encodeRecorderAdvanced(settings, 19)
@@ -43,6 +50,7 @@ func TestRecorderAdvancedDecodesLegacyReservedSegmentAsStockDefault(t *testing.T
 }
 
 func TestRecorderAdvancedHandlerRequiresGenerationAndRestartConfirmation(t *testing.T) {
+	stubRecorderAdvancedLock(t)
 	directory := t.TempDir()
 	originalPath, originalAppliedPath, originalAvailable := recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedAvailable
 	originalRestart, originalHealthy, originalLoaded := recorderAdvancedRestart, recorderAdvancedHealthy, recorderAdvancedLoaded
@@ -98,6 +106,7 @@ func TestRecorderAdvancedHandlerRequiresGenerationAndRestartConfirmation(t *test
 }
 
 func TestEnsureRecorderHookAtBootRestartsOnceAndCommitsGeneration(t *testing.T) {
+	stubRecorderAdvancedLock(t)
 	directory := t.TempDir()
 	originalPath, originalAppliedPath := recorderAdvancedConfigPath, recorderAdvancedAppliedPath
 	originalAvailable, originalLoaded := recorderAdvancedAvailable, recorderAdvancedLoaded
@@ -127,6 +136,7 @@ func TestEnsureRecorderHookAtBootRestartsOnceAndCommitsGeneration(t *testing.T) 
 }
 
 func TestEnsureRecorderHookAtBootDoesNotReapplyWhenAlreadyLoaded(t *testing.T) {
+	stubRecorderAdvancedLock(t)
 	originalAvailable, originalLoaded, originalRestart, originalHealthy := recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy
 	recorderAdvancedAvailable = func() bool { return true }
 	recorderAdvancedLoaded = func(context.Context) bool { return true }
@@ -142,6 +152,7 @@ func TestEnsureRecorderHookAtBootDoesNotReapplyWhenAlreadyLoaded(t *testing.T) {
 }
 
 func TestRecorderAdvancedDeferredSaveWaitsForNextDriveRecProcess(t *testing.T) {
+	stubRecorderAdvancedLock(t)
 	directory := t.TempDir()
 	originalPath, originalAppliedPath, originalDeferredPath := recorderAdvancedConfigPath, recorderAdvancedAppliedPath, recorderAdvancedDeferredPath
 	originalAvailable, originalLoaded := recorderAdvancedAvailable, recorderAdvancedLoaded
@@ -187,6 +198,7 @@ func TestRecorderAdvancedDeferredSaveWaitsForNextDriveRecProcess(t *testing.T) {
 }
 
 func TestEnsureRecorderHookAtBootInjectsBeforeStockHealthCheck(t *testing.T) {
+	stubRecorderAdvancedLock(t)
 	originalAvailable, originalLoaded, originalRestart, originalHealthy := recorderAdvancedAvailable, recorderAdvancedLoaded, recorderAdvancedRestart, recorderAdvancedHealthy
 	recorderAdvancedAvailable = func() bool { return true }
 	recorderAdvancedLoaded = func(context.Context) bool { return false }
