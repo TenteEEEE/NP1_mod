@@ -38,6 +38,10 @@ rollback() {
             rm "$UNITS/$unit" || return 1
         fi
     done
+    if test -f "$BASE/private/ota-policy/ledger.json" && test -x "$BASE/bin/ncc"; then
+        "$BASE/bin/ncc" --mode ota-guard --ota-action release || return 1
+        "$BASE/bin/ncc" --mode ota-policy --ota-action uninstall || return 1
+    fi
     if test -f "$BASE/firewall-owned"; then sh "$BASE/tools/firewall.sh" remove || return 1; fi
     systemctl daemon-reload || return 1
     archive=$BASE.removed-$(date -u +%Y%m%dT%H%M%SZ)
@@ -68,6 +72,21 @@ fi
 
 cd "$STAGE"
 sha256sum -c SHA256SUMS >/dev/null
+for required in \
+    experimental/libncc-driverec-hook.so \
+    experimental/ncc-recorder-injector \
+    experimental/ncc-native-setting-helper \
+    experimental/ncc-native-alexa-helper \
+    experimental/ncc-native-setting-extended-helper \
+    experimental/ncc-native-setting-choice-helper \
+    experimental/ncc-native-setting-notification-helper \
+    experimental/ncc-native-audio-helper \
+    experimental/ncc-native-operations-helper \
+    experimental/ncc-native-wifi-sta-helper \
+    experimental/ncc-stock-start-helper
+do
+    test -f "$required" || { echo "Full install component missing: $required" >&2; exit 1; }
+done
 chmod 0755 bin/ncc
 bin/ncc --mode self-test
 mkdir -p -m 0755 "${BASE%/*}"
@@ -82,15 +101,14 @@ chmod 0700 "$BASE/private/tailscale"
 mkdir -m 0755 "$BASE/bin"
 cp bin/ncc "$BASE/bin/ncc"
 chmod 0755 "$BASE/bin/ncc"
+bin/ncc --mode ota-policy --ota-action install >/dev/null
 cp tools/*.sh tools/postboot.py tools/ap-channel.py tools/run-owner-web.py "$BASE/tools/"
 
 RECORDER_DROPIN_DIR=$UNITS/app-@DriveRec.service.d
 RECORDER_DROPIN=$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf
-if test -f experimental/libncc-driverec-hook.so; then
-    test ! -L "$RECORDER_DROPIN_DIR" && test ! -e "$RECORDER_DROPIN"
-    cp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
-    chmod 0555 "$BASE/recorder-hook/libncc-driverec-hook.so"
-fi
+test ! -L "$RECORDER_DROPIN_DIR" && test ! -e "$RECORDER_DROPIN"
+cp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
+chmod 0555 "$BASE/recorder-hook/libncc-driverec-hook.so"
 
 bin/ncc --mode setup --config-dir "$BASE/config"
 chown "$NCC_ID:$NCC_ID" "$BASE/config" "$BASE/config/"* "$BASE/state"
@@ -153,14 +171,14 @@ for name in web $workers; do
 done
 
 systemctl daemon-reload
-if test -f experimental/libncc-driverec-hook.so; then
-    cmp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
-    test ! -e "$RECORDER_DROPIN"
-    ! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
-fi
+cmp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
+cmp experimental/ncc-recorder-injector "$BASE/experimental/ncc-recorder-injector"
+test ! -e "$RECORDER_DROPIN"
+! systemctl show app-@DriveRec.service -p Environment --value | grep -Fq "LD_PRELOAD="
 touch /run/xtables.lock
 systemctl start $start_units
 systemctl is-active --quiet np1-control-firewall.service
+sh "$BASE/tools/ota-policy.sh" guard-check >/dev/null
 sh tools/verify.sh
 stock_units > "$BASE/recovery/stock-after.txt"
 cmp "$BASE/recovery/stock-before.txt" "$BASE/recovery/stock-after.txt"

@@ -18,6 +18,7 @@ python3 "$ROOT/tools/prepare-tailscale.py"
 mkdir -p "$ROOT/artifacts/ncc/vpn/bin"
 cp "$ROOT/artifacts/ncc-vpn/bin/tailscale" "$ROOT/artifacts/ncc-vpn/bin/tailscaled" "$ROOT/artifacts/ncc/vpn/bin/"
 cp "$ROOT/artifacts/ncc-vpn/source.json" "$ROOT/artifacts/ncc/vpn/source.json"
+python3 "$ROOT/tools/prepare-full-native.py"
 if test -f "$ROOT/artifacts/native-helper/ncc-native-setting-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/native-helper/ncc-native-setting-helper" "$ROOT/artifacts/ncc/experimental/"

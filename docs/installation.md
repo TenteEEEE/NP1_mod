@@ -21,7 +21,7 @@ python tools/connect.py --serial SERIAL
 
 `id`がrootであることを確認します。Goのパスを指定する場合は `tools/build.ps1 -Go PATH_TO_GO`、依存インストール済みの場合は `-SkipInstall` を使えます。Linux / macOSのビルドは `sh tools/build.sh` です。
 
-既設の所有者用 `np1-owner-recovery.service` が起動時に `/etc` overlay を読み直す機体では、初回導入に `python tools/deploy.py --serial SERIAL --action install-owner-recovery` を使えます。この方式は同サービスの `Wants` に専用unitsを登録し、専用の数値 UID/GID でWebを実行します。既設の起動スクリプト、アカウントファイル、OTA設定は導入前の状態を維持します。APとLEDの自動起動は所有者が各機能で設定した場合に有効になります。Wi-Fi / 4Gの回線切替は所有者が回線設定を初めて保存すると稼働します。この方式の復旧には `--action rollback-owner-recovery` を使用します。
+既設の所有者用 `np1-owner-recovery.service` が起動時に `/etc` overlay を読み直す機体では、初回導入に `python tools/deploy.py --serial SERIAL --action install-owner-recovery` を使えます。この方式は同サービスの `Wants` に専用unitsを登録し、専用の数値 UID/GID でWebを実行します。既設の起動スクリプトとアカウントファイルは維持し、本体の自動更新は標準導入と同じく初回導入時に停止します。アンインストール時は導入前のOTA設定へ戻します。APとLEDの自動起動は所有者が各機能で設定した場合に有効になります。Wi-Fi / 4Gの回線切替は所有者が回線設定を初めて保存すると稼働します。この方式の復旧には `--action rollback-owner-recovery` を使用します。
 
 ビルドはフロントエンド、Goのテストと静的検査、Linux ARM64バイナリ、ナンバー認識のモデルと推論エンジン、Tailscale、ライセンス一覧、配備用manifestを生成します。Tailscaleは固定バージョンの公式AArch64配布物を取得し、公開SHA-256と照合してから成果物へ同梱します。成果物は `artifacts/ncc/` に置きます。配備はハッシュを確認し、変更前の復旧コピーを本体へ保存します。本体のNode.js常駐は不要ですが、導入・起動スクリプトは既存のPython 3を使用します。
 
@@ -53,6 +53,8 @@ python tools/connect.py --serial SERIAL
 
 通常の公開ソースだけでWeb / brokerをビルドできます。純正設定の変更や一部の純正サービス起動には、別途ビルドする専用ヘルパーが必要です。ヘルパーのソースは `tools/native/`、ビルド入口は `tools/build-native-*.py` と `tools/build-stock-start-helper.py` です。
 
-この追加ビルドにはClang / LLD、Node.js、pyelftoolsと、所有する対応端末のリンク用ファイルが必要です。必要なファイル名は各ビルドスクリプトに記載しています。取得したファイルは `resources/native-sysroot/` に置き、公開・再配布しないでください。生成済みヘルパーがある場合、通常ビルドが配備物へ取り込みます。端末の純正ライブラリは実行時に照合し、未知のファームウェアには適用しません。
+この追加ビルドにはClang / LLD、Node.js、pyelftoolsと、所有する対応端末のリンク用ファイルが必要です。必要なファイル名は各ビルドスクリプトに記載しています。取得したファイルは `resources/native-sysroot/` に置き、公開・再配布しないでください。材料が揃った所有者PCでは通常ビルドが全ネイティブヘルパー、録画フック、ランタイム注入器を自動生成して配備物へ取り込みます。新規導入はこれらがすべて揃った配備物だけを受け付け、欠落時は実機を変更する前に中止します。端末の純正ライブラリは実行時に照合し、未知のファームウェアには適用しません。
+
+新規導入の完了判定には、H.264録画フックがDriveRecへ実際にロードされたこと、保存済み録画設定がある場合は同じ世代が適用済みであることのread-backを含みます。ファイルをコピーしただけの状態や、録画設定を利用できない部分導入は成功として扱いません。
 
 更新や取り消しは [復旧手順](recovery.md) を参照してください。

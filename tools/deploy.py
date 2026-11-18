@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from full_install_contract import missing_full_install_files
 parser = argparse.ArgumentParser()
 parser.add_argument('--serial', required=True)
 parser.add_argument('--password-file', type=pathlib.Path)
@@ -30,6 +31,10 @@ if 'uid=0(root)' not in identity:
     raise SystemExit('Root ADB required')
 if not (bundle / 'SHA256SUMS').is_file():
     raise SystemExit('Build artifact first')
+if args.action in ('install', 'install-owner-recovery'):
+    missing = missing_full_install_files(bundle)
+    if missing:
+        raise SystemExit('Full installation bundle is incomplete; device was not changed:\n - ' + '\n - '.join(missing))
 run(*adb, 'push', '--sync', str(bundle) + '/.', stage)
 data = b''
 if args.password_file:

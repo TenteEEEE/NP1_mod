@@ -155,3 +155,23 @@ func TestOperationsOutputRequiresCleanupAndRejectsDuplicates(t *testing.T) {
 		t.Fatal("valid output lost", e)
 	}
 }
+
+func TestAccountStateCatalogDistinguishesLabelFromCurrentValue(t *testing.T) {
+	for _, group := range nativeOperationGroups() {
+		if group.ID != "account" {
+			continue
+		}
+		if group.Label != "アカウント" || len(group.Items) != 1 {
+			t.Fatalf("ambiguous account group: %+v", group)
+		}
+		item := group.Items[0]
+		if item.ID != "login-state" || item.Label != "ログイン状態" || item.Writable || len(item.Options) != 3 {
+			t.Fatalf("ambiguous login state item: %+v", item)
+		}
+		if item.Options[0].Label != "ログイン済み" || item.Options[1].Label != "未ログイン" || item.Options[2].Label != "起動時の認証更新中" {
+			t.Fatalf("login states changed: %+v", item.Options)
+		}
+		return
+	}
+	t.Fatal("account group missing")
+}

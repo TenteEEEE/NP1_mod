@@ -27,8 +27,8 @@ async function open(page:Page,summary:any,ledHandler?:(route:Route)=>Promise<voi
   if(path.endsWith('/voicevox'))data={endpoint:'https://voice.example.invalid',defaultEndpoint:'https://voice.example.invalid',keyConfigured:false,apiKey:''}
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)})
  })
-  await page.goto(reviewURL!+(ledHandler?'#system/led':''))
-  await expect(page.getByRole('heading',{name:ledHandler?'前面LED':'走行の記録',exact:true})).toBeVisible()
+  await page.goto(new URL(ledHandler?'#system/led':'#dashboard',reviewURL!).toString())
+  await expect(page.getByRole('heading',{name:ledHandler?'前面LED':'走行の記録',exact:true})).toBeVisible({timeout:15000})
 }
 async function noOverflow(page:Page){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)}
 test.describe('user-focused dashboard review (synthetic browser fixtures)',()=>{
@@ -39,9 +39,9 @@ test.describe('user-focused dashboard review (synthetic browser fixtures)',()=>{
   await expect(page.getByTestId('trip-distance')).toHaveText('—km');await expect(page.getByTestId('trip-time')).toHaveText('—')
   await expect(page.getByTestId('traffic-total')).toHaveText('—')
   await expect(page.getByText('この期間の走行記録はありません')).toBeVisible()
-  await expect(page.locator('.traffic-usage').getByText('未登録',{exact:true})).toBeVisible()
+  await expect(page.getByRole('region',{name:'4G データ通信'}).getByText('未設定',{exact:true})).toBeVisible()
   await expect(page.locator('.connection-card').first().getByText('取得待ち',{exact:true})).toBeVisible()
-  await expect(page.getByText('管理ネットワークに接続')).toBeVisible()
+  await expect(page.getByRole('heading',{name:'Tailscale',exact:true}).locator('..')).toContainText('オンライン')
   await expect(page.getByText('遠隔アクセス利用可能')).toHaveCount(0)
   await expect(page.locator('.device-meter progress')).toHaveCount(0)
   await noOverflow(page);expect(errors).toEqual([])

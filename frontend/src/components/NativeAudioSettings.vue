@@ -4,6 +4,7 @@ import { api,type Observation } from '../services/api'
 
 type AudioData={masterVolume:number;mute:{value:number;enabled:boolean};correction:{value:number;label:string};writable:boolean;reason?:string}
 type SettingID='mute'|'volume-correction'
+withDefaults(defineProps<{showMasterVolume?:boolean}>(),{showMasterVolume:true})
 const emit=defineEmits<{busy:[value:boolean]}>()
 const state=ref<Observation<AudioData>>(),loading=ref(true),busy=ref<SettingID>(),draftMute=ref(false),draftCorrection=ref(0),error=ref(''),message=ref('')
 watch(()=>loading.value||Boolean(busy.value),value=>emit('busy',value),{immediate:true})
@@ -19,11 +20,11 @@ onMounted(load)
 
 <template>
  <section class="panel native-audio-settings" :aria-busy="loading||Boolean(busy)">
-  <div class="panel-head"><h2>本体の音声設定</h2><button class="text-button" @click="load" :disabled="loading||Boolean(busy)">状態を更新</button></div>
+  <div class="panel-head"><h2>{{showMasterVolume?'本体の音声設定':'消音・音量補正'}}</h2><button class="text-button" @click="load" :disabled="loading||Boolean(busy)">状態を更新</button></div>
   <div class="settings-body">
    <p v-if="loading" class="hint" role="status">本体の設定を取得しています…</p>
    <template v-if="valid(state)">
-    <div class="native-volume"><div><span class="native-audio-label">本体の音量</span><strong data-testid="native-master-volume">{{state?.data.masterVolume}}</strong></div><p class="hint">音量の変更は「本体の音量」カードから行えます。</p></div>
+    <div v-if="showMasterVolume" class="native-volume"><div><span class="native-audio-label">本体の音量</span><strong data-testid="native-master-volume">{{state?.data.masterVolume}}</strong></div><p class="hint">音量の変更は「本体の音量」カードから行えます。</p></div>
     <p v-if="!writable" class="hint">{{state?.data.reason||'現在は設定を変更できません。'}}</p>
     <div class="native-audio-grid">
      <div class="native-audio-option">

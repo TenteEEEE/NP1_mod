@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 test.skip(process.env.NCC_PRIORITY_HARDWARE!=='1','Explicit read-only device UI verification required')
-test('recordings expose the measured track and the five native categories share one page',async({page},info)=>{
+test('recordings expose the measured track and native settings are grouped by purpose',async({page},info)=>{
  test.setTimeout(90000)
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto('/#recordings')
@@ -9,9 +9,9 @@ test('recordings expose the measured track and the five native categories share 
  await expect(page.locator('.playback-route,.playback-location')).toHaveCount(0)
  await page.screenshot({path:info.outputPath('device-recording-map.png'),fullPage:true})
  await page.getByRole('link',{name:'純正設定',exact:true}).click()
- for(const name of ['運転サポート','ナビ・交通情報','案内・コエ','プライバシー','車両・取付']){
-  await expect(page.getByRole('heading',{name,exact:true})).toBeVisible({timeout:30000})
-  await expect(page.getByRole('link',{name,exact:true})).toHaveCount(0)
+ for(const group of [{tab:'運転支援',headings:['運転サポート']},{tab:'ナビ・案内',headings:['ナビ・交通情報','案内・コエ']},{tab:'プライバシー・取付',headings:['プライバシー','車両・取付']}]){
+  await page.getByRole('button',{name:new RegExp(group.tab)}).click()
+  for(const name of group.headings){await expect(page.getByRole('heading',{name,exact:true})).toBeVisible({timeout:30000});await expect(page.getByRole('link',{name,exact:true})).toHaveCount(0)}
  }
  await page.setViewportSize({width:390,height:844})
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
