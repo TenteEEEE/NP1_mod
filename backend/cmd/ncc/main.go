@@ -366,18 +366,6 @@ func main() {
 		}
 		fmt.Println("Network authentication enabled; Web password removed; HTTP management enabled")
 	case "broker":
-		go func() {
-			// The stock apps finish their AppManager startup barrier before the
-			// broker normally appears. Give the broker socket time to come up,
-			// then reconcile the one boot-order case that cannot be expressed by
-			// a late-mounted systemd drop-in alone.
-			time.Sleep(8 * time.Second)
-			ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
-			defer cancel()
-			if err := adapters.EnsureRecorderHookAtBoot(ctx); err != nil {
-				log.Printf("recorder boot hook reconciliation failed: %v", err)
-			}
-		}()
 		log.Fatal(broker.Serve(*socket, uint32(*uid)))
 	case "plate-sensor":
 		if e := runPlateSensor(*conf); e != nil {

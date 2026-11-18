@@ -356,17 +356,7 @@ func recorderHookLoaded(ctx context.Context) bool {
 }
 
 func restartDriveRecForRecorderHook(ctx context.Context) error {
-	def, _ := stockServiceDefinitionFor("drive-rec")
-	services, err := readStockServices(ctx, []stockServiceDefinition{def}, stockServiceRuntime())
-	if err != nil || len(services) != 1 || services[0].State != "active" {
-		return errors.New("DriveRec is not in a restartable active state")
-	}
-	if !stockServiceMu.TryLock() {
-		return errors.New("another stock service operation is active")
-	}
-	defer stockServiceMu.Unlock()
-	_, err = controlStockService(ctx, "drive-rec", stockServiceRequest{Action: "restart", ExpectedInvocationID: services[0].InvocationID, ExpectedState: services[0].State}, stockServiceRuntime())
-	return err
+	return errors.New("DriveRec standalone restart is disabled because it terminates stock recording")
 }
 
 // EnsureRecorderHookAtBoot reconciles the boot-order case where DriveRec is

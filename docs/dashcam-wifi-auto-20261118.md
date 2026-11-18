@@ -146,10 +146,10 @@
 ## ブート時の録画フック自動適用
 
 - 実機では純正 `DriveRec` がブート直後に起動し、永続 `/etc` overlay上のNCC所有drop-inがsystemdから見えるのはNCC broker起動時だった。この順序では、drop-in自体が永続でも初回 `DriveRec` プロセスには `LD_PRELOAD` されない。
-- broker起動8秒後にフックのプロセスメモリread-backを1回行い、未ロードの場合だけ既存の型付きサービス操作で `DriveRec` を再起動する。再起動後は純正AppManager起動バリアを通知し、ライブラリmapping、4か所のメモリフック、設定世代を確認する。
-- この自動調停はuptime 15分以内に限定した。走行中などにbrokerだけを後から再起動した場合、利用者確認なしで録画を中断しない。
-- 配備後に実機を再起動し、ADB、HTTP/HTTPS、前後JPEG、SD range、純正サービスを検証した。その後、手動適用なしで `hookLoaded:true`、`applied:true`、generation 26、前方2,000／車内1,000kbps、分割180秒をread-backした。
-- 同じ再起動後にmaster volume 0も再確認した。Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherComはすべてactive/running、`Result=success`、`NRestarts=0`。
+- `DriveRec` 単独再起動はAppManagerの後続ライフサイクル通知が再送されず、約5秒後に前後エンコーダが終了することを実機で確認した。この経路を不合格として無効化し、broker起動時の自動再起動も削除した。設定は保存済み・未適用として正しく表示し、録画を止めて適用済みに見せない。
+- 安全版配備後に実機を再起動し、純正 `DriveRec` PID 949が通常録画を継続すること、前後MP4が更新・増加することを確認した。Communication / DriveRec / ImageRecog / Voice / QMMF / NCC Web / brokerはすべてactiveだった。
+- generation 30の設定（前方2,000／車内1,000kbps、VBR、GOP 1,000ms、車内録画ON、分割180秒）は保持され、`hookLoaded:false` / `restartRequired:true` として未適用が明示される。master volume 0も再起動後に純正Setting応答で再確認した。
+- 次の適用経路は純正アプリ群を再起動せず、`DriveRec` がAppManager起動バリアで待機している間にヘルパーからプロセスメモリへ注入する方式に限定する。
 
 ## 復旧世代の容量管理
 
