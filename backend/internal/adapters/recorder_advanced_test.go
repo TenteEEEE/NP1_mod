@@ -3,15 +3,17 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
 
 func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
-	settings := RecorderAdvancedSettings{FrontBitrateKbps: 9876, CabinBitrateKbps: 654, FrontRateControl: "cbr", CabinRateControl: "vbr", FrontGOPMillis: 750, CabinGOPMillis: 2250, CabinRecording: false}
+	settings := RecorderAdvancedSettings{FrontBitrateKbps: 9876, CabinBitrateKbps: 654, FrontRateControl: "cbr", CabinRateControl: "vbr", FrontGOPMillis: 750, CabinGOPMillis: 2250, CabinRecording: false, SegmentSeconds: 240}
 	data, err := encodeRecorderAdvanced(settings, 19)
 	if err != nil || len(data) != recorderConfigSize {
 		t.Fatal(err, len(data))
@@ -23,6 +25,20 @@ func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
 	data[20] ^= 1
 	if _, _, err = decodeRecorderAdvanced(data); err == nil {
 		t.Fatal("corrupt config accepted")
+	}
+}
+
+func TestRecorderAdvancedDecodesLegacyReservedSegmentAsStockDefault(t *testing.T) {
+	settings := defaultRecorderAdvancedSettings()
+	data, err := encodeRecorderAdvanced(settings, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary.LittleEndian.PutUint32(data[44:], 0)
+	binary.LittleEndian.PutUint32(data[60:], crc32.ChecksumIEEE(data[:60]))
+	got, _, err := decodeRecorderAdvanced(data)
+	if err != nil || got.SegmentSeconds != 180 {
+		t.Fatalf("legacy segment = %d, %v", got.SegmentSeconds, err)
 	}
 }
 

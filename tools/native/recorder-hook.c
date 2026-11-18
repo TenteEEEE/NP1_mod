@@ -67,14 +67,16 @@ static int hook_start_two(void*self,unsigned camera,unsigned option){if(camera==
 static int hook_stop(void*self,unsigned camera){if(camera==1&&cabin_disabled()){log_line("ncc-recorder-hook: cabin ordinary stop suppressed\n");return 1;}return ((int(*)(void*,unsigned))stop_trampoline)(self,camera);}
 
 static void patch_jump(void*address,void*target){absolute_jump((u8*)address,target);}
+static u32 mov_w6_immediate(u32 value){return 0x52800006u|(value<<5);}
 static void install_memory_hooks(void){
  unsigned long phdr=getauxval(AT_PHDR);if(phdr<64){log_line("ncc-recorder-hook: main program header unavailable\n");return;}u8*base=(u8*)(phdr-64);
  static const u8 elf_prefix[8]={0x7f,'E','L','F',2,1,1,3};if(!bytes_equal(base,elf_prefix,8)){log_line("ncc-recorder-hook: main image base mismatch\n");return;}
- u8*one=base+0x138378,*two=base+0x1384d8,*stop=base+0x138658;
+ u8*one=base+0x138378,*two=base+0x1384d8,*stop=base+0x138658,*duration=base+0x14c774;
  static const u8 one_expected[16]={0xe9,0x13,0x40,0xd1,0x3f,0xd9,0x07,0xf9,0xfd,0x7b,0xbb,0xa9,0xfd,0x03,0x00,0x91};
  static const u8 two_expected[16]={0xe9,0x13,0x40,0xd1,0x3f,0xd1,0x07,0xf9,0xfd,0x7b,0xba,0xa9,0xe4,0x03,0x01,0x2a};
  static const u8 stop_expected[16]={0xe9,0x13,0x40,0xd1,0x3f,0xd9,0x07,0xf9,0xfd,0x7b,0xbb,0xa9,0x64,0x03,0x00,0xd0};
- if(!bytes_equal(one,one_expected,16)||!bytes_equal(two,two_expected,16)||!bytes_equal(stop,stop_expected,16)){log_line("ncc-recorder-hook: instruction fingerprint mismatch; stock behavior retained\n");return;}
+ static const u8 duration_expected[4]={0x86,0x16,0x80,0x52};
+ if(!bytes_equal(one,one_expected,16)||!bytes_equal(two,two_expected,16)||!bytes_equal(stop,stop_expected,16)||!bytes_equal(duration,duration_expected,4)){log_line("ncc-recorder-hook: instruction fingerprint mismatch; stock behavior retained\n");return;}
  log_line("ncc-recorder-hook: firmware and instruction fingerprints verified\n");
  u8*tramp=mmap(0,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);if(tramp==MAP_FAILED){log_line("ncc-recorder-hook: trampoline allocation failed\n");return;}
  start_one_trampoline=simple_trampoline(tramp,one,one+16);start_two_trampoline=simple_trampoline(tramp+64,two,two+16);stop_trampoline=stop_function_trampoline(tramp+128,stop,stop+16,base+0x1a6000);
@@ -90,6 +92,16 @@ static void install_memory_hooks(void){
   log_line("ncc-recorder-hook: text protection restore failed; original instructions restored\n");
  }
  log_line("ncc-recorder-hook: ordinary recording memory hooks installed\n");
+ struct ncc_recorder_config config;u32 segment_duration=180u;
+ if(load_config(&config))segment_duration=config.segment_duration_seconds;
+ void*duration_page=(void*)((unsigned long)duration&~4095UL);if(mprotect(duration_page,4096,PROT_READ|PROT_WRITE)){log_line("ncc-recorder-hook: duration text RW protection failed; stock duration retained\n");return;}
+ emit_u32(duration,mov_w6_immediate(segment_duration));cache_sync(duration,duration+4);
+ if(mprotect(duration_page,4096,PROT_READ|PROT_EXEC)){
+  bytes_copy(duration,duration_expected,4);cache_sync(duration,duration+4);
+  if(mprotect(duration_page,4096,PROT_READ|PROT_EXEC))_exit(78);
+  log_line("ncc-recorder-hook: duration text protection restore failed; stock duration restored\n");return;
+ }
+ log_line("ncc-recorder-hook: ordinary segment duration applied seconds=");log_u32(segment_duration);
 }
 
 typedef void(*create_streamer_fn)(void*,void*,void*,void*,void*,void*,void*);

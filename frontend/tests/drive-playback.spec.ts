@@ -101,10 +101,10 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
    expect(route.request().postDataJSON()).toEqual({expectedValue:1,value:2})
    return route.fulfill({json:{observedAt:'2026-11-11T08:00:00Z',values:{field1:2,field2:1,field3:2},readback:true}})
   })
-  let advanced={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:3,settings:{frontBitrateKbps:10000,cabinBitrateKbps:4000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true}}
+  let advanced={available:true,configured:true,hookLoaded:true,restartRequired:false,generation:3,settings:{frontBitrateKbps:10000,cabinBitrateKbps:4000,frontRateControl:'vbr',cabinRateControl:'vbr',frontGopMilliseconds:1000,cabinGopMilliseconds:1000,cabinRecording:true,segmentDurationSeconds:180}}
   await page.route('**/api/v1/device/recorder-advanced',route=>{
    if(route.request().method()==='PUT'){
-    const body=route.request().postDataJSON();expect(body.expectedGeneration).toBe(3);expect(body.settings.frontBitrateKbps).toBe(8123);expect(body.settings.cabinRecording).toBe(false);expect(body.acknowledgeRecordingGap).toBe(true)
+    const body=route.request().postDataJSON();expect(body.expectedGeneration).toBe(3);expect(body.settings.frontBitrateKbps).toBe(8123);expect(body.settings.cabinRecording).toBe(false);expect(body.settings.segmentDurationSeconds).toBe(240);expect(body.acknowledgeRecordingGap).toBe(true)
     advanced={...advanced,generation:4,settings:body.settings};return route.fulfill({json:{...advanced,applied:true,message:'録画サービスを再起動し、起動時フックと設定世代の読込みを確認しました。'}})
    }
    return route.fulfill({json:advanced})
@@ -119,6 +119,7 @@ test.describe('dashcam playback user review (synthetic browser fixtures)',()=>{
   await expect(page.getByLabel('車内・後方カメラの録画品質')).toHaveValue('1')
   await expect(page.getByLabel('録画に車内の音声を含める')).toHaveValue('2')
   await page.getByRole('group',{name:'前方カメラ'}).getByLabel('ビットレート（kbps）').fill('8123')
+  await page.getByLabel('録画ファイルの分割時間').fill('240')
   await page.getByRole('group',{name:'車内・後方カメラ'}).getByLabel('録画する').uncheck()
   await page.getByLabel('録画サービスの再起動を許可する').check()
   await page.getByRole('button',{name:'保存して録画サービスを再起動'}).click()

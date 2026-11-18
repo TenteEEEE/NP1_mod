@@ -83,3 +83,32 @@
 - 車内通常録画 OFF を適用し、APIのgenerationと設定read-back、3か所のメモリフック、および実行時の `cabin ordinary stop suppressed` を確認した。SD未挿入（`insertSts:2`）のため、通常録画開始抑止とMP4ファイル差分は確認できていない。試験後は前方 `10,000 kbps`、車内 `4,000 kbps`、VBR、GOP `1,000 ms`、車内通常録画 ON の純正相当値へ復元した。
 - 実行中の永続領域／`/run` ライブラリSHA一致、`LD_PRELOAD`、実行マッピング、純正 `DriveRec` のSHA、3か所のジャンプ命令とジャンプ先をread-backした。Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherCom はすべて active、`DriveRec` の `NRestarts=0` だった。
 - ADBは利用者が接続した対象実機だけに固定して使用した。Windows側Wi-Fiの接続先・プロファイル・設定には触れていない。
+
+## 通常録画ファイルの分割時間
+
+- 固定対象の純正 `DriveRec` を静的解析し、`CDVR_ENT_RECCORE_OrdinaryRecorder` のコンストラクタ `0x14c6b8` が `0x14c774` の `mov w6, #180` で通常録画の分割時間を180秒に初期化し、オブジェクトの `+0x254` へ保存することを確認した。
+- 同クラスの `SetRecFileDuration` は `0x14c878` にあり、引数の32bit値を同じ `+0x254` へ保存する。通常録画の前方・車内で共通の秒単位設定である。
+- 純正ファイルは変更せず、起動時フックがSHA-256と元命令 `86 16 80 52` を確認した場合だけ、`0x14c774` の即値を設定値へプロセスメモリ上で置き換える。対象範囲は30〜600秒とし、未設定・旧形式の予約値0は純正値180秒へ移行する。
+- 64バイトの既存設定形式を維持し、offset `+44` を `segmentDurationSeconds` に割り当てた。Web APIと画面へ「録画ファイルの分割時間」を追加し、前方・車内の通常録画へ共通適用する。
+- read-backは従来の3か所の録画開始・停止ジャンプに加え、実行中 `DriveRec` の `imageBase + 0x14c774` が設定秒数を表すAArch64命令になっていることまで確認する。プロセスがactiveであるだけでは適用済みにしない。
+
+## SD未挿入時のライブビュー調査
+
+- JPEGライブビューはSDなしでも取得でき、実機でHTTP 200のJPEGフレームを確認した。
+- H.264ライブビューは純正SD上のMP4を追尾する実装のため、SD未挿入では `CAMERA_H264_UNAVAILABLE` / 「映像の準備を待っています」となる。通信速度低下ではなく、H.264入力ファイルが存在しないことが原因である。
+
+## 追加検証
+
+- フック設定parser・ARM64ビルド、frontend build、全Go test/vet、Python unittest 153件に合格した。
+- ローカルViteを使った録画設定・再生E2Eは7件すべて合格し、分割時間240秒の送信と、純正設定カード／詳細設定カード間の16px以上の余白を検証した。
+- 実機配備時は `recorder-hook-update` を使い、更新前後の純正サービス状態を比較する。分割時間240秒でメモリread-back後、180秒へ復帰し、Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherComを最終確認する。
+
+### 分割時間の実機検証結果
+
+- `recorder-hook-update` で新しいWeb／broker／起動フックを配備した。更新処理は `DriveRec` を再起動せず、復旧バックアップを作成して正常終了した。
+- 配備前から利用者が設定していた前方 `2,000 kbps`、車内 `1,000 kbps`、VBR、GOP `1,000 ms`、車内録画ONを保持したまま、分割時間だけを240秒へ変更した。APIは generation 15、`hookLoaded:true`、`applied:true` を返した。
+- 実行中 `DriveRec` の `imageBase + 0x14c774` は240秒時に `06 1e 80 52`、起動ログは `ordinary segment duration applied seconds=240` となり、設定値のプロセスメモリ反映を独立に確認した。
+- 検証後は分割時間だけを純正相当の180秒へ戻した。APIは generation 16、`restartRequired:false`、`applied:true` を返し、同アドレスは純正命令 `86 16 80 52` へ戻った。
+- 永続領域と `/run` のフックSHA-256はともに `30bec62fe052808da9ad17d08be32e060143440f2543523a3bb2f75fe2dd0d40` で配布物と一致した。
+- SD未挿入状態でも前方JPEG 49,286 bytes、車内JPEG 5,154 bytesを取得した。SD範囲検証は `NO_SD` としてskipし、Webパスワードなし、パストラバーサル拒否、バックアップ情報の秘匿も合格した。
+- Communication / DriveRec / ImageRecog / Voice / QMMF / NEventWatcherCom はすべて `active/running`、`Result=success`、`NRestarts=0` だった。

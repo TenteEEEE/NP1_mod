@@ -90,6 +90,19 @@ class RecorderHookContractTests(unittest.TestCase):
         )
         self.assertIn("FrontBitrateKbps: 10000", source)
         self.assertIn("CabinBitrateKbps: 4000", source)
+        self.assertIn("SegmentSeconds: 180", source)
+
+    def test_segment_duration_patch_is_pinned_and_read_back(self):
+        hook = (ROOT / "tools/native/recorder-hook.c").read_text(encoding="utf8")
+        backend = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(
+            encoding="utf8"
+        )
+        build = (ROOT / "tools/build-recorder-hook.py").read_text(encoding="utf8")
+        self.assertIn("base+0x14c774", hook)
+        self.assertIn("duration_expected[4]={0x86,0x16,0x80,0x52}", hook)
+        self.assertIn("0x14c774:'86168052'", build)
+        self.assertIn("imageBase+0x14c774", backend)
+        self.assertIn("settings.SegmentSeconds<<5", backend)
 
     def test_loaded_readback_hashes_the_runtime_copy(self):
         source = (ROOT / "backend/internal/adapters/recorder_advanced.go").read_text(

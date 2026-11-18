@@ -18,6 +18,7 @@ struct ncc_recorder_config {
  rec_u32 front_gop_ms;
  rec_u32 cabin_gop_ms;
  rec_u32 cabin_enabled;
+ rec_u32 segment_duration_seconds;
  rec_u32 generation;
 };
 
@@ -29,7 +30,7 @@ static int recorder_config_valid_value(const struct ncc_recorder_config*c){
   (c->front_rate_control==NCC_RECORDER_RATE_CBR||c->front_rate_control==NCC_RECORDER_RATE_VBR)&&
   (c->cabin_rate_control==NCC_RECORDER_RATE_CBR||c->cabin_rate_control==NCC_RECORDER_RATE_VBR)&&
   c->front_gop_ms>=250u&&c->front_gop_ms<=10000u&&c->cabin_gop_ms>=250u&&c->cabin_gop_ms<=10000u&&
-  c->cabin_enabled<=1u&&c->generation!=0u;
+  c->cabin_enabled<=1u&&c->segment_duration_seconds>=30u&&c->segment_duration_seconds<=600u&&c->generation!=0u;
 }
 static int recorder_config_decode(const rec_u8*b,rec_size n,struct ncc_recorder_config*out){
  static const rec_u8 magic[8]={'N','C','C','R','E','C','1',0};
@@ -39,7 +40,7 @@ static int recorder_config_decode(const rec_u8*b,rec_size n,struct ncc_recorder_
  out->front_bitrate_bps=recorder_le32(b+16);out->cabin_bitrate_bps=recorder_le32(b+20);
  out->front_rate_control=recorder_le32(b+24);out->cabin_rate_control=recorder_le32(b+28);
  out->front_gop_ms=recorder_le32(b+32);out->cabin_gop_ms=recorder_le32(b+36);
- out->cabin_enabled=recorder_le32(b+40);out->generation=recorder_le32(b+56);
- return !recorder_le32(b+44)&&!recorder_le32(b+48)&&!recorder_le32(b+52)&&recorder_config_valid_value(out);
+ out->cabin_enabled=recorder_le32(b+40);out->segment_duration_seconds=recorder_le32(b+44);if(!out->segment_duration_seconds)out->segment_duration_seconds=180u;out->generation=recorder_le32(b+56);
+ return !recorder_le32(b+48)&&!recorder_le32(b+52)&&recorder_config_valid_value(out);
 }
 #endif

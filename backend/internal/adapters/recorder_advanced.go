@@ -23,7 +23,7 @@ const (
 	recorderHookLibrary    = "/run/np1-control-recorder-hook/libncc-driverec-hook.so"
 	recorderHookConfig     = "/overlay/owner-apps/np1-control/recorder-hook/config"
 	recorderHookApplied    = "/overlay/owner-apps/np1-control/recorder-hook/applied-generation"
-	recorderHookLibrarySHA = "98c279221668719f3cba836147bb923a247424965fa8008562ef413490a9e41f"
+	recorderHookLibrarySHA = "30bec62fe052808da9ad17d08be32e060143440f2543523a3bb2f75fe2dd0d40"
 	recorderDriveRecSHA    = "000871dc36581f27ae831d9db3772b553a17cce0d814c52867276ac68ea0cde0"
 	recorderConfigSize     = 64
 	recorderConfigVersion  = 1
@@ -32,6 +32,8 @@ const (
 	recorderMaximumBitrate = 50000
 	recorderMinimumGOP     = 250
 	recorderMaximumGOP     = 10000
+	recorderMinimumSegment = 30
+	recorderMaximumSegment = 600
 )
 
 type RecorderAdvancedSettings struct {
@@ -42,6 +44,7 @@ type RecorderAdvancedSettings struct {
 	FrontGOPMillis   uint32 `json:"frontGopMilliseconds"`
 	CabinGOPMillis   uint32 `json:"cabinGopMilliseconds"`
 	CabinRecording   bool   `json:"cabinRecording"`
+	SegmentSeconds   uint32 `json:"segmentDurationSeconds"`
 }
 
 type RecorderAdvancedState struct {
@@ -64,7 +67,7 @@ var recorderAdvancedLoaded = recorderHookLoaded
 var recorderAdvancedRestart = restartDriveRecForRecorderHook
 
 func defaultRecorderAdvancedSettings() RecorderAdvancedSettings {
-	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true}
+	return RecorderAdvancedSettings{FrontBitrateKbps: 10000, CabinBitrateKbps: 4000, FrontRateControl: "vbr", CabinRateControl: "vbr", FrontGOPMillis: 1000, CabinGOPMillis: 1000, CabinRecording: true, SegmentSeconds: 180}
 }
 
 func recorderRateValue(value string) (uint32, bool) {
@@ -83,7 +86,8 @@ func validRecorderAdvanced(settings RecorderAdvancedSettings) bool {
 	_, cabinRate := recorderRateValue(settings.CabinRateControl)
 	return frontRate && cabinRate && settings.FrontBitrateKbps >= recorderMinimumBitrate && settings.FrontBitrateKbps <= recorderMaximumBitrate &&
 		settings.CabinBitrateKbps >= recorderMinimumBitrate && settings.CabinBitrateKbps <= recorderMaximumBitrate &&
-		settings.FrontGOPMillis >= recorderMinimumGOP && settings.FrontGOPMillis <= recorderMaximumGOP && settings.CabinGOPMillis >= recorderMinimumGOP && settings.CabinGOPMillis <= recorderMaximumGOP
+		settings.FrontGOPMillis >= recorderMinimumGOP && settings.FrontGOPMillis <= recorderMaximumGOP && settings.CabinGOPMillis >= recorderMinimumGOP && settings.CabinGOPMillis <= recorderMaximumGOP &&
+		settings.SegmentSeconds >= recorderMinimumSegment && settings.SegmentSeconds <= recorderMaximumSegment
 }
 
 func encodeRecorderAdvanced(settings RecorderAdvancedSettings, generation uint32) ([]byte, error) {
@@ -105,6 +109,7 @@ func encodeRecorderAdvanced(settings RecorderAdvancedSettings, generation uint32
 	if settings.CabinRecording {
 		binary.LittleEndian.PutUint32(data[40:], 1)
 	}
+	binary.LittleEndian.PutUint32(data[44:], settings.SegmentSeconds)
 	binary.LittleEndian.PutUint32(data[56:], generation)
 	binary.LittleEndian.PutUint32(data[60:], crc32.ChecksumIEEE(data[:60]))
 	return data, nil
@@ -114,7 +119,7 @@ func decodeRecorderAdvanced(data []byte) (RecorderAdvancedSettings, uint32, erro
 	if len(data) != recorderConfigSize || string(data[:8]) != "NCCREC1\x00" || binary.LittleEndian.Uint32(data[8:]) != recorderConfigVersion || binary.LittleEndian.Uint32(data[12:]) != recorderConfigSize || crc32.ChecksumIEEE(data[:60]) != binary.LittleEndian.Uint32(data[60:]) {
 		return RecorderAdvancedSettings{}, 0, errors.New("invalid recorder hook config")
 	}
-	for _, offset := range []int{44, 48, 52} {
+	for _, offset := range []int{48, 52} {
 		if binary.LittleEndian.Uint32(data[offset:]) != 0 {
 			return RecorderAdvancedSettings{}, 0, errors.New("unsupported recorder hook config")
 		}
@@ -133,7 +138,11 @@ func decodeRecorderAdvanced(data []byte) (RecorderAdvancedSettings, uint32, erro
 	frontBPS, cabinBPS := binary.LittleEndian.Uint32(data[16:]), binary.LittleEndian.Uint32(data[20:])
 	cabinEnabled := binary.LittleEndian.Uint32(data[40:])
 	generation := binary.LittleEndian.Uint32(data[56:])
-	settings := RecorderAdvancedSettings{FrontBitrateKbps: frontBPS / 1000, CabinBitrateKbps: cabinBPS / 1000, FrontRateControl: frontRate, CabinRateControl: cabinRate, FrontGOPMillis: binary.LittleEndian.Uint32(data[32:]), CabinGOPMillis: binary.LittleEndian.Uint32(data[36:]), CabinRecording: cabinEnabled == 1}
+	segmentSeconds := binary.LittleEndian.Uint32(data[44:])
+	if segmentSeconds == 0 {
+		segmentSeconds = 180
+	}
+	settings := RecorderAdvancedSettings{FrontBitrateKbps: frontBPS / 1000, CabinBitrateKbps: cabinBPS / 1000, FrontRateControl: frontRate, CabinRateControl: cabinRate, FrontGOPMillis: binary.LittleEndian.Uint32(data[32:]), CabinGOPMillis: binary.LittleEndian.Uint32(data[36:]), CabinRecording: cabinEnabled == 1, SegmentSeconds: segmentSeconds}
 	if !frontOK || !cabinOK || frontBPS%1000 != 0 || cabinBPS%1000 != 0 || cabinEnabled > 1 || generation == 0 || !validRecorderAdvanced(settings) {
 		return RecorderAdvancedSettings{}, 0, errors.New("unsupported recorder hook values")
 	}
@@ -288,6 +297,17 @@ func recorderHookLoaded(ctx context.Context) bool {
 		return false
 	}
 	defer memory.Close()
+	settings, _, _, err := readRecorderAdvanced(recorderAdvancedConfigPath)
+	if err != nil {
+		log.Printf("recorder-hook readback failed: config unavailable")
+		return false
+	}
+	var durationInstruction [4]byte
+	expectedDurationInstruction := uint32(0x52800006) | settings.SegmentSeconds<<5
+	if _, err = memory.ReadAt(durationInstruction[:], int64(imageBase+0x14c774)); err != nil || binary.LittleEndian.Uint32(durationInstruction[:]) != expectedDurationInstruction {
+		log.Printf("recorder-hook readback failed: segment duration mismatch")
+		return false
+	}
 	for _, offset := range []uint64{0x138378, 0x1384d8, 0x138658} {
 		var jump [16]byte
 		if _, err = memory.ReadAt(jump[:], int64(imageBase+offset)); err != nil || binary.LittleEndian.Uint32(jump[0:4]) != 0x58000050 || binary.LittleEndian.Uint32(jump[4:8]) != 0xd61f0200 {
