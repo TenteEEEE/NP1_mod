@@ -19,6 +19,27 @@ func stubRecorderAdvancedLock(t *testing.T) {
 	t.Cleanup(func() { recorderAdvancedLock = original })
 }
 
+func TestRecorderArtifactContractIsBuildLocalAndFailClosed(t *testing.T) {
+	originalHook, originalInjector, originalOffset := recorderHookLibrarySHA, recorderHookInjectorSHA, recorderHookStatusOffText
+	t.Cleanup(func() {
+		recorderHookLibrarySHA, recorderHookInjectorSHA, recorderHookStatusOffText = originalHook, originalInjector, originalOffset
+	})
+	recorderHookLibrarySHA, recorderHookInjectorSHA, recorderHookStatusOffText = "", "", ""
+	if RecorderArtifactContractReady() {
+		t.Fatal("empty public build contract accepted")
+	}
+	recorderHookLibrarySHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	recorderHookInjectorSHA = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	recorderHookStatusOffText = "0x365e0"
+	if offset, ok := recorderArtifactContract(); !ok || offset != 0x365e0 {
+		t.Fatalf("valid build-local contract rejected: offset=%#x ok=%v", offset, ok)
+	}
+	recorderHookLibrarySHA = "not-a-sha256"
+	if RecorderArtifactContractReady() {
+		t.Fatal("malformed artifact identity accepted")
+	}
+}
+
 func TestRecorderAdvancedBinaryRoundTripAndCorruption(t *testing.T) {
 	settings := RecorderAdvancedSettings{FrontBitrateKbps: 9876, CabinBitrateKbps: 654, FrontRateControl: "cbr", CabinRateControl: "vbr", FrontGOPMillis: 750, CabinGOPMillis: 2250, CabinRecording: false, SegmentSeconds: 240}
 	data, err := encodeRecorderAdvanced(settings, 19)

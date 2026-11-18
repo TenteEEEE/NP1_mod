@@ -4,12 +4,18 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT/frontend"
 npm ci
 npm run build
+python3 "$ROOT/tools/prepare-full-native.py"
+RECORDER_HOOK_SHA=$(python3 "$ROOT/tools/verify-recorder-artifacts.py" --field hookSha256)
+RECORDER_INJECTOR_SHA=$(python3 "$ROOT/tools/verify-recorder-artifacts.py" --field injectorSha256)
+RECORDER_STATUS_OFFSET=$(python3 "$ROOT/tools/verify-recorder-artifacts.py" --field statusOffset)
+RECORDER_LDFLAGS="-s -w -X github.com/np1-control-center/ncc/internal/adapters.recorderHookLibrarySHA=$RECORDER_HOOK_SHA -X github.com/np1-control-center/ncc/internal/adapters.recorderHookInjectorSHA=$RECORDER_INJECTOR_SHA -X github.com/np1-control-center/ncc/internal/adapters.recorderHookStatusOffText=$RECORDER_STATUS_OFFSET"
 cd "$ROOT/backend"
 go test ./...
 go vet ./...
 mkdir -p "$ROOT/artifacts/ncc/bin" "$ROOT/artifacts/ncc/tools"
-CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o "$ROOT/artifacts/ncc/bin/ncc" ./cmd/ncc
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="$RECORDER_LDFLAGS" -o "$ROOT/artifacts/ncc/bin/ncc" ./cmd/ncc
 go version -m "$ROOT/artifacts/ncc/bin/ncc" > "$ROOT/artifacts/ncc/build-info.txt"
+python3 "$ROOT/tools/verify-recorder-artifacts.py" --binary "$ROOT/artifacts/ncc/bin/ncc"
 cp -R "$ROOT/systemd" "$ROOT/artifacts/ncc/"
 cp "$ROOT/tools/device/"* "$ROOT/artifacts/ncc/tools/"
 # A fresh NP1CC installation includes the pinned official Tailscale build.
@@ -18,7 +24,6 @@ python3 "$ROOT/tools/prepare-tailscale.py"
 mkdir -p "$ROOT/artifacts/ncc/vpn/bin"
 cp "$ROOT/artifacts/ncc-vpn/bin/tailscale" "$ROOT/artifacts/ncc-vpn/bin/tailscaled" "$ROOT/artifacts/ncc/vpn/bin/"
 cp "$ROOT/artifacts/ncc-vpn/source.json" "$ROOT/artifacts/ncc/vpn/source.json"
-python3 "$ROOT/tools/prepare-full-native.py"
 if test -f "$ROOT/artifacts/native-helper/ncc-native-setting-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/native-helper/ncc-native-setting-helper" "$ROOT/artifacts/ncc/experimental/"
@@ -60,7 +65,6 @@ if test -f "$ROOT/artifacts/recorder-injector/ncc-recorder-injector"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/recorder-injector/ncc-recorder-injector" "$ROOT/artifacts/ncc/experimental/"
 fi
-python3 "$ROOT/tools/verify-recorder-artifacts.py"
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 mkdir -p "$ROOT/artifacts/ncc/plate/models" "$ROOT/artifacts/ncc/plate/licenses"
