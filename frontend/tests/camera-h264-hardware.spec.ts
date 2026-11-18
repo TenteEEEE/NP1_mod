@@ -48,7 +48,9 @@ test('both original H264 camera streams decode and survive shared view switching
   const connections=responses,started=Date.now()
   while(Date.now()-started<soakSeconds*1000){
    await page.waitForTimeout(Math.max(1,Math.min(1000,soakSeconds*1000-(Date.now()-started))))
-   note({playback:await videos.evaluateAll(items=>items.map(item=>{const video=item as HTMLVideoElement,buffer=video.buffered;return {time:video.currentTime,end:buffer.length?buffer.end(buffer.length-1):null,lag:buffer.length?buffer.end(buffer.length-1)-video.currentTime:null,ready:video.readyState,paused:video.paused,frames:video.getVideoPlaybackQuality().totalVideoFrames}}))})
+   const playback=await videos.evaluateAll(items=>items.map(item=>{const video=item as HTMLVideoElement,buffer=video.buffered;return {time:video.currentTime,end:buffer.length?buffer.end(buffer.length-1):null,lag:buffer.length?buffer.end(buffer.length-1)-video.currentTime:null,age:Number(video.dataset.liveAge),ready:video.readyState,paused:video.paused,frames:video.getVideoPlaybackQuality().totalVideoFrames}}))
+   note({playback})
+   expect(playback.every(item=>Number.isFinite(item.age)&&item.age<=1.25)).toBe(true)
    expect(await videos.evaluateAll(items=>items.every(item=>!(item as HTMLVideoElement).error))).toBe(true)
   }
   await expect.poll(()=>videos.evaluateAll(items=>items.every(item=>(item as HTMLVideoElement).readyState>=2)),{timeout:20000}).toBe(true)
@@ -81,7 +83,7 @@ test('slow link stays at the live edge without flashing the recovery panel',asyn
  await page.goto('/#camera')
  const network=await page.context().newCDPSession(page)
  await network.send('Network.enable')
- await network.send('Network.emulateNetworkConditions',{offline:false,latency:100,downloadThroughput:3_000_000/8,uploadThroughput:1_000_000/8,connectionType:'cellular3g'})
+ await network.send('Network.emulateNetworkConditions',{offline:false,latency:100,downloadThroughput:600_000/8,uploadThroughput:600_000/8,connectionType:'cellular3g'})
  await page.getByRole('button',{name:'映像を表示',exact:true}).click()
  const video=page.locator('.live-camera video')
  await expect.poll(()=>video.evaluate(item=>{const media=item as HTMLVideoElement;return media.readyState>=2&&media.getVideoPlaybackQuality().totalVideoFrames>4}),{timeout:30000}).toBe(true)
@@ -89,9 +91,11 @@ test('slow link stays at the live edge without flashing the recovery panel',asyn
  for(let second=0;second<20;second++){
   await page.waitForTimeout(1000)
   expect(await page.getByText('カメラ出力の再開を待っています。',{exact:true}).count()).toBe(0)
-  samples.push(await video.evaluate(item=>{const media=item as HTMLVideoElement,buffer=media.buffered,end=buffer.length?buffer.end(buffer.length-1):0;return {ready:media.readyState,time:media.currentTime,end,lag:end-media.currentTime,frames:media.getVideoPlaybackQuality().totalVideoFrames}}))
+  samples.push(await video.evaluate(item=>{const media=item as HTMLVideoElement,buffer=media.buffered,end=buffer.length?buffer.end(buffer.length-1):0;return {ready:media.readyState,time:media.currentTime,end,lag:end-media.currentTime,age:Number(media.dataset.liveAge),frames:media.getVideoPlaybackQuality().totalVideoFrames}}))
  }
- expect(samples.filter((item:any)=>item.ready>=2&&item.lag>=0&&item.lag<.8).length).toBeGreaterThanOrEqual(15)
- expect(responses).toBeGreaterThan(0)
+ await writeFile(info.outputPath('low-bandwidth-samples.private.json'),JSON.stringify({responses,samples},null,2))
+ expect(samples.filter((item:any)=>Number.isFinite(item.age)&&item.age<=1.25).length).toBe(samples.length)
+ expect(samples.filter((item:any)=>item.ready>=2&&item.lag>=0&&item.lag<.8).length).toBeGreaterThanOrEqual(8)
+ expect(responses).toBeGreaterThan(1)
  await page.screenshot({path:info.outputPath('h264-live-low-bandwidth.png'),fullPage:true})
 })

@@ -10,7 +10,7 @@ NP1 Control Centerの独自コードは [MIT License](LICENSE) です。以下�
 - Go: `backend/go.mod` が解決するモジュールグラフ全体と、リンクされるGo標準ライブラリ・ランタイム。Goの追加PATENTSも保存しています。
 - Python: 解析PCのSSH検証で任意利用するParamikoとその依存関係、ELF・通信仕様の解析用pyelftools/Construct、Capstone/LLVM、Protocol Buffers。NP1配備物にこれらのPythonパッケージを組み込みません。記録されたバージョンは検査した環境のものです。
 - radio-map: 利用者提供のMITプロジェクトを設計の参考にしました。NP1向け実装は独立していますが、元のCopyright 2026 sochoとMIT本文も保持します。
-- Tailscale: 任意の準備ツールが公式の固定バージョンを別途取得します。このGitリポジトリはそのバイナリやソースを含みません。上流のBSDライセンスと配布元を一覧に示します。公式バイナリ自身の依存関係については [Tailscaleのライセンス案内](https://tailscale.com/licenses) も参照してください。
+- Tailscale: ビルド時に公式の固定バージョンを取得し、公開SHA-256と照合して配備成果物へ同梱します。このGitリポジトリ自体はそのバイナリやソースを含みません。上流のBSDライセンスと配布元を一覧に示します。公式バイナリ自身の依存関係については [Tailscaleのライセンス案内](https://tailscale.com/licenses) も参照してください。
 
 MPL/LGPL等の依存関係もOSSとして元の条件を維持します。ビルド用Lightning CSSのMPLや任意のホスト用ParamikoのLGPLを、プロジェクト全体のライセンスとして表示しません。依存ソフトウェアの変更版を再配布する場合は、その上流ライセンスに従ってソース・権利表示等を扱ってください。本リポジトリではこれらの依存ソースを改変・同梱していません。
 

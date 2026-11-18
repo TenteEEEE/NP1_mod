@@ -60,7 +60,7 @@ ADB転送後は **http://127.0.0.1/**、管理LANからは **http://本体の管
 
 ## ドキュメント
 
-- [導入・Tailscaleの準備](docs/installation.md)
+- [導入・Tailscaleの登録](docs/installation.md)
 - [画面の使い方](docs/usage.md)
 - [ナンバー認識と発話](docs/plate-recognition.md)
 - [更新・復旧・アンインストール](docs/recovery.md)

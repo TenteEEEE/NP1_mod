@@ -12,6 +12,12 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o "$R
 go version -m "$ROOT/artifacts/ncc/bin/ncc" > "$ROOT/artifacts/ncc/build-info.txt"
 cp -R "$ROOT/systemd" "$ROOT/artifacts/ncc/"
 cp "$ROOT/tools/device/"* "$ROOT/artifacts/ncc/tools/"
+# A fresh NP1CC installation includes the pinned official Tailscale build.
+# prepare-tailscale.py verifies the publisher-provided SHA-256 before staging it.
+python3 "$ROOT/tools/prepare-tailscale.py"
+mkdir -p "$ROOT/artifacts/ncc/vpn/bin"
+cp "$ROOT/artifacts/ncc-vpn/bin/tailscale" "$ROOT/artifacts/ncc-vpn/bin/tailscaled" "$ROOT/artifacts/ncc/vpn/bin/"
+cp "$ROOT/artifacts/ncc-vpn/source.json" "$ROOT/artifacts/ncc/vpn/source.json"
 if test -f "$ROOT/artifacts/native-helper/ncc-native-setting-helper"; then
     mkdir -p "$ROOT/artifacts/ncc/experimental"
     cp "$ROOT/artifacts/native-helper/ncc-native-setting-helper" "$ROOT/artifacts/ncc/experimental/"

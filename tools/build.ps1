@@ -16,6 +16,13 @@ try {
 Copy-Item -Recurse -Force "$repo/systemd" "$repo/artifacts/ncc/"
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/tools" | Out-Null
 Copy-Item -Force "$repo/tools/device/*" "$repo/artifacts/ncc/tools/"
+# A fresh NP1CC installation includes the pinned official Tailscale build.
+# prepare-tailscale.py verifies the publisher-provided SHA-256 before staging it.
+python "$repo/tools/prepare-tailscale.py"
+Check
+New-Item -ItemType Directory -Force "$repo/artifacts/ncc/vpn/bin" | Out-Null
+Copy-Item -Force "$repo/artifacts/ncc-vpn/bin/tailscale","$repo/artifacts/ncc-vpn/bin/tailscaled" "$repo/artifacts/ncc/vpn/bin/"
+Copy-Item -Force "$repo/artifacts/ncc-vpn/source.json" "$repo/artifacts/ncc/vpn/source.json"
 if (Test-Path "$repo/artifacts/native-helper/ncc-native-setting-helper") {
     New-Item -ItemType Directory -Force "$repo/artifacts/ncc/experimental" | Out-Null
     Copy-Item -Force "$repo/artifacts/native-helper/ncc-native-setting-helper" "$repo/artifacts/ncc/experimental/"

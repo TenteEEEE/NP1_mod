@@ -4,13 +4,13 @@ import {Camera,Maximize} from '@lucide/vue'
 import {api} from '../services/api'
 
 const props=defineProps<{source:'front'|'in';format:'h264'|'jpeg';color:string;jpegResolution:'360p'|'1080p';playing:boolean}>(),emit=defineEmits<{fallback:[];busy:[value:boolean]}>()
-const source=computed(()=>props.source),format=computed(()=>props.format),color=computed(()=>props.color),jpegResolution=computed(()=>props.jpegResolution),active=ref(false),busy=ref(false),status=ref('idle'),error=ref(''),imageURL=ref(''),videoURL=ref(''),video=ref<HTMLVideoElement>(),width=ref(1920),height=ref(1080),fps=ref(0),hasFrame=ref(false)
+const source=computed(()=>props.source),format=computed(()=>props.format),color=computed(()=>props.color),jpegResolution=computed(()=>props.jpegResolution),active=ref(false),busy=ref(false),status=ref('idle'),error=ref(''),imageURL=ref(''),videoURL=ref(''),video=ref<HTMLVideoElement>(),width=ref(1920),height=ref(1080),fps=ref(0),hasFrame=ref(false),liveAge=ref(0)
 let generation=0,session='',controller:AbortController|undefined,timer:ReturnType<typeof setTimeout>|undefined,waitingTimer:ReturnType<typeof setTimeout>|undefined,finishPause:(()=>void)|undefined,mediaSource:MediaSource|undefined,objectURL=''
 const caption=computed(()=>format.value==='h264'?`${width.value} × ${height.value}${fps.value?' · '+Number(fps.value.toFixed(1))+' fps':''} · H.264`:`${jpegResolution.value==='1080p'?'1920 × 1080':'640 × 360'} · 最大 1 fps · JPEG`)
 const waiting=computed(()=>active.value&&!hasFrame.value&&status.value!=='live')
 function clearMedia(){imageURL.value='';videoURL.value='';if(objectURL)URL.revokeObjectURL(objectURL);objectURL='';if(mediaSource?.readyState==='open'){try{mediaSource.endOfStream()}catch{}}mediaSource=undefined}
 async function release(id:string){if(id){try{await api('/camera/sessions/'+encodeURIComponent(id),'DELETE')}catch{}}}
-async function stop(reset=true){active.value=false;generation++;busy.value=false;controller?.abort();clearTimeout(timer);clearTimeout(waitingTimer);finishPause?.();finishPause=undefined;const id=session;session='';clearMedia();hasFrame.value=false;if(reset){status.value='idle';error.value=''}await release(id)}
+async function stop(reset=true){active.value=false;generation++;busy.value=false;controller?.abort();clearTimeout(timer);clearTimeout(waitingTimer);finishPause?.();finishPause=undefined;const id=session;session='';clearMedia();hasFrame.value=false;liveAge.value=0;if(reset){status.value='idle';error.value=''}await release(id)}
 function pause(ms:number,g:number){return new Promise<void>(resolve=>{if(!active.value||g!==generation)return resolve();finishPause=resolve;timer=setTimeout(()=>{finishPause=undefined;resolve()},ms)})}
 async function createSession(g:number){const value=await api<{id:string}>('/camera/sessions','POST',{source:source.value,color:format.value==='jpeg'?color.value:'source',resolution:format.value==='jpeg'?jpegResolution.value:'360p'});if(g!==generation||!active.value){await release(value.id);return false}session=value.id;return true}
 async function start(){
@@ -43,7 +43,8 @@ function event(target:EventTarget,type:string,signal:AbortSignal){return new Pro
 async function append(buffer:SourceBuffer,chunk:Uint8Array,signal:AbortSignal){if(buffer.updating)await event(buffer,'updateend',signal);const ended=event(buffer,'updateend',signal);try{buffer.appendBuffer(new Uint8Array(chunk))}catch(e){ended.catch(()=>{});throw e}await ended}
 async function h264Loop(g:number){
  while(active.value&&g===generation){
-  const abort=new AbortController();controller=abort;let reader:ReadableStreamDefaultReader<Uint8Array>|undefined
+  const abort=new AbortController();controller=abort;let reader:ReadableStreamDefaultReader<Uint8Array>|undefined,reconnectFast=false,mediaOrigin:number|undefined,mediaEnd=0,wallOrigin=0,watchdog:ReturnType<typeof setInterval>|undefined
+  const refreshAge=()=>{if(mediaOrigin===undefined)return;liveAge.value=Math.max(0,(performance.now()-wallOrigin)/1000-(mediaEnd-mediaOrigin));if(liveAge.value>1.25){reconnectFast=true;abort.abort()}}
   try{
    status.value='loading'
    const response=await fetch('/api/v1/camera/sessions/'+encodeURIComponent(session)+'/h264',{signal:abort.signal})
@@ -61,13 +62,15 @@ async function h264Loop(g:number){
     await append(buffer,item.value,abort.signal)
     if(buffer.buffered.length){
      const end=buffer.buffered.end(buffer.buffered.length-1),player=video.value
+     mediaEnd=end
+     if(mediaOrigin===undefined){mediaOrigin=end;wallOrigin=performance.now();liveAge.value=0;watchdog=setInterval(refreshAge,250)}else{refreshAge();if(reconnectFast)throw new Error('live edge transport delay')}
      if(player&&end>.08){const lag=end-player.currentTime;if(!played||lag>.65)player.currentTime=Math.max(0,end-.08);player.playbackRate=lag>.35?1.08:1;if(!played){played=true;void player.play().catch(()=>{})}status.value='live';error.value=''}
      if(end>4&&buffer.buffered.start(0)<end-4){const removed=event(buffer,'updateend',abort.signal);try{buffer.remove(0,end-4)}catch(e){removed.catch(()=>{});throw e}await removed}
     }
    }
-  }catch(e){if(g!==generation||(e instanceof DOMException&&e.name==='AbortError'))return}
-  finally{try{await reader?.cancel()}catch{};abort.abort()}
-  if(active.value&&g===generation){status.value='waiting';await pause(1500,g)}
+   }catch(e){if(g!==generation||(e instanceof DOMException&&e.name==='AbortError'&&!reconnectFast))return}
+   finally{clearInterval(watchdog);try{await reader?.cancel()}catch{};abort.abort()}
+  if(active.value&&g===generation){status.value='waiting';liveAge.value=0;await pause(reconnectFast?150:500,g)}
  }
 }
 function fallback(){emit('fallback')}
@@ -85,7 +88,7 @@ defineExpose({stop})
  <section class="panel camera-panel" :aria-busy="busy">
   <div class="panel-head"><h2>{{source==='front'?'前方カメラ':'車内カメラ'}}</h2><span class="tag">{{caption}}</span><button v-if="format==='h264'&&hasFrame" class="icon-button" :aria-label="(source==='front'?'前方':'車内')+'映像を全画面表示'" @click="fullscreen"><Maximize :size="18"/></button></div>
   <div class="camera-preview live-camera">
-   <video v-if="format==='h264'" ref="video" :src="videoURL||undefined" aria-label="純正H.264ライブ映像" muted playsinline autoplay @waiting="videoWaiting" @playing="videoPlaying"></video>
+   <video v-if="format==='h264'" ref="video" :src="videoURL||undefined" :data-live-age="liveAge.toFixed(3)" aria-label="純正H.264ライブ映像" muted playsinline autoplay @waiting="videoWaiting" @playing="videoPlaying"></video>
    <img v-else-if="imageURL" :src="imageURL" alt="ライブカメラ映像">
    <div v-if="(!active||waiting)&&!imageURL" class="camera-placeholder"><Camera :size="40" stroke-width="1"/><h3>{{waiting?'映像の再開待ち':'カメラは停止しています'}}</h3><p>{{waiting?'カメラ出力が再開すると自動で表示します。':'表示ボタンでライブ映像を開きます。'}}</p></div>
   </div>

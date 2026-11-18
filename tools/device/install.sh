@@ -212,6 +212,11 @@ systemctl restart np1-control-broker.service
 systemctl restart np1-control-apn.service
 systemctl restart np1-control.service
 if test -f /etc/systemd/system/np1-control-plate.service; then systemctl restart np1-control-plate.service; fi
+# Tailscale is part of a fresh NP1CC installation.  Existing installations are
+# left untouched here so their running service and authenticated state are not
+# needlessly cycled during an ordinary NP1CC update.  install-vpn remains the
+# explicit, idempotent migration path for installations created by older builds.
+if test ! -f "$BACKUP/ncc"; then sh tools/install-vpn.sh; fi
 sh tools/verify.sh
 for unit in app-@Communication app-@DriveRec app-@ImageRecog app-@Voice qmmf-server NEventWatcherCom; do systemctl show "$unit.service" -p Id -p ActiveState -p SubState; done > "$BACKUP/stock-after.txt"
 cmp "$BACKUP/stock-before.txt" "$BACKUP/stock-after.txt"

@@ -252,7 +252,7 @@ def main():
              'evidence': 'reference project LICENSE',
              'notices': store_notices(ROOT, 'reference', 'radio-map', '2026', [('LICENSE', args.reference_license.read_bytes())])},
             {'ecosystem': 'external', 'name': 'Tailscale', 'version': '1.104.6', 'license': 'BSD-3-Clause',
-             'scope': 'optional official download; binary/source not in this Git repository',
+             'scope': 'official download bundled in build artifact; binary/source not in this Git repository',
              'upstream': 'https://github.com/tailscale/tailscale/tree/v1.104.6',
              'evidence': 'upstream v1.104.6 LICENSE; official binary has its own dependency notices',
              'notices': store_notices(ROOT, 'external', 'tailscale', '1.104.6', [('LICENSE', args.tailscale_license.read_bytes())])},

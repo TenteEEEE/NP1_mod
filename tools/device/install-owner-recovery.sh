@@ -77,7 +77,8 @@ touch "$BASE/recovery/owner-recovery-install"
 trap 'result=$?; if test "$result" -ne 0; then (rollback) || echo "Owner install rollback failed" >&2; fi' 0
 stock_units > "$BASE/recovery/stock-before.txt"
 sha256sum /etc/init.post_boot.sh /overlay/etc/init.post_boot.sh /etc/passwd /etc/group "$UNITS/$ANCHOR" > "$BASE/recovery/stock-files.sha256"
-for directory in led apn wifi ap nas ota-policy uplink; do mkdir "$BASE/private/$directory"; done
+for directory in led apn wifi ap nas ota-policy uplink tailscale; do mkdir "$BASE/private/$directory"; done
+chmod 0700 "$BASE/private/tailscale"
 mkdir -m 0755 "$BASE/bin"
 cp bin/ncc "$BASE/bin/ncc"
 chmod 0755 "$BASE/bin/ncc"
@@ -96,7 +97,16 @@ chown "$NCC_ID:$NCC_ID" "$BASE/config" "$BASE/config/"* "$BASE/state"
 printf '%s\n' "$NCC_ID" > "$BASE/worker-uid"
 touch "$BASE/enabled"
 
-workers='broker firewall modem ap apn led led-autostart plate'
+# The owner-recovery fresh-install path includes the same checksum-verified
+# Tailscale payload as the standard installer.  Authentication is deliberately
+# left to the owner; a future reinstall keeps state under private/tailscale.
+test -f vpn/bin/tailscale && test -f vpn/bin/tailscaled
+mkdir -m 0700 "$BASE/vpn"
+cp vpn/bin/tailscale vpn/bin/tailscaled "$BASE/vpn/"
+chmod 0755 "$BASE/vpn/tailscale" "$BASE/vpn/tailscaled"
+touch "$BASE/vpn-enabled"
+
+workers='broker firewall modem ap apn led led-autostart plate tailscale'
 if test -d experimental; then
     cp -R experimental "$BASE/experimental"
     chmod 0700 "$BASE/experimental"
