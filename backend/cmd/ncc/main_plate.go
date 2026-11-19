@@ -45,7 +45,7 @@ func runPlateSensor(confPath string) error {
 		ModelDir:   plateModelDir,
 		EnginePath: plateEngine,
 		Socket:     api.PlateSensorSocket,
-		FPS:        envNumber("NCC_PLATE_FPS", 2, 0.5, 10), // device: detector ~196 ms + reader ~19 ms/plate on 2 A76 threads
+		FPS:        envNumber("NCC_PLATE_FPS", 2, 0.5, 10),
 		Threads:    int(envNumber("NCC_PLATE_THREADS", 2, 1, 4)),
 	}
 	// The position of the detection's own second: the stock per-second record, or an NMEA fix
@@ -58,6 +58,7 @@ func runPlateSensor(confPath string) error {
 		}
 		return &plate.Location{At: fix.At, Lat: fix.Lat, Lon: fix.Lon, AccuracyM: fix.AccuracyM}
 	}
+	forceCPU := false
 	start := func(ctx context.Context) (platesensor.Engine, error) {
 		args := []string{
 			"--detector", filepath.Join(cfg.ModelDir, "detector.tflite"),
@@ -65,7 +66,20 @@ func runPlateSensor(confPath string) error {
 			"--config", filepath.Join(cfg.ModelDir, "plate-model.json"),
 			"--threads", strconv.Itoa(cfg.Threads),
 		}
-		return platesensor.StartProcessEngine(ctx, cfg.EnginePath, args, 30*time.Second)
+		if forceCPU {
+			return platesensor.StartProcessEngine(ctx, cfg.EnginePath, append(args, "--backend", "cpu"), 30*time.Second)
+		}
+		engine, err := platesensor.StartProcessEngine(ctx, cfg.EnginePath, args, 30*time.Second)
+		if err == nil || ctx.Err() != nil {
+			return engine, err
+		}
+		// A stale driver program or a wedged GPU must not stop recognition.
+		forceCPU = true
+		engine, retryErr := platesensor.StartProcessEngine(ctx, cfg.EnginePath, append(args, "--backend", "cpu"), 30*time.Second)
+		if retryErr != nil {
+			return nil, errors.Join(err, retryErr)
+		}
+		return engine, nil
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -37,13 +37,15 @@ type Config struct {
 var ModelFiles = []string{"detector.tflite", "ocr.tflite", "plate-model.json"}
 
 const (
-	maxQueued      = 2000
-	maxBatch       = 500
-	frameRingSize  = 24  // ~75 MB of NV12; detections wait up to locateWait for GNSS
-	keepFrameConf  = 0.5 // frames are kept only for readings that could become records
-	frameTTL       = 90 * time.Second
-	locateWait     = 8 * time.Second
-	engineTimeout  = 5 * time.Second
+	maxQueued     = 2000
+	maxBatch      = 500
+	frameRingSize = 24  // ~75 MB of NV12; detections wait up to locateWait for GNSS
+	keepFrameConf = 0.5 // frames are kept only for readings that could become records
+	frameTTL      = 90 * time.Second
+	locateWait    = 8 * time.Second
+	// PP-OCR may refine several detected plates in one frame. Give the
+	// bounded, synchronous request time to finish on the CPU fallback.
+	engineTimeout  = 20 * time.Second
 	engineStartup  = 30 * time.Second
 	settingsPoll   = 5 * time.Second
 	restartBackoff = 10 * time.Second
@@ -229,6 +231,9 @@ func (s *Sensor) step(ctx context.Context, engine Engine, buf []byte) error {
 	s.mu.Lock()
 	s.status.LastFrameAt = &at
 	s.status.Reason = ""
+	if reply.Backend != "" {
+		s.status.Backend = reply.Backend
+	}
 	s.processed = append(s.processed, at)
 	for len(s.processed) > 0 && at.Sub(s.processed[0]) > 10*time.Second {
 		s.processed = s.processed[1:]

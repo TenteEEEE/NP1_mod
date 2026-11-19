@@ -35,10 +35,11 @@ type EnginePlate struct {
 }
 
 type EngineReply struct {
-	Seq    uint64        `json:"seq"`
-	MS     float64       `json:"ms"`
-	Plates []EnginePlate `json:"plates"`
-	Error  string        `json:"error"`
+	Seq     uint64        `json:"seq"`
+	MS      float64       `json:"ms"`
+	Plates  []EnginePlate `json:"plates"`
+	Error   string        `json:"error"`
+	Backend string        `json:"backend,omitempty"`
 }
 
 type EngineInfo struct {

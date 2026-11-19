@@ -30,9 +30,10 @@ func (f *fakeSource) Next(buf []byte) ([2]int64, bool, error) {
 }
 
 type fakeEngine struct {
-	plates []EnginePlate
-	fail   bool
-	calls  int
+	plates  []EnginePlate
+	backend string
+	fail    bool
+	calls   int
 }
 
 func (f *fakeEngine) Info() EngineInfo {
@@ -43,7 +44,7 @@ func (f *fakeEngine) Process(_ context.Context, seq uint64, _ []byte, _, _ int) 
 	if f.fail {
 		return EngineReply{}, errors.New("boom")
 	}
-	return EngineReply{Seq: seq, Plates: f.plates}, nil
+	return EngineReply{Seq: seq, Plates: f.plates, Backend: f.backend}, nil
 }
 func (f *fakeEngine) Close() error { return nil }
 
@@ -139,6 +140,27 @@ func TestStepQueuesDetectionsWithLocationAndFrames(t *testing.T) {
 	s.expireFrames(now)
 	if res, _ = http.Get(srv.URL + "/frames/1"); res.StatusCode != 404 {
 		t.Fatal("expired frame served")
+	}
+}
+
+func TestStepUpdatesBackendAfterFallback(t *testing.T) {
+	s := New(setup(t, true, true), &fakeSource{}, nil, nil)
+	s.status.Backend = "gpu"
+	engine := &fakeEngine{backend: "cpu"}
+	buf := make([]byte, FrameBytes+stampBytes)
+	if err := s.step(context.Background(), engine, buf); err != nil {
+		t.Fatal(err)
+	}
+	if s.status.Backend != "cpu" {
+		t.Fatalf("fallback reported backend %q", s.status.Backend)
+	}
+
+	engine.backend = "" // older engines omit the field on frame replies
+	if err := s.step(context.Background(), engine, buf); err != nil {
+		t.Fatal(err)
+	}
+	if s.status.Backend != "cpu" {
+		t.Fatalf("reply with no backend erased %q", s.status.Backend)
 	}
 }
 

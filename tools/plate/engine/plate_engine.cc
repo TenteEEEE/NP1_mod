@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -28,6 +29,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <unistd.h>
 
 #include <nlohmann/json.hpp>
 #include <onnxruntime_cxx_api.h>
@@ -36,9 +38,15 @@
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
 
+#ifdef NP1_PLATE_GPU
+#include "tensorflow/lite/delegates/gpu/delegate.h"
+#endif
+
 using json = nlohmann::json;
 
 namespace {
+
+FILE* protocol_output = nullptr;
 
 struct Box {
   float x, y, w, h, score;
@@ -115,18 +123,141 @@ float read_out(const TfLiteTensor* t, size_t i) {
   }
 }
 
-std::unique_ptr<tflite::Interpreter> load(const std::string& path, int threads,
-                                          std::unique_ptr<tflite::FlatBufferModel>& model) {
-  model = tflite::FlatBufferModel::BuildFromFile(path.c_str());
-  if (!model) throw std::runtime_error("cannot load model " + path);
-  tflite::ops::builtin::BuiltinOpResolver resolver;
-  std::unique_ptr<tflite::Interpreter> interp;
-  tflite::InterpreterBuilder builder(*model, resolver);
-  builder.SetNumThreads(threads);
-  if (builder(&interp) != kTfLiteOk || !interp) throw std::runtime_error("cannot build interpreter for " + path);
-  if (interp->AllocateTensors() != kTfLiteOk) throw std::runtime_error("cannot allocate tensors for " + path);
-  return interp;
-}
+enum class GPU { off, full_graph, one_partition, cached_partition };
+
+class TFLiteModel {
+ public:
+  TFLiteModel(const std::string& path, int threads, GPU gpu, std::string cache_dir = {})
+      : name_(std::filesystem::path(path).filename().string()), threads_(threads),
+        model_(tflite::FlatBufferModel::BuildFromFile(path.c_str())) {
+    if (!model_) throw std::runtime_error("cannot load model: " + name_);
+#ifdef NP1_PLATE_GPU
+    bool allow_partial = gpu == GPU::one_partition || gpu == GPU::cached_partition;
+    if (allow_partial && !cache_dir.empty()) {
+      cache_dir_ = std::move(cache_dir);
+      const auto* bytes = static_cast<const uint8_t*>(model_->allocation()->base());
+      uint64_t fingerprint = 14695981039346656037ULL;
+      for (size_t i = 0; i < model_->allocation()->bytes(); ++i)
+        fingerprint = (fingerprint ^ bytes[i]) * 1099511628211ULL;
+      cache_token_ = "np1-detector-fp16-v1-" + std::to_string(fingerprint);
+    }
+    if (gpu == GPU::cached_partition &&
+        (cache_dir_.empty() || !std::filesystem::is_regular_file(cache_marker()))) gpu = GPU::off;
+    if (gpu != GPU::off) {
+      TfLiteGpuDelegateOptionsV2 options = TfLiteGpuDelegateOptionsV2Default();
+      options.experimental_flags = TFLITE_GPU_EXPERIMENTAL_FLAGS_CL_ONLY;
+      if (allow_partial) options.experimental_flags |= TFLITE_GPU_EXPERIMENTAL_FLAGS_ENABLE_QUANT;
+      options.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
+      options.inference_priority1 = allow_partial ? TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY
+                                                 : TFLITE_GPU_INFERENCE_PRIORITY_MAX_PRECISION;
+      if (!cache_dir_.empty()) {
+        options.experimental_flags |= TFLITE_GPU_EXPERIMENTAL_FLAGS_ENABLE_SERIALIZATION;
+        options.serialization_dir = cache_dir_.c_str();
+        options.model_token = cache_token_.c_str();
+      }
+      delegate_.reset(TfLiteGpuDelegateV2Create(&options));
+      if (delegate_) interpreter_ = build(delegate_.get());
+      if (interpreter_ && delegated(allow_partial)) return;
+      fall_back();
+      return;
+    }
+#else
+    (void)gpu;
+    (void)cache_dir;
+#endif
+    start_cpu();
+  }
+
+  tflite::Interpreter* get() const { return interpreter_.get(); }
+  tflite::Interpreter* operator->() const { return get(); }
+  bool uses_gpu() const {
+#ifdef NP1_PLATE_GPU
+    return static_cast<bool>(delegate_);
+#else
+    return false;
+#endif
+  }
+
+  void mark_cache_ready() const {
+#ifdef NP1_PLATE_GPU
+    if (uses_gpu() && !cache_dir_.empty()) {
+      // A delegate which cannot serialize a program must use the normal CPU
+      // detector on startup instead of compiling from scratch each time.
+      for (const auto& entry : std::filesystem::directory_iterator(cache_dir_)) {
+        const auto path = entry.path();
+        if (path.extension() != ".bin" || path.filename().string().find(cache_token_ + "_") != 0 ||
+            !entry.is_regular_file() || entry.file_size() == 0) continue;
+        std::ofstream marker(cache_marker());
+        marker << "OpenCL\n" << std::flush;
+        if (marker) return;
+        break;
+      }
+    }
+#endif
+    throw std::runtime_error("detector GPU cache could not be prepared");
+  }
+
+  template <typename Fill>
+  void invoke(Fill fill) {
+    fill(get());
+    if (interpreter_->Invoke() == kTfLiteOk) return;
+#ifdef NP1_PLATE_GPU
+    if (delegate_) {
+      fall_back();
+      fill(get());
+      if (interpreter_->Invoke() == kTfLiteOk) return;
+    }
+#endif
+    throw std::runtime_error("invoke failed: " + name_);
+  }
+
+ private:
+  std::unique_ptr<tflite::Interpreter> build(TfLiteDelegate* delegate) {
+    tflite::ops::builtin::BuiltinOpResolver resolver;
+    std::unique_ptr<tflite::Interpreter> interpreter;
+    tflite::InterpreterBuilder builder(*model_, resolver);
+    builder.SetNumThreads(threads_);
+    if (delegate) builder.AddDelegate(delegate);
+    if (builder(&interpreter) != kTfLiteOk || !interpreter ||
+        interpreter->AllocateTensors() != kTfLiteOk) return nullptr;
+    return interpreter;
+  }
+
+  void start_cpu() {
+    interpreter_ = build(nullptr);
+    if (!interpreter_) throw std::runtime_error("cannot initialize CPU interpreter: " + name_);
+  }
+
+#ifdef NP1_PLATE_GPU
+  std::string cache_dir_, cache_token_;
+  std::filesystem::path cache_marker() const {
+    return std::filesystem::path(cache_dir_) / (cache_token_ + ".ready");
+  }
+
+  bool delegated(bool allow_partial) const {
+    const auto& plan = interpreter_->execution_plan();
+    if (!allow_partial && plan.size() != 1) return false;
+    return std::any_of(plan.begin(), plan.end(), [&](int index) {
+      return interpreter_->node_and_registration(index)->first.delegate == delegate_.get();
+    });
+  }
+
+  void fall_back() {
+    std::fprintf(stderr, "plate-engine: %s falling back to CPU\n", name_.c_str());
+    interpreter_.reset();
+    delegate_.reset();
+    start_cpu();
+  }
+#endif
+
+  std::string name_;
+  int threads_;
+  std::unique_ptr<tflite::FlatBufferModel> model_;
+#ifdef NP1_PLATE_GPU
+  std::unique_ptr<TfLiteDelegate, decltype(&TfLiteGpuDelegateV2Delete)> delegate_{nullptr, TfLiteGpuDelegateV2Delete};
+#endif
+  std::unique_ptr<tflite::Interpreter> interpreter_;
+};
 
 std::vector<float> softmax(const TfLiteTensor* tensor, size_t offset, size_t count) {
   std::vector<float> values(count);
@@ -431,24 +562,25 @@ void fill_reader_input(tflite::Interpreter* interpreter, const uint8_t* frame, i
 
 class AuxReader {
  public:
-  AuxReader(const std::string& path, const json& config, std::vector<Head> heads, int threads)
-      : heads_(std::move(heads)) {
-    interpreter_ = load(path, threads, model_);
+  AuxReader(const std::string& path, const json& config, std::vector<Head> heads,
+            int threads, bool use_gpu)
+      : heads_(std::move(heads)), model_(path, threads, use_gpu ? GPU::full_graph : GPU::off) {
     auto values = config.at("rect").get<std::vector<double>>();
     if (values.size() != 4) throw std::runtime_error("aux reader rect must contain four values");
     std::copy(values.begin(), values.end(), rect_.begin());
     size_t expected = 0;
     for (const auto& head : heads_) expected += head.labels.size();
-    const TfLiteTensor* output = interpreter_->tensor(interpreter_->outputs()[0]);
+    const TfLiteTensor* output = model_->tensor(model_->outputs()[0]);
     size_t actual = 1;
     for (int i = 0; i < output->dims->size; ++i) actual *= output->dims->data[i];
     if (actual != expected) throw std::runtime_error("aux reader output size does not match configured heads");
   }
 
+  bool uses_gpu() const { return model_.uses_gpu(); }
+
   Choice read(const uint8_t* frame, int W, int H, const Box& box) {
-    fill_reader_input(interpreter_.get(), frame, W, H, box, rect_);
-    if (interpreter_->Invoke() != kTfLiteOk) throw std::runtime_error("aux reader invoke failed");
-    const TfLiteTensor* output = interpreter_->tensor(interpreter_->outputs()[0]);
+    model_.invoke([&](auto* interpreter) { fill_reader_input(interpreter, frame, W, H, box, rect_); });
+    const TfLiteTensor* output = model_->tensor(model_->outputs()[0]);
     std::vector<std::vector<float>> probabilities;
     std::vector<std::vector<std::string>> labels;
     size_t offset = 0;
@@ -468,8 +600,7 @@ class AuxReader {
  private:
   std::array<double, 4> rect_{};
   std::vector<Head> heads_;
-  std::unique_ptr<tflite::FlatBufferModel> model_;
-  std::unique_ptr<tflite::Interpreter> interpreter_;
+  TFLiteModel model_;
 };
 
 class TextOCR {
@@ -712,9 +843,10 @@ float iou(const Box& a, const Box& b) {
 
 class Engine {
  public:
-  Engine(const std::string& det, const std::string& ocr, const Config& cfg, int threads) : cfg_(cfg) {
-    det_ = load(det, threads, det_model_);
-    ocr_ = load(ocr, threads, ocr_model_);
+  Engine(const std::string& det, const std::string& ocr, const Config& cfg, int threads,
+         GPU detector_gpu, bool use_gpu, const std::string& gpu_cache)
+      : cfg_(cfg), threads_(threads), det_(det, threads, detector_gpu, gpu_cache),
+        ocr_(ocr, threads, use_gpu ? GPU::full_graph : GPU::off) {
     auto* in = det_->tensor(det_->inputs()[0]);
     if (in->dims->size != 4 || in->dims->data[3] != 3) throw std::runtime_error("detector input must be NHWC RGB");
     dh_ = in->dims->data[1];
@@ -742,12 +874,12 @@ class Engine {
     if (cfg_.field_readers.contains("kana")) {
       auto spec = cfg_.field_readers.at("kana");
       aux_kana_ = std::make_unique<AuxReader>((std::filesystem::path(cfg_.model_dir) / spec.at("file").get<std::string>()).string(),
-                                               spec, kana_heads, threads);
+                                               spec, kana_heads, threads, use_gpu);
     }
     if (cfg_.field_readers.contains("classification")) {
       auto spec = cfg_.field_readers.at("classification");
       aux_class_ = std::make_unique<AuxReader>((std::filesystem::path(cfg_.model_dir) / spec.at("file").get<std::string>()).string(),
-                                                spec, class_heads, threads);
+                                                 spec, class_heads, threads, use_gpu);
     }
     if (!cfg_.text_ocr.is_null() && !cfg_.text_ocr.empty()) {
       auto model = (std::filesystem::path(cfg_.model_dir) / cfg_.text_ocr.at("file").get<std::string>()).string();
@@ -767,8 +899,9 @@ class Engine {
     };
     Box b{800, 600, 200, 100, 1};
     double det = time_ms([&] { detect(frame.data(), 1920, 1080); });
+    double lite = time_ms([&] { read(frame.data(), 1920, 1080, b, false); });
     double ocr = time_ms([&] { read(frame.data(), 1920, 1080, b); });
-    return {{"detectorMs", det}, {"readerMs", ocr}, {"runs", n}};
+    return {{"detectorMs", det}, {"readerTFLiteMs", lite}, {"readerMs", ocr}, {"runs", n}};
   }
 
   json process(const uint8_t* f, int W, int H) {
@@ -783,7 +916,23 @@ class Engine {
     return plates;
   }
 
+  void prepare_gpu_cache() {
+    std::vector<uint8_t> frame(1920 * 1080 * 3 / 2, 128);
+    detect(frame.data(), 1920, 1080);
+    det_.mark_cache_ready();
+  }
+
   bool latest_models() const { return aux_kana_ && aux_class_ && text_ocr_; }
+
+  std::string backend() const {
+    std::string name = "xnnpack cpu x" + std::to_string(threads_);
+    if (det_.uses_gpu()) name += " + gpu detector";
+    if (ocr_.uses_gpu()) name += " + gpu ocr";
+    if (aux_kana_ && aux_kana_->uses_gpu()) name += " + gpu kana";
+    if (aux_class_ && aux_class_->uses_gpu()) name += " + gpu class";
+    if (text_ocr_) name += " + onnx cpu";
+    return name;
+  }
 
  private:
   std::vector<Box> detect(const uint8_t* f, int W, int H) {
@@ -791,21 +940,22 @@ class Engine {
     int rw = std::clamp(cfg_.roi[2], 2, W - rx), rh = std::clamp(cfg_.roi[3], 2, H - ry);
     float s = std::min(static_cast<float>(dw_) / rw, static_cast<float>(dh_) / rh);
     float px = (dw_ - rw * s) / 2, py = (dh_ - rh * s) / 2;
-    InputWriter in{det_->tensor(det_->inputs()[0])};
-    uint8_t rgb[3];
-    for (int y = 0; y < dh_; ++y) {
-      for (int x = 0; x < dw_; ++x) {
-        size_t i = (static_cast<size_t>(y) * dw_ + x) * 3;
-        float sx = (x + 0.5f - px) / s, sy = (y + 0.5f - py) / s;
-        if (sx < 0 || sy < 0 || sx >= rw || sy >= rh) {
-          for (int c = 0; c < 3; ++c) in.set(i + c, 114.f / 255.f);
-          continue;
+    det_.invoke([&](auto* interpreter) {
+      InputWriter in{interpreter->tensor(interpreter->inputs()[0])};
+      uint8_t rgb[3];
+      for (int y = 0; y < dh_; ++y) {
+        for (int x = 0; x < dw_; ++x) {
+          size_t i = (static_cast<size_t>(y) * dw_ + x) * 3;
+          float sx = (x + 0.5f - px) / s, sy = (y + 0.5f - py) / s;
+          if (sx < 0 || sy < 0 || sx >= rw || sy >= rh) {
+            for (int c = 0; c < 3; ++c) in.set(i + c, 114.f / 255.f);
+            continue;
+          }
+          nv12_rgb(f, W, H, rx + static_cast<int>(sx), ry + static_cast<int>(sy), rgb);
+          for (int c = 0; c < 3; ++c) in.set(i + c, rgb[c] / 255.f);
         }
-        nv12_rgb(f, W, H, rx + static_cast<int>(sx), ry + static_cast<int>(sy), rgb);
-        for (int c = 0; c < 3; ++c) in.set(i + c, rgb[c] / 255.f);
       }
-    }
-    if (det_->Invoke() != kTfLiteOk) throw std::runtime_error("detector invoke failed");
+    });
     const TfLiteTensor* out = det_->tensor(det_->outputs()[0]);
     if (out->dims->size != 3) throw std::runtime_error("detector output must be rank 3");
     int a = out->dims->data[1], b = out->dims->data[2];
@@ -841,24 +991,25 @@ class Engine {
     return keep;
   }
 
-  json read(const uint8_t* f, int W, int H, const Box& b) {
+  json read(const uint8_t* f, int W, int H, const Box& b, bool refine = true) {
     float mx = b.w * cfg_.margin, my = b.h * cfg_.margin;
     float x0 = b.x - mx, y0 = b.y - my, cw = b.w + 2 * mx, ch = b.h + 2 * my;
-    InputWriter in{ocr_->tensor(ocr_->inputs()[0])};
-    uint8_t rgb[3];
-    for (int y = 0; y < oh_; ++y) {
-      for (int x = 0; x < ow_; ++x) {
-        float fx = x0 + (x + 0.5f) * cw / ow_, fy = y0 + (y + 0.5f) * ch / oh_;
-        size_t i = (static_cast<size_t>(y) * ow_ + x) * oc_;
-        if (oc_ == 1) {
-          in.set(i, nv12_gray(f, W, H, fx, fy) / 255.f);
-        } else {
-          nv12_rgb(f, W, H, static_cast<int>(fx), static_cast<int>(fy), rgb);
-          for (int c = 0; c < 3; ++c) in.set(i + c, rgb[c] / 255.f);
+    ocr_.invoke([&](auto* interpreter) {
+      InputWriter in{interpreter->tensor(interpreter->inputs()[0])};
+      uint8_t rgb[3];
+      for (int y = 0; y < oh_; ++y) {
+        for (int x = 0; x < ow_; ++x) {
+          float fx = x0 + (x + 0.5f) * cw / ow_, fy = y0 + (y + 0.5f) * ch / oh_;
+          size_t i = (static_cast<size_t>(y) * ow_ + x) * oc_;
+          if (oc_ == 1) {
+            in.set(i, nv12_gray(f, W, H, fx, fy) / 255.f);
+          } else {
+            nv12_rgb(f, W, H, static_cast<int>(fx), static_cast<int>(fy), rgb);
+            for (int c = 0; c < 3; ++c) in.set(i + c, rgb[c] / 255.f);
+          }
         }
       }
-    }
-    if (ocr_->Invoke() != kTfLiteOk) throw std::runtime_error("reader invoke failed");
+    });
     const TfLiteTensor* out = ocr_->tensor(ocr_->outputs()[0]);
     std::vector<float> region_probability, kana_probability;
     std::vector<std::string> region_labels, kana_labels;
@@ -884,7 +1035,7 @@ class Engine {
     Choice base_serial = serial_choice(number_probability, number_labels);
     Choice trained_kana = aux_kana_ ? aux_kana_->read(f, W, H, b) : Choice{};
     Choice trained_class = aux_class_ ? aux_class_->read(f, W, H, b) : Choice{};
-    if (text_ocr_)
+    if (text_ocr_ && refine)
       return text_ocr_->refine(f, W, H, b, base_region, base_class, base_kana, base_serial, trained_kana, trained_class);
     return {{"region", base_region.confidence >= cfg_.field_threshold ? base_region.text : ""},
             {"class", base_class.confidence >= cfg_.field_threshold ? base_class.text : ""},
@@ -893,8 +1044,8 @@ class Engine {
   }
 
   Config cfg_;
-  std::unique_ptr<tflite::FlatBufferModel> det_model_, ocr_model_;
-  std::unique_ptr<tflite::Interpreter> det_, ocr_;
+  int threads_;
+  TFLiteModel det_, ocr_;
   std::unique_ptr<AuxReader> aux_kana_, aux_class_;
   std::unique_ptr<TextOCR> text_ocr_;
   int dw_ = 0, dh_ = 0, ow_ = 0, oh_ = 0, oc_ = 0;
@@ -940,15 +1091,26 @@ bool read_exact(void* p, size_t n) { return std::fread(p, 1, n, stdin) == n; }
 void emit(const json& j) {
   std::string s = j.dump(-1, ' ', false, json::error_handler_t::replace);
   s.push_back('\n');
-  std::fwrite(s.data(), 1, s.size(), stdout);
-  std::fflush(stdout);
+  std::fwrite(s.data(), 1, s.size(), protocol_output);
+  std::fflush(protocol_output);
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string det, ocr, conf;
+  // Some vendor delegate libraries write their own diagnostics to stdout.
+  // Keep those messages out of the JSON protocol read by the Go supervisor.
+  const int protocol_fd = dup(STDOUT_FILENO);
+  if (protocol_fd < 0) return 1;
+  protocol_output = fdopen(protocol_fd, "w");
+  if (!protocol_output || dup2(STDERR_FILENO, STDOUT_FILENO) < 0) return 1;
+
+  std::string det, ocr, conf, gpu_cache;
   int threads = 2, bench = 0;
+  bool use_gpu = access("/dev/kgsl-3d0", R_OK | W_OK) == 0;
+  GPU detector_gpu = GPU::cached_partition;
+  bool prepare_gpu_cache = false;
+  const auto initializing = std::chrono::steady_clock::now();
   for (int i = 1; i + 1 < argc; i += 2) {
     std::string k = argv[i], v = argv[i + 1];
     if (k == "--detector") det = v;
@@ -956,18 +1118,34 @@ int main(int argc, char** argv) {
     else if (k == "--config") conf = v;
     else if (k == "--threads") threads = std::clamp(std::atoi(v.c_str()), 1, 4);
     else if (k == "--bench") bench = std::clamp(std::atoi(v.c_str()), 1, 1000);
+    else if (k == "--backend" && v == "cpu") use_gpu = false;
+    else if (k == "--detector-backend") detector_gpu = v == "gpu" ? GPU::one_partition : GPU::off;
+    else if (k == "--gpu-cache") gpu_cache = v;
+    else if (k == "--prepare-gpu-cache") {
+      gpu_cache = v;
+      prepare_gpu_cache = true;
+      detector_gpu = GPU::one_partition;
+    }
   }
+  const char* backend = std::getenv("NCC_PLATE_BACKEND");
+  if (backend && std::strcmp(backend, "cpu") == 0) use_gpu = false;
   std::unique_ptr<Engine> engine;
   try {
     if (det.empty() || ocr.empty() || conf.empty()) throw std::runtime_error("usage: --detector D --ocr O --config C [--threads N]");
-    engine = std::make_unique<Engine>(det, ocr, load_config(conf), threads);
+    if (gpu_cache.empty() && detector_gpu == GPU::cached_partition)
+      gpu_cache = (std::filesystem::path(det).parent_path().parent_path() / "opencl-cache").string();
+    engine = std::make_unique<Engine>(det, ocr, load_config(conf), threads,
+                                     use_gpu ? detector_gpu : GPU::off, use_gpu && !prepare_gpu_cache, gpu_cache);
+    if (prepare_gpu_cache) engine->prepare_gpu_cache();
   } catch (const std::exception& e) {
     emit({{"ready", false}, {"error", e.what()}});
     return 1;
   }
   emit({{"ready", true}, {"engine", "tflite " TFLITE_VERSION_LABEL " + onnxruntime"},
-        {"backend", "xnnpack cpu x" + std::to_string(threads) + " + onnx cpu"},
+        {"backend", engine->backend()},
+        {"initMs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - initializing).count()},
         {"latestModels", engine->latest_models()}});
+  if (prepare_gpu_cache) return 0;
   if (bench) {
     emit({{"bench", engine->bench(bench)}});
     return 0;
@@ -996,6 +1174,7 @@ int main(int argc, char** argv) {
       reply["error"] = e.what();
     }
     reply["ms"] = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    reply["backend"] = engine->backend();
     emit(reply);
   }
   return 0;
