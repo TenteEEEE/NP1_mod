@@ -384,6 +384,8 @@
     },
     "textOcr": {
       "file": "ppocrv6_rec.onnx",
+      "fastFile": "ppocrv6_rec_np1_int8.onnx",
+      "fastSha256": "a5e36a46c48ce2d6edf3995e8118d689b35eacb71afaf4754ea491c19af9eceb",
       "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
       "dictionary": "ppocr-dictionary.json",
       "dictionarySha256": "b50d01361bea9087ccb896a6381c1a8334e2af14ae0f1036571bd06cdc3832bf",

@@ -12,6 +12,7 @@ BACKUP=${2:-}
 OWNER_UNIT=$BASE/units/$SERVICE
 ENGINE=$PLATE/plate-engine
 RUNTIME=$PLATE/libonnxruntime.so.1.30.0
+WORKER=$PLATE/ncc-worker
 CACHE=$PLATE/opencl-cache
 PREPARE=${3:-}
 
@@ -25,7 +26,7 @@ test "${#suffix}" -eq 8 && test "$BACKUP" = "$BASE/recovery/plate-update-$suffix
 test -d "$BACKUP" && test ! -L "$BACKUP" || exit 1
 test -f "$UNIT" && test ! -L "$UNIT" && test "$UNIT" -ef "/overlay$UNIT" || exit 1
 test ! -L "$OWNER_UNIT" && test ! -L "$PLATE" && test ! -L "$ENGINE" &&
-    test ! -L "$RUNTIME" && test ! -L "$CACHE" || exit 1
+    test ! -L "$RUNTIME" && test ! -L "$CACHE" && test ! -L "$WORKER" || exit 1
 case "$PREPARE" in ''|prepare-detector) ;; *) exit 1 ;; esac
 exec 9>"$BASE/recovery/.plate-engine-update.lock"
 flock -n 9
@@ -56,6 +57,13 @@ restore() {
     else
         rm -f "$RUNTIME" || return 1
     fi
+    if test -f "$BACKUP/plate/ncc-worker"; then
+        if test -f "$BACKUP/previous-worker"; then
+            put_file "$BACKUP/previous-worker" "$WORKER" || return 1
+        else
+            rm -f "$WORKER" || return 1
+        fi
+    fi
     if test -f "$BACKUP/cache-update" && test ! -d "$BACKUP/next-cache" && test -d "$CACHE"; then
         mv "$CACHE" "$BACKUP/next-cache" || return 1
     fi
@@ -85,6 +93,10 @@ chmod 0750 "$BACKUP/plate/plate-engine"
 chmod 0644 "$BACKUP/plate/libonnxruntime.so.1.30.0"
 cp -p "$ENGINE" "$BACKUP/previous-engine"
 if test -f "$RUNTIME"; then cp -p "$RUNTIME" "$BACKUP/previous-runtime"; fi
+if test -f "$BACKUP/plate/ncc-worker"; then
+    chmod 0750 "$BACKUP/plate/ncc-worker"
+    if test -f "$WORKER"; then cp -p "$WORKER" "$BACKUP/previous-worker"; fi
+fi
 cp -p "$UNIT" "$BACKUP/previous-unit"
 if test -f "$OWNER_UNIT"; then
     cmp "$UNIT" "$OWNER_UNIT"
@@ -128,6 +140,10 @@ sed '/^ExecStartPre=.*libonnxruntime\.so/d' "$UNIT" > "$BACKUP/next-unit.content
 grep '^ExecStartPre=.*libonnxruntime\.so' "$BACKUP/np1-control-plate.service" > "$BACKUP/runtime-lines"
 sed "/^ExecStartPre=.*chmod .*\/plate-engine$/r $BACKUP/runtime-lines" "$BACKUP/next-unit.content" > "$BACKUP/next-unit"
 test "$(grep -c '^ExecStartPre=.*libonnxruntime\.so' "$BACKUP/next-unit")" -eq 3
+if test -f "$BACKUP/plate/ncc-worker"; then
+    sed -i "s|^ExecStartPre=/bin/cp $BASE/bin/ncc /run/np1-control-plate/ncc$|ExecStartPre=/bin/cp $WORKER /run/np1-control-plate/ncc|" "$BACKUP/next-unit"
+    grep -Fxq "ExecStartPre=/bin/cp $WORKER /run/np1-control-plate/ncc" "$BACKUP/next-unit"
+fi
 
 completed=0
 finish() {
@@ -147,6 +163,7 @@ if test "$PREPARE" = prepare-detector; then
 fi
 put_file "$BACKUP/plate/plate-engine" "$ENGINE"
 put_file "$BACKUP/plate/libonnxruntime.so.1.30.0" "$RUNTIME"
+if test -f "$BACKUP/plate/ncc-worker"; then put_file "$BACKUP/plate/ncc-worker" "$WORKER"; fi
 put_unit "$BACKUP/next-unit"
 systemctl daemon-reload
 if test -f "$BACKUP/was-active"; then
@@ -154,6 +171,7 @@ if test -f "$BACKUP/was-active"; then
     systemctl is-active --quiet "$SERVICE"
     cmp "$ENGINE" /run/np1-control-plate/plate-engine
     cmp "$RUNTIME" /run/np1-control-plate/libonnxruntime.so.1.30.0
+    if test -f "$BACKUP/plate/ncc-worker"; then cmp "$WORKER" /run/np1-control-plate/ncc; fi
 fi
 (cd "$BASE" && grep '  plate/' "$BACKUP/SHA256SUMS" | sha256sum -c - >/dev/null)
 capture_stock > "$BACKUP/stock-after"

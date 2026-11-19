@@ -5,6 +5,7 @@ directories are unique to this run and removed on exit. The report contains
 timings and agreement counts only. Raw inference output stays in memory.
 """
 import argparse
+import filecmp
 import json
 import re
 import shlex
@@ -24,6 +25,7 @@ MODEL_FILES = (
     "detector.tflite", "ocr.tflite", "ocr-kana.tflite", "ocr-classification.tflite",
     "ppocrv6_rec.onnx", "ppocr-dictionary.json", "plate-model.json",
 )
+FAST_TEXT_MODEL = "ppocrv6_rec_np1_int8.onnx"
 WIDTH, HEIGHT = 1920, 1080
 FRAME_BYTES = WIDTH * HEIGHT * 3 // 2
 
@@ -44,13 +46,26 @@ def make_frames(path):
     return b"".join(packets), count
 
 
-def run_engine(device, adb, path, models, runtime, options, *, frames=None):
+def stage_models(device, local, remote, *, shared=None):
+    names = (*MODEL_FILES, FAST_TEXT_MODEL) if (local / FAST_TEXT_MODEL).is_file() else MODEL_FILES
+    for name in names:
+        target = remote + "/" + name
+        if shared and (shared[0] / name).is_file() and filecmp.cmp(local / name, shared[0] / name, shallow=False):
+            command = shlex.join(["ln", shared[1] + "/" + name, target])
+            _, result = device.shell(command + " && echo linked")
+            if result.strip() == "linked":
+                continue
+        device.push(local / name, target)
+
+
+def run_engine(device, adb, path, models, runtime, options, *, frames=None, service_limits=False):
     args = [
         path, "--detector", models + "/detector.tflite", "--ocr", models + "/ocr.tflite",
         "--config", models + "/plate-model.json", *options,
     ]
     log = runtime + "/engine.log"
-    command = (f"LD_LIBRARY_PATH={shlex.quote(runtime)} exec {shlex.join(args)} "
+    scope = "systemd-run --scope --quiet -p CPUQuota=150% -p MemoryLimit=384M " if service_limits else ""
+    command = (f"LD_LIBRARY_PATH={shlex.quote(runtime)} exec {scope}nice -n 10 {shlex.join(args)} "
                f"< {shlex.quote(frames or '/dev/null')} 2> {shlex.quote(log)}")
     result = subprocess.run(
         [*adb, "exec-out", command], capture_output=True, timeout=180,
@@ -70,11 +85,19 @@ def summarize_frames(rows, count):
     if len(rows) != count or any(r.get("seq") != i or r.get("error") for i, r in enumerate(rows, 1)):
         raise RuntimeError("Engine did not finish the complete frame sequence")
     times = [r["ms"] for r in rows]
-    readings = [
-        sorted(tuple(p["reading"].get(key, "") for key in ("region", "class", "kana", "number"))
-               for p in row["plates"])
-        for row in rows
-    ]
+    readings, recording = [], []
+    for row in rows:
+        frame_readings, frame_recording = [], []
+        for plate in row["plates"]:
+            reading = plate["reading"]
+            fields = tuple(reading.get(key, "") for key in ("region", "class", "kana", "number"))
+            frame_readings.append(fields)
+            confidence = reading.get("confidence", 0)
+            if fields[3] and confidence >= .6:
+                immediate = confidence >= .7 and plate["box"][2] >= 45
+                frame_recording.append((*fields, immediate))
+        readings.append(sorted(frame_readings))
+        recording.append(sorted(frame_recording))
     data = {
         "frames": count, "positiveFrames": sum(bool(r) for r in readings),
         "readableFrames": sum(any(reading[3] for reading in frame) for frame in readings),
@@ -84,7 +107,13 @@ def summarize_frames(rows, count):
         "maxMs": round(max(times), 2),
         "runtimeBackends": sorted({r["backend"] for r in rows if "backend" in r}),
     }
-    return data, readings
+    profiles = [row["profile"] for row in rows if row["plates"] and "profile" in row]
+    if profiles:
+        data["positiveProfileMedian"] = {
+            name: round(statistics.median(profile[name] for profile in profiles), 2)
+            for name in profiles[0]
+        }
+    return data, readings, recording
 
 
 def make_device_dir(device, template):
@@ -100,20 +129,35 @@ def main():
     p.add_argument("--serial", required=True)
     p.add_argument("--engine", type=Path, required=True)
     p.add_argument("--baseline", type=Path)
+    p.add_argument("--baseline-models", type=Path, help="Use a separate model bundle for the baseline")
     p.add_argument("--runtime", type=Path, default=ROOT / "prebuilt/plate-engine/libonnxruntime.so.1.30.0")
     p.add_argument("--models", type=Path, default=ROOT / "models/plate")
     p.add_argument("--frames", type=Path, help="A sequence of raw 1920x1080 NV12 frames")
     p.add_argument("--runs", type=int, choices=range(1, 61), default=8, metavar="1..60")
     p.add_argument("--detector-backend", action="append", choices=("cpu", "gpu"))
     p.add_argument("--cache-detector", action="store_true", help="Compare GPU detection from its program cache")
+    p.add_argument("--installed-cache", action="store_true", help="Compare only the installed detector cache")
+    p.add_argument("--frames-only", action="store_true", help="Skip the synthetic benchmark")
+    p.add_argument("--cpu-only", action="store_true", help="Run baseline and candidate with CPU backends")
+    p.add_argument("--service-limits", action="store_true", help="Use the plate worker's CPU and memory limits")
     p.add_argument("--report", type=Path, required=True)
     args = p.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9._:-]+", args.serial):
         p.error("Invalid serial")
     frames, count = make_frames(args.frames)
+    if args.frames_only and not count:
+        p.error("--frames-only requires --frames")
+    if (args.installed_cache or args.cpu_only) and (args.cache_detector or args.detector_backend):
+        p.error("--installed-cache and --cpu-only select the detector backend")
+    if args.installed_cache and args.cpu_only:
+        p.error("--installed-cache and --cpu-only cannot be combined")
+    if args.baseline_models and not args.baseline:
+        p.error("--baseline-models requires --baseline")
     local_files = [args.engine, args.runtime, *(args.models / f for f in MODEL_FILES)]
     if args.baseline:
         local_files.append(args.baseline)
+    if args.baseline_models:
+        local_files.extend(args.baseline_models / f for f in MODEL_FILES)
     if not all(f.is_file() for f in local_files):
         p.error("Engine, runtime or model file is missing")
 
@@ -124,14 +168,21 @@ def main():
         raise SystemExit("Stock front camera export is stale")
     report = {"cases": [], "stockProblems": []}
     reference = None
+    reference_recording = None
     stage = []
     try:
         models = make_device_dir(device, "/overlay/owner-apps/np1-control/.plate-bench-XXXXXXXX")
         stage.append(models)
         runtime = make_device_dir(device, "/run/np1-plate-bench-XXXXXXXX")
         stage.append(runtime)
-        for name in MODEL_FILES:
-            device.push(args.models / name, models + "/" + name)
+        stage_models(device, args.models, models)
+        baseline_models = models
+        if args.baseline_models:
+            baseline_models = models + "/baseline-models"
+            _, made = device.shell("mkdir " + shlex.quote(baseline_models) + " && echo created")
+            if made.strip() != "created":
+                raise RuntimeError("Could not stage the baseline model directory")
+            stage_models(device, args.baseline_models, baseline_models, shared=(args.models, models))
         device.push(args.engine, runtime + "/candidate")
         device.push(args.runtime, runtime + "/libonnxruntime.so.1")
         packed_frames = None
@@ -163,21 +214,52 @@ def main():
             report["cachePreparationMs"] = info["initMs"]
             print("Detector cache preparation passed", flush=True)
             cases.append(("gpu-ocr/cached-detector", runtime + "/candidate", ["--gpu-cache", cache]))
+        if args.installed_cache:
+            cache = models + "/opencl-cache"
+            _, result = device.shell("cp -R /overlay/owner-apps/np1-control/plate/opencl-cache " +
+                                     shlex.quote(cache) + " && echo copied")
+            if result.strip() != "copied":
+                raise RuntimeError("Could not copy installed detector cache")
+            cases = [(name, path, ["--gpu-cache", cache])
+                     for name, path in [("baseline", runtime + "/baseline"),
+                                        ("candidate", runtime + "/candidate")]
+                     if name != "baseline" or args.baseline]
+        if args.cpu_only:
+            cases = [(name, path, ["--backend", "cpu"])
+                     for name, path in [("baseline", runtime + "/baseline"),
+                                        ("candidate", runtime + "/candidate")]
+                     if name != "baseline" or args.baseline]
         for name, path, options in cases:
-            info, rows, diagnostics = run_engine(device, adb, path, models, runtime,
-                                                 [*options, "--bench", str(args.runs)])
-            if len(rows) != 1 or "bench" not in rows[0]:
-                raise RuntimeError("Engine returned no benchmark timings")
-            row = {"case": name, "backend": info["backend"], **rows[0]["bench"]}
-            if "initMs" in info:
-                row["initMs"] = round(info["initMs"], 2)
-            row["diagnostics"] = diagnostics.splitlines()[-35:]
+            row = {"case": name}
+            package = baseline_models if name == "baseline" else models
+            if not args.frames_only:
+                info, rows, diagnostics = run_engine(device, adb, path, package, runtime,
+                                                     [*options, "--bench", str(args.runs)],
+                                                     service_limits=args.service_limits)
+                if len(rows) != 1 or "bench" not in rows[0]:
+                    raise RuntimeError("Engine returned no benchmark timings")
+                row.update(rows[0]["bench"])
+                row["backend"] = info["backend"]
+                if "initMs" in info:
+                    row["initMs"] = round(info["initMs"], 2)
+                row["diagnostics"] = diagnostics.splitlines()[-35:]
             if count:
-                _, rows, _ = run_engine(device, adb, path, models, runtime, options, frames=packed_frames)
-                data, readings = summarize_frames(rows, count)
+                info, rows, diagnostics = run_engine(device, adb, path, package, runtime,
+                                                    [*options, "--profile", "1"], frames=packed_frames,
+                                                    service_limits=args.service_limits)
+                row["backend"] = info["backend"]
+                try:
+                    data, readings, recording = summarize_frames(rows, count)
+                except RuntimeError:
+                    row["diagnostics"] = diagnostics.splitlines()[-35:]
+                    row["completedFrames"] = len(rows)
+                    report["cases"].append(row)
+                    raise
                 if reference is None:
                     reference = readings
+                    reference_recording = recording
                 data["equalFrames"] = sum(a == b for a, b in zip(reference, readings))
+                data["equalDefaultRecordingFrames"] = sum(a == b for a, b in zip(reference_recording, recording))
                 row["recognition"] = data
             report["cases"].append(row)
             print(json.dumps({k: v for k, v in row.items() if k != "diagnostics"}), flush=True)

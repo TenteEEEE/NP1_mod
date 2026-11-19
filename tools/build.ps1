@@ -81,7 +81,7 @@ if (Test-Path "$repo/artifacts/recorder-injector/ncc-recorder-injector") {
 # Plate recognition: models and the inference engine (freshly built if
 # present, otherwise the checked-in prebuilt binary) with their notices.
 New-Item -ItemType Directory -Force "$repo/artifacts/ncc/plate/models","$repo/artifacts/ncc/plate/licenses" | Out-Null
-foreach ($f in 'detector.tflite','ocr.tflite','ocr-kana.tflite','ocr-classification.tflite','ppocrv6_rec.onnx','plate-model.json','ppocr-dictionary.json','model-manifest.json','README.md','LICENSING.md','ONNX_RUNTIME_LICENSE.txt','PPOCR_MODEL_CARD.md') { Copy-Item -Force "$repo/models/plate/$f" "$repo/artifacts/ncc/plate/models/" }
+foreach ($f in 'detector.tflite','ocr.tflite','ocr-kana.tflite','ocr-classification.tflite','ppocrv6_rec.onnx','ppocrv6_rec_np1_int8.onnx','plate-model.json','ppocr-dictionary.json','model-manifest.json','README.md','LICENSING.md','ONNX_RUNTIME_LICENSE.txt','PPOCR_MODEL_CARD.md') { Copy-Item -Force "$repo/models/plate/$f" "$repo/artifacts/ncc/plate/models/" }
 Copy-Item -Recurse -Force "$repo/models/plate/notices" "$repo/artifacts/ncc/plate/models/"
 $engine = if (Test-Path "$repo/artifacts/plate/plate-engine-aarch64") { "$repo/artifacts/plate/plate-engine-aarch64" } else { "$repo/prebuilt/plate-engine/plate-engine-aarch64" }
 Copy-Item -Force $engine "$repo/artifacts/ncc/plate/plate-engine"

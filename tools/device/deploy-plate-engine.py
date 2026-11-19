@@ -15,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--artifacts", default=ROOT / "artifacts/plate", type=Path)
+    parser.add_argument("--worker", type=Path, help="Deploy this ARM64 NCC binary for the plate service only")
     parser.add_argument("--prepare-detector", action="store_true", help="Compile and validate the Adreno detector cache")
     parser.add_argument("--rollback", help="Recovery directory printed by an earlier deployment")
     args = parser.parse_args()
@@ -48,6 +49,8 @@ def main():
         "np1-control-plate.service": ROOT / "systemd/np1-control-plate.service",
         "plate-engine-update.sh": ROOT / "tools/device/plate-engine-update.sh",
     }
+    if args.worker:
+        files["plate/ncc-worker"] = args.worker
     if not all(f.is_file() for f in files.values()):
         parser.error("Build the device engine before deployment")
     stage = subprocess.check_output(

@@ -158,6 +158,7 @@ func (s *Sensor) Run(ctx context.Context) {
 	var checkedAt, retryAt time.Time
 	ready := false
 	for ctx.Err() == nil {
+		started := time.Now()
 		now := s.clock()
 		s.flushPending(ctx, false)
 		s.expireFrames(now)
@@ -198,9 +199,13 @@ func (s *Sensor) Run(ctx context.Context) {
 				retryAt = s.clock().Add(restartBackoff)
 			}
 		}
-		select {
-		case <-ctx.Done():
-		case <-time.After(interval):
+		// FPS is the interval between frame starts. An expensive frame already
+		// consumed that interval, and the source can return the newest frame.
+		if wait := time.Until(started.Add(interval)); wait > 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(wait):
+			}
 		}
 	}
 	s.flushPending(context.Background(), true)

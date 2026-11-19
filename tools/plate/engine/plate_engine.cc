@@ -603,11 +603,28 @@ class AuxReader {
   TFLiteModel model_;
 };
 
+using ProfileClock = std::chrono::steady_clock;
+
+double elapsed_ms(ProfileClock::time_point start) {
+  return std::chrono::duration<double, std::milli>(ProfileClock::now() - start).count();
+}
+
+struct FrameProfile {
+  double detection = 0, lite = 0, text = 0, input = 0, onnx = 0;
+  int calls = 0, candidates = 0;
+  json to_json() const {
+    return {{"detectorMs", detection}, {"tfliteReaderMs", lite}, {"textReaderMs", text},
+            {"onnxInputMs", input}, {"onnxRunMs", onnx}, {"onnxCalls", calls},
+            {"plateCandidates", candidates}};
+  }
+};
+
 class TextOCR {
  public:
-  TextOCR(const std::string& model_path, const std::string& dictionary_path, const json& config,
+  TextOCR(const std::string& model_path, const std::string& fast_path, const std::string& dictionary_path, const json& config,
           const std::vector<std::string>& regions, const std::vector<std::string>& kana)
-      : regions_(regions.begin(), regions.end()), kana_(kana.begin(), kana.end()) {
+      : threads_(std::clamp(config.value("cpuThreads", 2), 1, 4)),
+        regions_(regions.begin(), regions.end()), kana_(kana.begin(), kana.end()) {
     std::ifstream dictionary_file(dictionary_path);
     if (!dictionary_file) throw std::runtime_error("cannot open PP-OCR dictionary");
     dictionary_ = json::parse(dictionary_file).get<std::vector<std::string>>();
@@ -615,35 +632,71 @@ class TextOCR {
     kana_threshold_ = config.value("kanaThreshold", .6);
     night_fallback_ = config.value("nightFallback", false);
     env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "np1-plate");
-    Ort::SessionOptions options;
-    options.SetIntraOpNumThreads(std::clamp(config.value("cpuThreads", 2), 1, 4));
-    options.SetInterOpNumThreads(1);
-    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
-    session_ = std::make_unique<Ort::Session>(*env_, model_path.c_str(), options);
-    Ort::AllocatorWithDefaultOptions allocator;
-    input_name_ = session_->GetInputNameAllocated(0, allocator).get();
-    output_name_ = session_->GetOutputNameAllocated(0, allocator).get();
+    if (!fast_path.empty() && std::filesystem::is_regular_file(fast_path)) {
+      try {
+        open(fast_path);
+        fallback_path_ = model_path;
+      } catch (const Ort::Exception& error) {
+        std::fprintf(stderr, "plate-engine: PP-OCR INT8 initialization failed: %s\n", error.what());
+        session_.reset();
+      }
+    }
+    if (!session_) open(model_path);
     region_lexicon_ = CtcLexicon(dictionary_, regions, false);
     kana_lexicon_ = CtcLexicon(dictionary_, kana, true);
   }
 
-  json refine(const uint8_t* frame, int W, int H, const Box& box, const Choice& base_region,
+  bool uses_int8() const { return !fallback_path_.empty(); }
+
+  template <typename ReadKana, typename ReadClass>
+  json refine(const uint8_t* frame, int W, int H, const Box& box,
               const Choice& base_class, const Choice& base_kana, Choice base_serial,
-              const Choice& trained_kana, const Choice& trained_class) {
+              ReadKana read_kana, ReadClass read_class, FrameProfile* profile) {
+    profile_ = profile;
+    struct ProfileReset {
+      FrameProfile*& target;
+      ~ProfileReset() { target = nullptr; }
+    } reset{profile_};
+    if (!session_) throw std::runtime_error("PP-OCR session unavailable");
+    const auto recognize = [&] {
+      return refine_once(frame, W, H, box, base_class, base_kana, base_serial, read_kana, read_class);
+    };
+    try {
+      return recognize();
+    } catch (const Ort::Exception& error) {
+      if (!uses_int8()) throw;
+      std::fprintf(stderr, "plate-engine: PP-OCR INT8 inference failed: %s\n", error.what());
+      const auto original = std::exchange(fallback_path_, {});
+      session_.reset();
+      open(original);
+      return recognize();
+    }
+  }
+
+ private:
+  template <typename ReadKana, typename ReadClass>
+  json refine_once(const uint8_t* frame, int W, int H, const Box& box,
+                   const Choice& base_class, const Choice& base_kana, const Choice& base_serial,
+                   ReadKana read_kana, ReadClass read_class) {
     static const std::vector<std::array<double, 4>> region_rects{{{.194, 0, .519, .325}}, {{.15, 0, .53, .37}}, {{.12, 0, .56, .42}}};
     static const std::vector<std::array<double, 4>> kana_rects{{{.02, .52, .195, .84}}, {{.015, .47, .215, .88}}, {{.04, .42, .18, .95}}};
     LexMatch region_match = lex(frame, W, H, box, region_rects, region_lexicon_, "", region_threshold_);
-    LexMatch kana_match = lex(frame, W, H, box, kana_rects, kana_lexicon_, base_kana.confidence >= .6f ? base_kana.text : "", kana_threshold_);
     std::string region = region_match.likelihood >= region_threshold_ ? region_match.text : "";
     std::string classification = base_class.confidence >= .6f ? base_class.text : "";
     std::string kana = base_kana.confidence >= .6f ? base_kana.text : "";
     std::string serial = base_serial.text;
     float serial_confidence = base_serial.confidence;
+    LexMatch kana_match = lex(frame, W, H, box, kana_rects, kana_lexicon_, kana, kana_threshold_);
     if (kana_match.likelihood >= kana_threshold_) kana = kana_match.text;
     else if (!kana.empty() && kana_match.likelihood >= .6 && kana_match.text != kana) kana.clear();
-    else if (kana.empty() && trained_kana.confidence >= .98f && trained_kana.text == base_kana.text) kana = trained_kana.text;
-    if (classification.empty() && trained_class.confidence >= .98f && trained_class.text == base_class.text)
-      classification = trained_class.text;
+    else if (kana.empty()) {
+      auto trained = read_kana();
+      if (trained.confidence >= .98f && trained.text == base_kana.text) kana = trained.text;
+    }
+    if (classification.empty()) {
+      auto trained = read_class();
+      if (trained.confidence >= .98f && trained.text == base_class.text) classification = trained.text;
+    }
     Candidate number = number_candidate(frame, W, H, box, {.195, .34, 1, 1});
     if (number.score >= .98f) {
       if (serial_confidence < .6f && number.text.size() == base_serial.text.size()) {
@@ -668,11 +721,22 @@ class TextOCR {
     return {{"region", region}, {"class", classification}, {"kana", kana}, {"number", serial}, {"confidence", serial_confidence}};
   }
 
- private:
   struct Candidate { std::string text; float score = 0; };
+
+  void open(const std::string& path) {
+    Ort::SessionOptions options;
+    options.SetIntraOpNumThreads(threads_);
+    options.SetInterOpNumThreads(1);
+    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    session_ = std::make_unique<Ort::Session>(*env_, path.c_str(), options);
+    Ort::AllocatorWithDefaultOptions allocator;
+    input_name_ = session_->GetInputNameAllocated(0, allocator).get();
+    output_name_ = session_->GetOutputNameAllocated(0, allocator).get();
+  }
 
   std::vector<float> infer(const uint8_t* frame, int W, int H, const Box& box,
                            const std::array<double, 4>& rect, int& steps) {
+    const auto start = ProfileClock::now();
     int x0 = std::max(0, static_cast<int>(rect[0] * box.w));
     int y0 = std::max(0, static_cast<int>(rect[1] * box.h));
     int x1 = std::min(static_cast<int>(box.w), std::max(x0 + 1, static_cast<int>(rect[2] * box.w)));
@@ -696,7 +760,13 @@ class TextOCR {
     auto tensor = Ort::Value::CreateTensor<float>(memory, input.data(), input.size(), shape.data(), shape.size());
     const char* inputs[] = {input_name_.c_str()};
     const char* outputs[] = {output_name_.c_str()};
+    const auto run_start = ProfileClock::now();
     auto result = session_->Run(Ort::RunOptions{nullptr}, inputs, &tensor, 1, outputs, 1);
+    if (profile_) {
+      profile_->input += std::chrono::duration<double, std::milli>(run_start - start).count();
+      profile_->onnx += elapsed_ms(run_start);
+      ++profile_->calls;
+    }
     auto info = result[0].GetTensorTypeAndShapeInfo();
     auto output_shape = info.GetShape();
     if (output_shape.size() != 3 || output_shape[0] != 1 || output_shape[2] != static_cast<int64_t>(dictionary_.size()))
@@ -751,6 +821,7 @@ class TextOCR {
       if (match.posterior < .9) continue;
       if (!known.empty() && match.text == known && match.likelihood >= std::max(.6, threshold)) return match;
       if (match.likelihood >= .6) strong.insert(match.text);
+      if (known.empty() && strong.size() > 1) return {};
       if (match.likelihood > best.likelihood) best = match;
     }
     return strong.size() > 1 ? LexMatch{} : best;
@@ -826,12 +897,14 @@ class TextOCR {
 
   std::unique_ptr<Ort::Env> env_;
   std::unique_ptr<Ort::Session> session_;
-  std::string input_name_, output_name_;
+  std::string input_name_, output_name_, fallback_path_;
+  const int threads_;
   std::vector<std::string> dictionary_;
   std::set<std::string> regions_, kana_;
   CtcLexicon region_lexicon_, kana_lexicon_;
   double region_threshold_ = .6, kana_threshold_ = .6;
   bool night_fallback_ = false;
+  FrameProfile* profile_ = nullptr;
 };
 
 float iou(const Box& a, const Box& b) {
@@ -884,7 +957,11 @@ class Engine {
     if (!cfg_.text_ocr.is_null() && !cfg_.text_ocr.empty()) {
       auto model = (std::filesystem::path(cfg_.model_dir) / cfg_.text_ocr.at("file").get<std::string>()).string();
       auto dictionary = (std::filesystem::path(cfg_.model_dir) / cfg_.text_ocr.at("dictionary").get<std::string>()).string();
-      text_ocr_ = std::make_unique<TextOCR>(model, dictionary, cfg_.text_ocr, regions, kana);
+      auto fast = cfg_.text_ocr.value("fastFile", std::string{});
+      const char* ppocr = std::getenv("NCC_PLATE_PPOCR");
+      if (ppocr && std::strcmp(ppocr, "original") == 0) fast.clear();
+      if (!fast.empty()) fast = (std::filesystem::path(cfg_.model_dir) / fast).string();
+      text_ocr_ = std::make_unique<TextOCR>(model, fast, dictionary, cfg_.text_ocr, regions, kana);
     }
   }
 
@@ -904,11 +981,15 @@ class Engine {
     return {{"detectorMs", det}, {"readerTFLiteMs", lite}, {"readerMs", ocr}, {"runs", n}};
   }
 
-  json process(const uint8_t* f, int W, int H) {
+  json process(const uint8_t* f, int W, int H, FrameProfile* profile) {
     json plates = json::array();
-    for (const Box& b : detect(f, W, H)) {
+    const auto start = ProfileClock::now();
+    const auto boxes = detect(f, W, H);
+    if (profile) profile->detection = elapsed_ms(start);
+    for (const Box& b : boxes) {
       if (b.w < cfg_.min_width) continue;
-      json reading = read(f, W, H, b);
+      if (profile) ++profile->candidates;
+      json reading = read(f, W, H, b, true, profile);
       plates.push_back({{"box", {std::lround(b.x), std::lround(b.y), std::lround(b.w), std::lround(b.h)}},
                         {"score", b.score},
                         {"reading", reading}});
@@ -930,7 +1011,7 @@ class Engine {
     if (ocr_.uses_gpu()) name += " + gpu ocr";
     if (aux_kana_ && aux_kana_->uses_gpu()) name += " + gpu kana";
     if (aux_class_ && aux_class_->uses_gpu()) name += " + gpu class";
-    if (text_ocr_) name += " + onnx cpu";
+    if (text_ocr_) name += text_ocr_->uses_int8() ? " + onnx int8 cpu" : " + onnx cpu";
     return name;
   }
 
@@ -991,7 +1072,9 @@ class Engine {
     return keep;
   }
 
-  json read(const uint8_t* f, int W, int H, const Box& b, bool refine = true) {
+  json read(const uint8_t* f, int W, int H, const Box& b, bool refine = true,
+            FrameProfile* profile = nullptr) {
+    const auto start = ProfileClock::now();
     float mx = b.w * cfg_.margin, my = b.h * cfg_.margin;
     float x0 = b.x - mx, y0 = b.y - my, cw = b.w + 2 * mx, ch = b.h + 2 * my;
     ocr_.invoke([&](auto* interpreter) {
@@ -1033,10 +1116,27 @@ class Engine {
     });
     Choice base_class = classification_choice(class_probability, class_labels);
     Choice base_serial = serial_choice(number_probability, number_labels);
-    Choice trained_kana = aux_kana_ ? aux_kana_->read(f, W, H, b) : Choice{};
-    Choice trained_class = aux_class_ ? aux_class_->read(f, W, H, b) : Choice{};
-    if (text_ocr_ && refine)
-      return text_ocr_->refine(f, W, H, b, base_region, base_class, base_kana, base_serial, trained_kana, trained_class);
+    if (profile) profile->lite += elapsed_ms(start);
+    const auto auxiliary = [&](AuxReader* reader) {
+      if (!reader) return Choice{};
+      const auto start = ProfileClock::now();
+      auto result = reader->read(f, W, H, b);
+      if (profile) profile->lite += elapsed_ms(start);
+      return result;
+    };
+    if (text_ocr_ && refine) {
+      const auto text_start = ProfileClock::now();
+      const double lite_before_refine = profile ? profile->lite : 0;
+      auto reading = text_ocr_->refine(f, W, H, b, base_class, base_kana, base_serial,
+                                       [&] { return auxiliary(aux_kana_.get()); },
+                                       [&] { return auxiliary(aux_class_.get()); }, profile);
+      if (profile) profile->text += elapsed_ms(text_start) - (profile->lite - lite_before_refine);
+      return reading;
+    }
+    if (!refine) {
+      auxiliary(aux_kana_.get());
+      auxiliary(aux_class_.get());
+    }
     return {{"region", base_region.confidence >= cfg_.field_threshold ? base_region.text : ""},
             {"class", base_class.confidence >= cfg_.field_threshold ? base_class.text : ""},
             {"kana", base_kana.confidence >= cfg_.field_threshold ? base_kana.text : ""},
@@ -1110,6 +1210,7 @@ int main(int argc, char** argv) {
   bool use_gpu = access("/dev/kgsl-3d0", R_OK | W_OK) == 0;
   GPU detector_gpu = GPU::cached_partition;
   bool prepare_gpu_cache = false;
+  bool profile_frames = false;
   const auto initializing = std::chrono::steady_clock::now();
   for (int i = 1; i + 1 < argc; i += 2) {
     std::string k = argv[i], v = argv[i + 1];
@@ -1118,6 +1219,7 @@ int main(int argc, char** argv) {
     else if (k == "--config") conf = v;
     else if (k == "--threads") threads = std::clamp(std::atoi(v.c_str()), 1, 4);
     else if (k == "--bench") bench = std::clamp(std::atoi(v.c_str()), 1, 1000);
+    else if (k == "--profile") profile_frames = v == "1";
     else if (k == "--backend" && v == "cpu") use_gpu = false;
     else if (k == "--detector-backend") detector_gpu = v == "gpu" ? GPU::one_partition : GPU::off;
     else if (k == "--gpu-cache") gpu_cache = v;
@@ -1168,7 +1270,10 @@ int main(int argc, char** argv) {
     auto t0 = std::chrono::steady_clock::now();
     json reply = {{"seq", seq}};
     try {
-      reply["plates"] = engine->process(frame.data(), static_cast<int>(w), static_cast<int>(h));
+      FrameProfile profile;
+      reply["plates"] = engine->process(frame.data(), static_cast<int>(w), static_cast<int>(h),
+                                         profile_frames ? &profile : nullptr);
+      if (profile_frames) reply["profile"] = profile.to_json();
     } catch (const std::exception& e) {
       reply["plates"] = json::array();
       reply["error"] = e.what();
