@@ -8,7 +8,7 @@
     "ppocrv6_rec.onnx": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
     "ppocrv6_rec_np1_int8.onnx": "a5e36a46c48ce2d6edf3995e8118d689b35eacb71afaf4754ea491c19af9eceb",
     "ppocr-dictionary.json": "b50d01361bea9087ccb896a6381c1a8334e2af14ae0f1036571bd06cdc3832bf",
-    "plate-model.json": "3e54ed05748d8295f08cade6d52a4dae200210fc51d59252ea658a8344789fce"
+    "plate-model.json": "9b7fc19e5b8b571df24802a454f41623117c1ade448a9810826724f74d13f578"
   },
   "japanese_ocr_source": "https://huggingface.co/bukuroo/Lipla-jp/tree/947afab7678ff50d7101e5cf802de25e9d4d0fe1",
   "runtime": "ONNX Runtime Android 1.31.1 CPU 3 intra-op / 1 inter-op; LiteRT 1.4.2 2 threads",

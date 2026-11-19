@@ -624,6 +624,7 @@ class TextOCR {
   TextOCR(const std::string& model_path, const std::string& fast_path, const std::string& dictionary_path, const json& config,
           const std::vector<std::string>& regions, const std::vector<std::string>& kana)
       : threads_(std::clamp(config.value("cpuThreads", 2), 1, 4)),
+        fast_max_width_(std::clamp(config.value("fastMaxInputWidth", 512), 64, 512)),
         regions_(regions.begin(), regions.end()), kana_(kana.begin(), kana.end()) {
     std::ifstream dictionary_file(dictionary_path);
     if (!dictionary_file) throw std::runtime_error("cannot open PP-OCR dictionary");
@@ -734,15 +735,16 @@ class TextOCR {
     output_name_ = session_->GetOutputNameAllocated(0, allocator).get();
   }
 
-  std::vector<float> infer(const uint8_t* frame, int W, int H, const Box& box,
-                           const std::array<double, 4>& rect, int& steps) {
+  Ort::Value infer(const uint8_t* frame, int W, int H, const Box& box,
+                   const std::array<double, 4>& rect, int& steps) {
     const auto start = ProfileClock::now();
     int x0 = std::max(0, static_cast<int>(rect[0] * box.w));
     int y0 = std::max(0, static_cast<int>(rect[1] * box.h));
     int x1 = std::min(static_cast<int>(box.w), std::max(x0 + 1, static_cast<int>(rect[2] * box.w)));
     int y1 = std::min(static_cast<int>(box.h), std::max(y0 + 1, static_cast<int>(rect[3] * box.h)));
     int crop_width = x1 - x0, crop_height = y1 - y0;
-    int width = std::clamp(static_cast<int>(std::lround(48.0 * crop_width / crop_height)), 8, 512);
+    int max_width = uses_int8() ? fast_max_width_ : 512;
+    int width = std::clamp(static_cast<int>(std::lround(48.0 * crop_width / crop_height)), 8, max_width);
     size_t plane = static_cast<size_t>(48) * width;
     std::vector<float> input(3 * plane);
     uint8_t rgb[3];
@@ -772,14 +774,13 @@ class TextOCR {
     if (output_shape.size() != 3 || output_shape[0] != 1 || output_shape[2] != static_cast<int64_t>(dictionary_.size()))
       throw std::runtime_error("PP-OCR output shape does not match dictionary");
     steps = static_cast<int>(output_shape[1]);
-    size_t count = info.GetElementCount();
-    const float* values = result[0].GetTensorData<float>();
-    return std::vector<float>(values, values + count);
+    return std::move(result[0]);
   }
 
   OCRText text(const uint8_t* frame, int W, int H, const Box& box, const std::array<double, 4>& rect) {
     int steps = 0;
-    std::vector<float> values = infer(frame, W, H, box, rect, steps);
+    const auto result = infer(frame, W, H, box, rect, steps);
+    const float* values = result.GetTensorData<float>();
     OCRText decoded;
     int previous = -1;
     float maximum = 0;
@@ -816,8 +817,8 @@ class TextOCR {
     std::set<std::string> strong;
     for (const auto& rect : rects) {
       int steps = 0;
-      std::vector<float> values = infer(frame, W, H, box, rect, steps);
-      LexMatch match = lexicon.score(values.data(), steps, static_cast<int>(dictionary_.size()));
+      const auto result = infer(frame, W, H, box, rect, steps);
+      LexMatch match = lexicon.score(result.GetTensorData<float>(), steps, static_cast<int>(dictionary_.size()));
       if (match.posterior < .9) continue;
       if (!known.empty() && match.text == known && match.likelihood >= std::max(.6, threshold)) return match;
       if (match.likelihood >= .6) strong.insert(match.text);
@@ -899,6 +900,7 @@ class TextOCR {
   std::unique_ptr<Ort::Session> session_;
   std::string input_name_, output_name_, fallback_path_;
   const int threads_;
+  const int fast_max_width_;
   std::vector<std::string> dictionary_;
   std::set<std::string> regions_, kana_;
   CtcLexicon region_lexicon_, kana_lexicon_;

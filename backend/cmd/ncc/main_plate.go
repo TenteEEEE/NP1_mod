@@ -45,7 +45,7 @@ func runPlateSensor(confPath string) error {
 		ModelDir:   plateModelDir,
 		EnginePath: plateEngine,
 		Socket:     api.PlateSensorSocket,
-		FPS:        envNumber("NCC_PLATE_FPS", 2, 0.5, 10),
+		FPS:        envNumber("NCC_PLATE_FPS", 4, 0.5, 10),
 		Threads:    int(envNumber("NCC_PLATE_THREADS", 2, 1, 4)),
 	}
 	// The position of the detection's own second: the stock per-second record, or an NMEA fix
