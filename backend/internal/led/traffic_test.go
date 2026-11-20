@@ -1,0 +1,59 @@
+package led
+
+import (
+	"context"
+	"path/filepath"
+	"sync/atomic"
+	"testing"
+	"time"
+)
+
+func TestTrafficColorsUseDistinctZonesAndExpire(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	now := time.Unix(100, 0)
+	if err := writeTrafficColors(path, TrafficRed|TrafficBlinkGreen|TrafficGreen, now); err != nil {
+		t.Fatal(err)
+	}
+	frame, active, err := readTrafficFrame(path, now)
+	want := [5][3]int{{112, 0, 0}, {112, 0, 0}, {0, 112, 84}, {0, 112, 84}, {0, 112, 84}}
+	if err != nil || !active || frame.Zones != want {
+		t.Fatalf("unexpected traffic frame: %v active=%v err=%v", frame.Zones, active, err)
+	}
+	frame, active, err = readTrafficFrame(path, now.Add(500*time.Millisecond))
+	want[2] = [3]int{}
+	if err != nil || !active || frame.Zones != want {
+		t.Fatalf("blink affected another zone: %v active=%v err=%v", frame.Zones, active, err)
+	}
+	if _, active, err := readTrafficFrame(path, now.Add(trafficLease)); err != nil || active {
+		t.Fatalf("traffic frame did not expire: active=%v err=%v", active, err)
+	}
+}
+
+func TestTrafficYieldsToScreenOverlayAndResumes(t *testing.T) {
+	f := newManagedFixture()
+	d := f.dependencies()
+	var screenOn, trafficOn atomic.Bool
+	trafficOn.Store(true)
+	d.screen = func(time.Time) (ScreenFrame, bool, error) {
+		return ScreenFrame{ScreenUpdate: ScreenUpdate{Sequence: 1, Zones: [5][3]int{{255, 255, 255}}}}, screenOn.Load(), nil
+	}
+	d.traffic = func(time.Time) (ScreenFrame, bool, error) {
+		return ScreenFrame{ScreenUpdate: ScreenUpdate{Sequence: 2, Zones: [5][3]int{{112, 0, 0}}}}, trafficOn.Load(), nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runManaged(ctx, d) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+	})
+	f.wait(t, func(s State) bool { return s.Mode == "traffic" && s.ScreenSequence == 2 })
+	screenOn.Store(true)
+	f.wait(t, func(s State) bool { return s.Mode == "screen" && s.ScreenSequence == 1 })
+	screenOn.Store(false)
+	f.wait(t, func(s State) bool { return s.Mode == "traffic" && s.ScreenSequence == 2 })
+	trafficOn.Store(false)
+	f.wait(t, func(s State) bool { return s.Mode == "solid" && s.ScreenSequence == 0 })
+}

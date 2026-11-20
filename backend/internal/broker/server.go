@@ -81,6 +81,7 @@ func Serve(socket string, uid uint32) error {
 		return e
 	}
 	adapters.RegisterNotificationLEDHandlers(mux, ctx)
+	adapters.RegisterTrafficLEDHandler(mux)
 	mux.HandleFunc("GET /journey-intervals", adapters.HandleJourneyIntervals)
 	mux.HandleFunc("GET /alexa", adapters.HandleAlexaRemote)
 	mux.HandleFunc("PUT /tailscale/name", func(w http.ResponseWriter, r *http.Request) {

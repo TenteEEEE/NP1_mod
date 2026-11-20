@@ -22,6 +22,9 @@ rollback() {
         unit=${file##*/}
         if test -e "$UNITS/$unit"; then cmp -s "$file" "$UNITS/$unit" || return 1; fi
     done
+    if test -d "$BASE/recovery/pics-rt"; then
+        sh "$BASE/tools/pics-stock-rt-install.sh" rollback || return 1
+    fi
     recorder_dropin=$UNITS/app-@DriveRec.service.d/90-ncc-recorder-hook.conf
     if test -f "$BASE/recorder-hook/90-ncc-recorder-hook.conf" && test -e "$recorder_dropin"; then
         cmp "$BASE/recorder-hook/90-ncc-recorder-hook.conf" "$recorder_dropin" || return 1
@@ -171,6 +174,7 @@ for name in web $workers; do
 done
 
 systemctl daemon-reload
+sh tools/pics-stock-rt-install.sh apply
 cmp experimental/libncc-driverec-hook.so "$BASE/recorder-hook/libncc-driverec-hook.so"
 cmp experimental/ncc-recorder-injector "$BASE/experimental/ncc-recorder-injector"
 test ! -e "$RECORDER_DROPIN"

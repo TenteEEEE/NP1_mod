@@ -62,13 +62,28 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
  })
 
  test('first-run null rules do not break tabs, editing or reset',async({page})=>{
-  const errors=await open(page,async route=>{if(new URL(route.request().url()).pathname==='/api/v1/plate/settings') {await route.fulfill({json:{...settings,rules:null}});return true}})
+  let savedLED=false
+  const errors=await open(page,async route=>{
+   if(new URL(route.request().url()).pathname!=='/api/v1/plate/settings')return false
+   if(route.request().method()==='PUT'){
+    const saved=route.request().postDataJSON().settings
+    savedLED=saved.detectionLED
+    await route.fulfill({json:{...saved,revision:saved.revision+1}})
+   }else await route.fulfill({json:{...settings,rules:null}})
+   return true
+  })
   await page.getByRole('tab',{name:'条件と設定',exact:true}).click()
   await expect(page.getByText('条件はまだありません。',{exact:true})).toBeVisible()
   await page.getByRole('button',{name:'条件を追加',exact:true}).click()
   await expect(page.locator('.plate-rule')).toHaveCount(1)
   await page.getByRole('button',{name:'変更を取り消す',exact:true}).click()
   await expect(page.locator('.plate-rule')).toHaveCount(0)
+  const detectionLED=page.getByRole('checkbox',{name:/条件に関係なく、ナンバー検出時にLEDを光らせる/})
+  await expect(detectionLED).not.toBeChecked()
+  await detectionLED.check()
+  await page.getByRole('button',{name:'設定を保存',exact:true}).click()
+  await expect(page.getByText('設定を保存しました',{exact:true})).toBeVisible()
+  expect(savedLED).toBe(true)
   await page.getByRole('tab',{name:'状態',exact:true}).click()
   await expect(page.getByRole('heading',{name:'認識と保存の状態',exact:true})).toBeVisible()
   await page.getByRole('tab',{name:'記録',exact:true}).click()

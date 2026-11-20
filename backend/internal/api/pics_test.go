@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/trips"
 )
@@ -55,21 +56,50 @@ func TestPICSDefaultsAndSave(t *testing.T) {
 		}
 		return data.Settings
 	}
-	if cfg := load(); !cfg.Enabled || cfg.Speech || cfg.Directional {
+	if cfg := load(); !cfg.Enabled || cfg.Speech || cfg.Directional || cfg.LED {
 		t.Fatalf("defaults: %#v", cfg)
 	}
 	for _, attempt := range []struct {
 		cfg  picsSettings
 		want int
-	}{{picsSettings{Enabled: true, Volume: 101}, http.StatusBadRequest}, {picsSettings{Speech: true, Style: 3, Volume: 40}, http.StatusOK}} {
+	}{{picsSettings{Enabled: true, Volume: 101}, http.StatusBadRequest}, {picsSettings{Speech: true, LED: true, Style: 3, Volume: 40}, http.StatusOK}} {
 		r := request(t, client, s, "PUT", "/pics", csrf, attempt.cfg)
 		r.Body.Close()
 		if r.StatusCode != attempt.want {
 			t.Fatalf("save: got %d, want %d", r.StatusCode, attempt.want)
 		}
 	}
-	if cfg := load(); cfg.Enabled || !cfg.Speech || cfg.Style != 3 || cfg.Volume != 40 {
+	if cfg := load(); cfg.Enabled || !cfg.Speech || !cfg.LED || cfg.Style != 3 || cfg.Volume != 40 {
 		t.Fatalf("saved config: %#v", cfg)
+	}
+}
+
+func TestPICSLightsFreshDirectionsOnly(t *testing.T) {
+	p := newPICSService(t.TempDir(), nil)
+	now := time.Now()
+	p.scanState = "scanning"
+	p.monitor.Receive("beacon", []byte{0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0x81, 0x82, 0x83}, now)
+	if got := p.trafficColors(now); got != 0 {
+		t.Fatalf("disabled LED showed %v", got)
+	}
+	p.settings.LED = true
+	if got := p.trafficColors(now); got != led.TrafficRed|led.TrafficBlinkGreen|led.TrafficGreen {
+		t.Fatalf("LED did not show all visible colors: %v", got)
+	}
+	axis, course := 90.0, 270.0
+	p.settings.Directional = true
+	p.directions["00000001"] = picsAxes{nil, nil, &axis}
+	p.positions = []trips.TrackPoint{{At: now}}
+	p.course = &course
+	if got := p.trafficColors(now); got != led.TrafficGreen {
+		t.Fatalf("LED ignored the selected directions: %v", got)
+	}
+	if got := p.trafficColors(now.Add(2 * time.Second)); got != 0 {
+		t.Fatalf("expired signal still shown: %v", got)
+	}
+	p.scanState = "unavailable"
+	if got := p.trafficColors(now); got != 0 {
+		t.Fatalf("interrupted scanner still shown: %v", got)
 	}
 }
 

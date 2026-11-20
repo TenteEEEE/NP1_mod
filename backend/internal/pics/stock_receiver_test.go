@@ -17,7 +17,7 @@ func vendorEvent(caller uint32, data []byte) *dbus.Signal {
 	frame := make([]byte, 12, 12+len(data))
 	binary.LittleEndian.PutUint64(frame, 0x2c8)
 	binary.LittleEndian.PutUint32(frame[8:], 0x30)
-	return &dbus.Signal{Name: stockBLEEvent, Path: stockBLEPath, Body: []any{caller, uint32(0), append(frame, data...)}}
+	return &dbus.Signal{Name: stockBLEEvent, Path: stockBLEEventPath, Body: []any{caller, uint32(0), append(frame, data...)}}
 }
 
 func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) {
@@ -29,6 +29,11 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 	data = append(append(data, 0xce, 0x01), want...)
 	if _, ok := stockDiscoveryEvent(vendorEvent(caller+1, data), caller); ok {
 		t.Fatal("event for another caller")
+	}
+	requestPath := vendorEvent(caller, data)
+	requestPath.Path = stockBLEPath
+	if _, ok := stockDiscoveryEvent(requestPath, caller); ok {
+		t.Fatal("accepted a notification on the request path")
 	}
 	if _, payload, _ := stockAdvertisement(data[:len(data)-1]); payload != nil {
 		t.Fatal("truncated payload decoded")
@@ -54,7 +59,7 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 			return stop
 		}
 		return nil
-	}, signals, caller, stockAdvertisement, func() { ready++ }, func(_ string, data []byte) {
+	}, signals, func(signal *dbus.Signal) ([]byte, bool) { return stockDiscoveryEvent(signal, caller) }, stockAdvertisement, func() { ready++ }, func(_ string, data []byte) {
 		received++
 		if !bytes.Equal(data, want) {
 			t.Errorf("payload = %x", data)
@@ -62,6 +67,28 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 	})
 	if !errors.Is(err, stop) || started != 2 || ready != 2 || received != 1 {
 		t.Fatalf("start=%d ready=%d received=%d err=%v", started, ready, received, err)
+	}
+}
+
+func TestStockAdvertisementFindsManufacturerInAdditionalADValues(t *testing.T) {
+	want := frame(1, 0x83)
+	data := make([]byte, 0x298)
+	copy(data[0x20:], []byte{1, 2, 3, 4, 5, 6})
+	data[0x1fc] = 2
+	data[0x200], data[0x201] = 0x16, 3
+	data[0x210], data[0x211] = 0xff, byte(len(want)+2)
+	data = append(data, 0xce, 0x01, 0x00, 0xce, 0x01)
+	data = append(data, want...)
+	source, payload, done := stockAdvertisement(data)
+	if source == "" || done || !bytes.Equal(payload, want) {
+		t.Fatalf("advertisement incorrectly decoded: source present=%v, payload=%x, done=%v", source != "", payload, done)
+	}
+	if _, payload, _ := stockAdvertisement(data[:len(data)-1]); payload != nil {
+		t.Fatal("accepted an incomplete manufacturer field")
+	}
+	data[0x210] = 0x16
+	if _, payload, _ := stockAdvertisement(data); payload != nil {
+		t.Fatal("accepted a different AD type with the PICS identifier")
 	}
 }
 
@@ -74,7 +101,7 @@ func TestStockDiscoveryCompletesWithNoNearbyAdvertisements(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ready := 0
-	err := runStockDiscovery(ctx, func(context.Context) error { return nil }, signals, caller, stockAdvertisement, func() {
+	err := runStockDiscovery(ctx, func(context.Context) error { return nil }, signals, func(signal *dbus.Signal) ([]byte, bool) { return stockDiscoveryEvent(signal, caller) }, stockAdvertisement, func() {
 		ready++
 		cancel()
 	}, func(string, []byte) { t.Error("unexpected advertisement") })

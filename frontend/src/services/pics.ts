@@ -1,4 +1,4 @@
-export type PicsSettings={enabled:boolean;speech:boolean;directional?:boolean;style:number;volume:number}
+export type PicsSettings={enabled:boolean;speech:boolean;directional?:boolean;led?:boolean;style:number;volume:number}
 export type PicsColor='red'|'green'|'blink-green'
 export type PicsSignal={id:string;name?:string;slot:number;color:PicsColor;seconds:number|null;directionMatch?:boolean}
 export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;course?:number;signals:PicsSignal[]}

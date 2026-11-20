@@ -5,7 +5,16 @@ import tempfile
 spec = importlib.util.spec_from_file_location('postboot', pathlib.Path(__file__).resolve().parents[1] / 'tools/device/postboot.py')
 postboot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(postboot)
+
+
 class PostbootTests(unittest.TestCase):
+    def test_early_pics_block_preserves_vendor_script(self):
+        original = '#! /bin/sh\n# Vendor setup\nsleep 10\n\n' + postboot.BLOCK + '\n'
+        added = postboot.transform(original, 'add', postboot.PICS_RT_BLOCK)
+        self.assertEqual(added, '#! /bin/sh\n' + postboot.PICS_RT_BLOCK + '\n' + original.split('\n', 1)[1])
+        self.assertEqual(added, postboot.transform(added, 'add', postboot.PICS_RT_BLOCK))
+        self.assertEqual(original, postboot.transform(added, 'remove', postboot.PICS_RT_BLOCK))
+
     def test_known_ap_block_migrates_without_touching_foreign_text(self):
         text='#!/bin/sh\necho vendor\n'+postboot.AP_BLOCK_LEGACY+'\n# OTHER_OWNER\n'
         after=postboot.transform(text,'add',postboot.AP_BLOCK)

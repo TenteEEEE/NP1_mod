@@ -74,6 +74,8 @@ onUnmounted(()=>clearInterval(timer))
     <label class="pics-check"><input v-model="draft.speech" type="checkbox" :disabled="busy||!draft.enabled">VOICEVOXで本体から発話する</label>
     <label class="pics-check"><input v-model="draft.directional" type="checkbox" :disabled="busy||!draft.enabled">進行方向で絞り込む</label>
     <p v-if="draft.directional" class="hint">進行方向 {{picsCourseText(status?.course)}}。受信記録で交差点ごとに灯器の横断方向を登録してください。</p>
+    <label class="pics-check"><input v-model="draft.led" type="checkbox" :disabled="busy||!draft.enabled">信号の状態を本体LEDに表示する</label>
+    <p v-if="draft.led" class="hint">赤は左、青点滅は中央、青は右に表示します。</p>
     <template v-if="draft.enabled&&draft.speech">
      <div class="pics-voice-controls">
       <label>声<select v-model.number="draft.style" :disabled="busy">

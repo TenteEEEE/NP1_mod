@@ -27,6 +27,8 @@ class Beacon(dbus.service.Object):
         return {
             "Type": dbus.String("broadcast"),
             "Timeout": dbus.UInt16(2),
+            "MinInterval": dbus.UInt32(100),
+            "MaxInterval": dbus.UInt32(100),
             "ManufacturerData": dbus.Dictionary({dbus.UInt16(MANUFACTURER): dbus.ByteArray(self.payload, variant_level=1)}, signature="qv"),
         }
     @dbus.service.method(ADV, in_signature="", out_signature="")

@@ -176,9 +176,17 @@ func (crossing *intersection) validHint(slot int, now time.Time) bool {
 // Signals lists all recently seen lamps. A countdown is shown before color-only
 // signals so that the compact dashboard can follow the next estimated change.
 func (m *Monitor) Signals(now time.Time) []Signal {
+	return m.signals(now, showFor)
+}
+
+func (m *Monitor) FreshSignals(now time.Time) []Signal {
+	return m.signals(now, freshFor)
+}
+
+func (m *Monitor) signals(now time.Time, maxAge time.Duration) []Signal {
 	result := []Signal{}
 	for id, crossing := range m.intersections {
-		if now.Before(crossing.conflict) || now.Sub(crossing.lastType2) > showFor {
+		if now.Before(crossing.conflict) || now.Sub(crossing.lastType2) > maxAge {
 			continue
 		}
 		for i, t := range crossing.lamps {

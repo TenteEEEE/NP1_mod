@@ -8,10 +8,12 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/godbus/dbus/v5"
 	"github.com/np1-control-center/ncc/internal/platespeech"
 )
 
@@ -47,8 +49,8 @@ func TestPICSDevice(t *testing.T) {
 		t.Logf("NP1 VOICEVOX cache ready: %d clips", len(Vocabulary()))
 		return
 	}
-	if mode != "radio" && mode != "replay" {
-		t.Fatal("use the radio, replay or prepare trial")
+	if mode != "radio" && mode != "replay" && mode != "observe" {
+		t.Fatal("use the radio, observe, replay or prepare trial")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 65*time.Second)
 	defer cancel()
@@ -77,13 +79,19 @@ func TestPICSDevice(t *testing.T) {
 			}
 			return "trial", payload[len(tag):], done
 		}
-		scan, stop := context.WithTimeout(ctx, 20*time.Second)
+		scan, stop := context.WithTimeout(ctx, 38*time.Second)
 		red, green := 0, 0
-		err = scanStockBLEWith(scan, decode, func() { t.Log("stock BLE reports received") }, func(source string, payload []byte) {
+		var last time.Time
+		receive := func(source string, payload []byte) {
 			now := time.Now()
 			monitor.Receive(source, payload, now)
 			if n := len(payload); n > 10 {
-				switch payload[10] & 15 {
+				color := payload[10] & 15
+				if !last.IsZero() {
+					t.Logf("trial color=%d interval=%s", color, now.Sub(last).Round(time.Millisecond))
+				}
+				last = now
+				switch color {
 				case 1:
 					red++
 				case 3:
@@ -94,7 +102,16 @@ func TestPICSDevice(t *testing.T) {
 				cue = next
 				stop()
 			}
-		})
+		}
+		if mode == "observe" {
+			caller, parseErr := strconv.ParseUint(os.Getenv("NCC_PICS_BROKER_PID"), 10, 32)
+			if parseErr != nil || caller < 2 {
+				t.Fatal("the installed broker PID is required to correlate notifications")
+			}
+			err = observeTrialDiscovery(scan, uint32(caller), decode, receive)
+		} else {
+			err = scanStockBLEWith(scan, decode, func() { t.Log("stock BLE reports received") }, receive)
+		}
 		stop()
 		t.Logf("matched over-air trial reports red=%d green=%d", red, green)
 		if cue.Kind == "" {
@@ -122,6 +139,36 @@ func TestPICSDevice(t *testing.T) {
 		}
 		for _, cue := range cues {
 			testTrialPlayback(t, ctx, voice, player, SpeechParts(cue), func(time.Duration) bool { return true })
+		}
+	}
+}
+
+// Observes the installed broker's existing scan; this test sends no request to the controller.
+func observeTrialDiscovery(ctx context.Context, caller uint32, decode advertisementDecoder, receive func(string, []byte)) error {
+	session, err := connectStockBLE(ctx)
+	if err != nil {
+		return err
+	}
+	defer session.conn.Close()
+	signals := make(chan *dbus.Signal, 64)
+	session.conn.Signal(signals)
+	defer session.conn.RemoveSignal(signals)
+	if err := session.watchDiscovery(ctx); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case signal, ok := <-signals:
+			if !ok {
+				return context.Canceled
+			}
+			if data, ok := session.discoveryData(ctx, signal, caller); ok {
+				if source, payload, _ := decode(data); source != "" && payload != nil {
+					receive(source, payload)
+				}
+			}
 		}
 	}
 }

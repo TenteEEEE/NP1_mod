@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/config"
+	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/plate"
 	"github.com/np1-control-center/ncc/internal/platespeech"
@@ -320,6 +321,9 @@ func (p *plateService) speak(ctx context.Context, outcome plate.Outcome) {
 			copy := rule
 			lightRule = &copy
 		}
+	}
+	if lightRule == nil && outcome.New && p.currentSettings().DetectionLED {
+		lightRule = &plate.Rule{LED: led.Notification{Mode: "solid", Effect: "breathe", RGB: [3]int{255, 255, 255}, Brightness: 112}}
 	}
 	if speechRule == nil {
 		if lightRule != nil {

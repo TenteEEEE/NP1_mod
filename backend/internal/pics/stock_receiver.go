@@ -22,6 +22,7 @@ const (
 	stockOwnerExecutable   = "/usr/local/bin/NEventWatcherCom"
 	stockBLEName           = "SPF.EventBase.NPBTLEHandler.Stub"
 	stockBLEPath           = dbus.ObjectPath("/SPF/EventBase/NPBTLEHandler")
+	stockBLEEventPath      = dbus.ObjectPath("/SPF/EventBase/Evt048")
 	stockBLEInterface      = "SPF.EventBase.v1_0"
 	stockBLEEvent          = stockBLEInterface + ".SPFEvent"
 	stockDiscoveryFunction = 15
@@ -96,52 +97,106 @@ func scanStockBLE(ctx context.Context, ready func(), receive func(string, []byte
 
 type advertisementDecoder func([]byte) (source string, payload []byte, done bool)
 
+type stockBLESession struct {
+	conn   *dbus.Conn
+	owner  string
+	pid    uint32
+	sender string
+}
+
 func scanStockBLEWith(ctx context.Context, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
+	session, err := connectStockBLE(ctx)
+	if err != nil {
+		return err
+	}
+	defer session.conn.Close()
+	signals := make(chan *dbus.Signal, 32)
+	session.conn.Signal(signals)
+	defer session.conn.RemoveSignal(signals)
+	if err := session.watchDiscovery(ctx); err != nil {
+		return err
+	}
+	caller := uint32(os.Getpid())
+	object := session.conn.Object(session.owner, stockBLEPath)
+	return runStockDiscovery(ctx, func(ctx context.Context) error { return startStockDiscovery(ctx, object, caller) }, signals,
+		func(signal *dbus.Signal) ([]byte, bool) { return session.discoveryData(ctx, signal, caller) }, decode, ready, receive)
+}
+
+func connectStockBLE(ctx context.Context) (*stockBLESession, error) {
 	info, err := os.Lstat(stockBusFile)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 {
-		return errors.New("純正Bluetoothのセッションバスが利用できません")
+		return nil, errors.New("純正Bluetoothのセッションバスが利用できません")
 	}
 	file, err := os.Open(stockBusFile)
 	if err != nil {
-		return errors.New("純正Bluetoothのセッションバスが利用できません")
+		return nil, errors.New("純正Bluetoothのセッションバスが利用できません")
 	}
 	data, err := io.ReadAll(io.LimitReader(file, 513))
 	_ = file.Close()
 	if err != nil || len(data) > 512 {
-		return errors.New("純正Bluetoothのセッションバスを識別できません")
+		return nil, errors.New("純正Bluetoothのセッションバスを識別できません")
 	}
 	address := stockBusAddress(string(data))
 	if address == "" {
-		return errors.New("純正Bluetoothのセッションバスを識別できません")
+		return nil, errors.New("純正Bluetoothのセッションバスを識別できません")
 	}
 	conn, err := dbus.Connect(address, dbus.WithContext(ctx))
 	if err != nil {
-		return errors.New("純正Bluetoothのセッションバスに接続できません")
+		return nil, errors.New("純正Bluetoothのセッションバスに接続できません")
 	}
-	defer conn.Close()
+	keep := false
+	defer func() {
+		if !keep {
+			_ = conn.Close()
+		}
+	}()
 	setup, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
 	var owner string
 	if conn.BusObject().CallWithContext(setup, "org.freedesktop.DBus.GetNameOwner", 0, stockBLEName).Store(&owner) != nil {
-		return errors.New("純正BluetoothのBLEサービスが見つかりません")
+		return nil, errors.New("純正BluetoothのBLEサービスが見つかりません")
 	}
 	var pid uint32
 	if conn.BusObject().CallWithContext(setup, "org.freedesktop.DBus.GetConnectionUnixProcessID", 0, owner).Store(&pid) != nil {
-		return errors.New("純正Bluetoothのサービス所有者を確認できません")
+		return nil, errors.New("純正Bluetoothのサービス所有者を確認できません")
 	}
 	executable, err := os.Readlink("/proc/" + strconv.FormatUint(uint64(pid), 10) + "/exe")
 	if err != nil || executable != stockOwnerExecutable {
-		return errors.New("Bluetoothの所有者が純正サービスと一致しません")
+		return nil, errors.New("Bluetoothの所有者が純正サービスと一致しません")
 	}
-	signals := make(chan *dbus.Signal, 32)
-	conn.Signal(signals)
-	defer conn.RemoveSignal(signals)
-	if conn.AddMatchSignalContext(setup, dbus.WithMatchSender(owner), dbus.WithMatchObjectPath(stockBLEPath), dbus.WithMatchInterface(stockBLEInterface), dbus.WithMatchMember("SPFEvent")) != nil {
+	keep = true
+	return &stockBLESession{conn: conn, owner: owner, pid: pid}, nil
+}
+
+func (session *stockBLESession) watchDiscovery(ctx context.Context) error {
+	subscribe, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if session.conn.AddMatchSignalContext(subscribe, dbus.WithMatchObjectPath(stockBLEEventPath), dbus.WithMatchInterface(stockBLEInterface), dbus.WithMatchMember("SPFEvent")) != nil {
 		return errors.New("純正Bluetoothの広告通知を購読できません")
 	}
-	caller := uint32(os.Getpid())
-	object := conn.Object(owner, stockBLEPath)
-	return runStockDiscovery(ctx, func(ctx context.Context) error { return startStockDiscovery(ctx, object, caller) }, signals, caller, decode, ready, receive)
+	return nil
+}
+
+func (session *stockBLESession) discoveryData(ctx context.Context, signal *dbus.Signal, caller uint32) ([]byte, bool) {
+	data, ok := stockDiscoveryEvent(signal, caller)
+	if !ok {
+		return nil, false
+	}
+	// The stock process can publish events on a separate D-Bus connection.
+	// Match its authenticated process ID before consuming any reports.
+	if signal.Sender != session.owner && (session.sender == "" || signal.Sender != session.sender) {
+		if !strings.HasPrefix(signal.Sender, ":") {
+			return nil, false
+		}
+		check, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+		defer cancel()
+		var pid uint32
+		if session.conn.BusObject().CallWithContext(check, "org.freedesktop.DBus.GetConnectionUnixProcessID", 0, signal.Sender).Store(&pid) != nil || pid != session.pid {
+			return nil, false
+		}
+		session.sender = signal.Sender
+	}
+	return data, true
 }
 
 func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint32) error {
@@ -165,7 +220,7 @@ func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint
 	return nil
 }
 
-func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, caller uint32, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
+func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, read func(*dbus.Signal) ([]byte, bool), decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	confirmed := false
 	for ctx.Err() == nil {
 		started := time.Now()
@@ -182,7 +237,7 @@ func runStockDiscovery(ctx context.Context, start func(context.Context) error, s
 					cancel()
 					return errors.New("純正Bluetoothの通知が切断されました")
 				}
-				data, ok := stockDiscoveryEvent(signal, caller)
+				data, ok := read(signal)
 				if !ok {
 					continue
 				}
@@ -228,7 +283,7 @@ func waitStockScan(ctx context.Context, delay time.Duration) bool {
 }
 
 func stockDiscoveryEvent(signal *dbus.Signal, caller uint32) ([]byte, bool) {
-	if signal == nil || signal.Name != stockBLEEvent || signal.Path != stockBLEPath || len(signal.Body) != 3 || signal.Body[0] != caller || signal.Body[1] != uint32(0) {
+	if signal == nil || signal.Name != stockBLEEvent || signal.Path != stockBLEEventPath || len(signal.Body) != 3 || signal.Body[0] != caller || signal.Body[1] != uint32(0) {
 		return nil, false
 	}
 	data, ok := signal.Body[2].([]byte)
@@ -244,7 +299,7 @@ func stockAdvertisement(data []byte) (source string, payload []byte, done bool) 
 
 func stockAdvertisementFor(data []byte, manufacturer uint16) (source string, payload []byte, done bool) {
 	// NPBTLEDiscoveryResponseEvent::Pack emits a 0x298-byte fixed body,
-	// followed by the manufacturer AD value and any service-data values.
+	// followed by the dedicated manufacturer value and additional AD values.
 	const fixedSize = 0x298
 	if len(data) < fixedSize {
 		return "", nil, false
@@ -257,9 +312,37 @@ func stockAdvertisementFor(data []byte, manufacturer uint16) (source string, pay
 		return "", nil, false
 	}
 	source = string(address[:])
-	length := int(data[0x1ec])
-	if length >= 12 && length <= 29 && fixedSize+length <= len(data) && binary.LittleEndian.Uint16(data[fixedSize:]) == manufacturer {
-		payload = data[fixedSize+2 : fixedSize+length]
+	return source, stockManufacturerData(data[:fixedSize], data[fixedSize:], manufacturer), false
+}
+
+func stockManufacturerData(header, values []byte, manufacturer uint16) []byte {
+	match := func(value []byte) bool {
+		return len(value) >= 12 && len(value) <= 29 && binary.LittleEndian.Uint16(value) == manufacturer
 	}
-	return source, payload, false
+	length := int(header[0x1ec])
+	if length > len(values) || length > 31 {
+		return nil
+	}
+	if match(values[:length]) {
+		return values[2:length]
+	}
+	values = values[length:]
+	count := int(header[0x1fc])
+	if count > 8 {
+		return nil
+	}
+	// The stock extended scanner can put the entire manufacturer AD value in
+	// its variable AD list (type 0xff), with no dedicated manufacturer value.
+	for i := 0; i < count; i++ {
+		entry := 0x200 + 0x10*i
+		length := int(header[entry+1])
+		if length > len(values) || length > 31 {
+			return nil
+		}
+		if header[entry] == 0xff && match(values[:length]) {
+			return values[2:length]
+		}
+		values = values[length:]
+	}
+	return nil
 }

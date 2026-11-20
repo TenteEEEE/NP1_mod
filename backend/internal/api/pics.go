@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/platespeech"
 	"github.com/np1-control-center/ncc/internal/trips"
@@ -21,6 +22,7 @@ type picsSettings struct {
 	Enabled     bool `json:"enabled"`
 	Speech      bool `json:"speech"`
 	Directional bool `json:"directional"`
+	LED         bool `json:"led"`
 	Style       int  `json:"style"`
 	Volume      int  `json:"volume"`
 }
@@ -37,9 +39,10 @@ func (v picsSettings) validate() error {
 }
 
 type picsService struct {
-	path  string
-	voice *platespeech.Manager
-	scan  func(context.Context, func(), func(string, []byte)) error
+	path   string
+	voice  *platespeech.Manager
+	scan   func(context.Context, func(), func(string, []byte)) error
+	setLED func(context.Context, led.TrafficColors) error
 
 	mu                                  sync.Mutex
 	settings                            picsSettings
@@ -137,6 +140,9 @@ func picsWait(ctx context.Context, changed <-chan struct{}, retry time.Duration)
 func (p *picsService) run(ctx context.Context) {
 	go p.runScan(ctx)
 	go p.prepareSpeech(ctx)
+	if p.setLED != nil {
+		go p.runLED(ctx)
+	}
 	go p.collectPICSHistory(ctx)
 	if p.gps != nil {
 		go p.collectPICSGPS(ctx)

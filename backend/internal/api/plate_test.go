@@ -217,11 +217,37 @@ func TestLEDOnlyRuleDoesNotSuppressAnotherRulesSpeech(t *testing.T) {
 	a.LED.Mode = "rainbow"
 	b := plate.Rule{ID: "voice", Name: "voice", Enabled: true, Speak: true, Number: "42"}
 	srv.plates.settings.Rules = []plate.Rule{a, b}
+	srv.plates.settings.DetectionLED = true
 	speaker := &recordingSpeaker{}
 	srv.plates.speaker = speaker
-	srv.plates.speak(context.Background(), plate.Outcome{Record: plate.Record{ID: "synthetic", Reading: plate.Reading{Number: "42"}}, NewMatches: []plate.Match{{RuleID: "light"}, {RuleID: "voice", Speak: true}}})
+	srv.plates.speak(context.Background(), plate.Outcome{Record: plate.Record{ID: "synthetic", Reading: plate.Reading{Number: "42"}}, New: true, NewMatches: []plate.Match{{RuleID: "light"}, {RuleID: "voice", Speak: true}}})
 	if len(speaker.rules) != 1 || !speaker.rules[0].Speak || speaker.rules[0].ID != "voice" || speaker.rules[0].LED.Mode != "rainbow" {
 		t.Fatal("LED-only match suppressed or duplicated speech")
+	}
+}
+
+func TestUnmatchedPlateLightsOnceWhenNewRecordIsConfirmed(t *testing.T) {
+	now := time.Now()
+	sensor := &fakeSensor{instance: "detection-light", detections: []plate.Detection{
+		{Seq: 1, At: now, Reading: plate.Reading{Number: "42", Confidence: .9}},
+		{Seq: 2, At: now.Add(time.Second), Reading: plate.Reading{Number: "42", Confidence: .9}},
+		{Seq: 3, At: now.Add(2 * time.Second), Reading: plate.Reading{Number: "42", Confidence: .9}},
+	}}
+	srv, ts, client, csrf := plateFixture(t, sensor)
+	s := plate.DefaultSettings()
+	s.Enabled, s.DetectionLED = true, true
+	s.Rules = []plate.Rule{{ID: "other", Name: "その他", Enabled: true, Number: "99"}}
+	r := putPlateSettings(t, client, ts, csrf, 1, s)
+	r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("settings status %d", r.StatusCode)
+	}
+	speaker := &recordingSpeaker{}
+	srv.plates.speaker = speaker
+	srv.plates.poll(context.Background())
+	srv.plates.poll(context.Background())
+	if len(speaker.rules) != 1 || speaker.rules[0].Speak || speaker.rules[0].LED.RGB != [3]int{255, 255, 255} {
+		t.Fatalf("expected one white LED pulse for the unmatched vehicle: %+v", speaker.rules)
 	}
 }
 

@@ -39,7 +39,8 @@ def call(function, arguments):
 before = baseline()
 read_result = call(4, (0, 4, 4))
 print('stock_read_status={}'.format(read_result), flush=True)
-signal_filter = "type='signal',path='{}',interface='{}',member='SPFEvent'".format(path, interface)
+event_path = '/SPF/EventBase/Evt048'
+signal_filter = "type='signal',path='{}',interface='{}',member='SPFEvent'".format(event_path, interface)
 monitor = subprocess.Popen(['dbus-monitor', '--address', address, signal_filter], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 try:
     time.sleep(.3)

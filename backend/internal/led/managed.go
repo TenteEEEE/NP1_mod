@@ -17,13 +17,20 @@ type managedDependencies struct {
 	publish func(State) error
 	now     func() time.Time
 	screen  func(time.Time) (ScreenFrame, bool, error)
+	traffic func(time.Time) (ScreenFrame, bool, error)
 	idle    func(int) (bool, error)
 }
 
 // RunManaged keeps one worker alive, including while dark. Atomic configuration
 // changes do not start a new systemd service or reset its failure protection.
 func RunManaged(ctx context.Context, base string) error {
-	return runManaged(ctx, managedDependencies{load: Load, write: func(name, value string) error { return writeAttribute(filepath.Join(base, name), value) }, publish: func(state State) error { return config.Atomic(RuntimeState, state) }, now: time.Now, screen: func(now time.Time) (ScreenFrame, bool, error) { return ReadScreenFrame(ScreenFramePath, now) }, idle: func(revision int) (bool, error) { return ReadNotificationIdle(NotificationIdlePath, revision) }})
+	return runManaged(ctx, managedDependencies{
+		load: Load, write: func(name, value string) error { return writeAttribute(filepath.Join(base, name), value) },
+		publish: func(state State) error { return config.Atomic(RuntimeState, state) }, now: time.Now,
+		screen:  func(now time.Time) (ScreenFrame, bool, error) { return ReadScreenFrame(ScreenFramePath, now) },
+		traffic: func(now time.Time) (ScreenFrame, bool, error) { return readTrafficFrame(trafficFramePath, now) },
+		idle:    func(revision int) (bool, error) { return ReadNotificationIdle(NotificationIdlePath, revision) },
+	})
 }
 
 func runManaged(ctx context.Context, d managedDependencies) (result error) {
@@ -144,11 +151,22 @@ func runManaged(ctx context.Context, d managedDependencies) (result error) {
 					dirty = true
 				}
 			}
-			if d.screen != nil {
-				frame, active, readError := d.screen(now)
-				active = active && readError == nil
+			if d.screen != nil || d.traffic != nil {
+				mode := "screen"
+				var frame ScreenFrame
+				var active bool
+				var readError error
+				if d.screen != nil {
+					frame, active, readError = d.screen(now)
+					active = active && readError == nil
+				}
+				if !active && d.traffic != nil {
+					mode = "traffic"
+					frame, active, readError = d.traffic(now)
+					active = active && readError == nil
+				}
 				if active {
-					if !screenActive || state.Mode != "screen" {
+					if !screenActive || state.Mode != mode {
 						if e = d.write("led_mode", "1\n"); e != nil {
 							return e
 						}
@@ -156,13 +174,14 @@ func runManaged(ctx context.Context, d managedDependencies) (result error) {
 							return e
 						}
 						nextFrame = time.Time{}
+						dirty = true
 					}
 					if frame.Sequence != screen.Sequence || frame.UpdatedAt != screen.UpdatedAt {
 						nextFrame = time.Time{}
 						dirty = true
 					}
 					screen = frame
-					state.Mode, state.Running = "screen", true
+					state.Mode, state.Running = mode, true
 				} else if screenActive {
 					if e = apply(c); e != nil {
 						return e
@@ -200,6 +219,9 @@ func runManaged(ctx context.Context, d managedDependencies) (result error) {
 			}
 			if screenActive {
 				delay = ScreenFrameInterval
+				if state.Mode == "traffic" {
+					delay = time.Second
+				}
 			}
 			nextFrame = now.Add(delay)
 		}

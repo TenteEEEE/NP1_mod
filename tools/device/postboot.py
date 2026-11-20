@@ -79,6 +79,12 @@ if test -f /overlay/owner-apps/np1-control/enabled && test -f /overlay/owner-app
 fi
 # END NP1_CONTROL_CENTER_PLATE_V1'''
 
+PICS_RT_BLOCK = '''# BEGIN NP1_CONTROL_CENTER_PICS_RT_V1
+if test -f /overlay/owner-apps/np1-control/enabled && test -f /overlay/owner-apps/np1-control/tools/pics-stock-rt.sh; then
+    /bin/sh /overlay/owner-apps/np1-control/tools/pics-stock-rt.sh &
+fi
+# END NP1_CONTROL_CENTER_PICS_RT_V1'''
+
 def transform(text, action, block=BLOCK):
     begin, end = block.splitlines()[0], block.splitlines()[-1]
     if text.count(begin) != text.count(end) or text.count(begin) > 1:
@@ -89,8 +95,15 @@ def transform(text, action, block=BLOCK):
         accepted=(block,AP_BLOCK_LEGACY) if block==AP_BLOCK else (block,)
         if text[start:finish] not in accepted:
             raise ValueError('Existing owner block differs; refusing to overwrite')
+        if block == PICS_RT_BLOCK and text[finish:finish+1] == '\n':
+            finish += 1
         text = text[:start] + text[finish:]
     if action == 'add':
+        if block == PICS_RT_BLOCK:
+            shebang, newline, rest = text.partition('\n')
+            if not newline or not shebang.startswith('#!'):
+                raise ValueError('Missing post-boot interpreter line')
+            return shebang + newline + block + '\n' + rest
         return text.rstrip('\n') + '\n\n' + block + '\n'
     if action == 'remove':
         return text
@@ -144,9 +157,9 @@ if __name__ == '__main__':
         raise RuntimeError('Unexpected /etc upperdir; inspect before modifying post-boot')
     option=sys.argv[1]
     action=option.split('-')[0]
-    if option not in ('add','remove','add-vpn','remove-vpn','add-led','remove-led','add-modem','remove-modem','add-native','remove-native','add-ap','remove-ap','add-apn','remove-apn','add-plate','remove-plate','add-ota-guard','remove-ota-guard','add-uplink','remove-uplink'):
+    if option not in ('add','remove','add-vpn','remove-vpn','add-led','remove-led','add-modem','remove-modem','add-native','remove-native','add-ap','remove-ap','add-apn','remove-apn','add-plate','remove-plate','add-ota-guard','remove-ota-guard','add-uplink','remove-uplink','add-pics-rt','remove-pics-rt'):
         raise ValueError('Unsupported post-boot action')
-    block=UPLINK_BLOCK if option.endswith('-uplink') else OTA_GUARD_BLOCK if option.endswith('-ota-guard') else VPN_BLOCK if option.endswith('-vpn') else LED_BLOCK if option.endswith('-led') else MODEM_BLOCK if option.endswith('-modem') else NATIVE_BLOCK if option.endswith('-native') else AP_BLOCK if option.endswith('-ap') else APN_BLOCK if option.endswith('-apn') else PLATE_BLOCK if option.endswith('-plate') else BLOCK
+    block=PICS_RT_BLOCK if option.endswith('-pics-rt') else UPLINK_BLOCK if option.endswith('-uplink') else OTA_GUARD_BLOCK if option.endswith('-ota-guard') else VPN_BLOCK if option.endswith('-vpn') else LED_BLOCK if option.endswith('-led') else MODEM_BLOCK if option.endswith('-modem') else NATIVE_BLOCK if option.endswith('-native') else AP_BLOCK if option.endswith('-ap') else APN_BLOCK if option.endswith('-apn') else PLATE_BLOCK if option.endswith('-plate') else BLOCK
     update_target('/overlay/etc/init.post_boot.sh',action,block)
     parent=os.open('/overlay/etc',os.O_RDONLY)
     try:
