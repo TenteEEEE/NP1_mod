@@ -29,7 +29,7 @@ import (
 
 // The VOICEVOX style list is a cache fetched again from VOICEVOX, and the radio logger file
 // is mostly runtime counters, so neither is part of a backup.
-var serverBackupFiles = []string{"plate/settings.json", "plate/speech/api.json"}
+var serverBackupFiles = []string{"plate/settings.json", "plate/speech/api.json", picsSettingsFile}
 
 var uploadName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}\.pcm$`)
 
@@ -250,6 +250,15 @@ func validateServerBackup(files map[string]json.RawMessage, uploads map[string]s
 				return nil, errors.New("plate settings")
 			}
 			if _, e := plate.ValidateSettings(p); e != nil {
+				return nil, e
+			}
+		}
+		if name == picsSettingsFile {
+			p := defaultPICSSettings()
+			if e := json.Unmarshal(raw, &p); e != nil {
+				return nil, e
+			}
+			if e := p.validate(); e != nil {
 				return nil, e
 			}
 		}

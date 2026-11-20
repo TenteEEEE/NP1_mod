@@ -624,6 +624,9 @@ func (s *Server) registerPlateSpeech() {
 			fail(w, 400, "INVALID_VOICEVOX", e.Error())
 			return
 		}
+		s.pics.mu.Lock()
+		s.pics.restartPreparation()
+		s.pics.mu.Unlock()
 		s.audit("voicevox.update", "accepted")
 		endpoint, savedKey := p.voice.APIConfigValue()
 		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": savedKey != "", "apiKey": savedKey})

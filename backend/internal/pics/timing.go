@@ -1,0 +1,89 @@
+package pics
+
+import (
+	"slices"
+	"time"
+)
+
+const (
+	freshFor       = 1250 * time.Millisecond
+	showFor        = 5 * time.Second
+	timingLifetime = 20 * time.Minute
+	timingSamples  = 5
+	maxSeconds     = 99
+)
+
+type timing struct {
+	lamp                     Lamp
+	at, calibrated, deadline time.Time
+	edges                    [9]time.Time
+	samples                  [9][]time.Duration
+	phase                    uint64
+	announced, ten           bool
+	lastNumber               int
+}
+
+func (t *timing) observe(lamp Lamp, at time.Time, phase uint64) (blue bool) {
+	previous := t.lamp
+	continuous := !t.at.IsZero() && at.Sub(t.at) <= freshFor
+	t.lamp, t.at = lamp, at
+	if !t.calibrated.IsZero() && at.Sub(t.calibrated) > timingLifetime {
+		t.samples = [9][]time.Duration{}
+	}
+	if !continuous || previous.Color != Red || lamp.Color != Red {
+		blue = continuous && previous.Color == Red && lamp.Color == Green
+		if blue {
+			t.learn(at)
+		}
+		t.edges = [9]time.Time{}
+		t.deadline = time.Time{}
+		if lamp.Color == Red {
+			t.phase, t.announced, t.ten, t.lastNumber = phase, false, false, 6
+		}
+		return blue
+	}
+	if lamp.Step == previous.Step && lamp.Step > 0 {
+		return false
+	}
+	if lamp.Step == 0 || previous.Step != lamp.Step+1 {
+		t.edges = [9]time.Time{}
+		t.deadline = time.Time{}
+		return false
+	}
+	t.edges[lamp.Step] = at
+	t.deadline = time.Time{}
+	if samples := t.samples[lamp.Step]; len(samples) == timingSamples {
+		sorted := slices.Clone(samples)
+		slices.Sort(sorted)
+		if sorted[len(sorted)-1]-sorted[0] <= 2*time.Second {
+			t.deadline = at.Add(sorted[len(sorted)/2])
+		}
+	}
+	return false
+}
+
+func (t *timing) learn(at time.Time) {
+	for step, edge := range t.edges {
+		if edge.IsZero() {
+			continue
+		}
+		d := at.Sub(edge)
+		if d <= 0 || d > maxSeconds*time.Second {
+			continue
+		}
+		samples := t.samples[step]
+		if len(samples) == timingSamples {
+			copy(samples, samples[1:])
+			samples = samples[:timingSamples-1]
+		}
+		t.samples[step] = append(samples, d)
+		t.calibrated = at
+	}
+}
+
+func (t *timing) seconds(now time.Time) int {
+	if t.lamp.Color != Red || now.Sub(t.at) > freshFor || !t.deadline.After(now) {
+		return 0
+	}
+	return int((t.deadline.Sub(now) + time.Second - 1) / time.Second)
+}

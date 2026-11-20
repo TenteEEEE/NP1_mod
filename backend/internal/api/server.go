@@ -76,6 +76,7 @@ type Server struct {
 	journeys    *journeyArchiveCollector
 	tracks      *trips.TrackStore
 	plates      *plateService
+	pics        *picsService
 	numberShare *numbershare.Service
 	tailnet     tailnetHosts
 }
@@ -88,6 +89,7 @@ func New(c config.Config) *Server {
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
 	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
+	s.pics = newPICSService(c.StateDir, s.plates.voice)
 	s.numberShare = numbershare.New(c.StateDir, &http.Client{Timeout: 30 * time.Second})
 	s.plates.share = s.numberShare
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
@@ -363,6 +365,7 @@ func (s *Server) routes() {
 	s.registerScreenLEDRoutes()
 	s.registerLEDTestRoutes()
 	s.registerPlate()
+	s.registerPICS()
 	s.registerNumberShare()
 	s.mux.HandleFunc("PUT /api/v1/device/led", func(w http.ResponseWriter, r *http.Request) { s.forwardControl(w, r, "/led", "led.update") })
 	s.mux.HandleFunc("POST /api/v1/vpn/tailscale/login", func(w http.ResponseWriter, r *http.Request) {

@@ -136,6 +136,7 @@ type Manager struct {
 	styles   []Style
 	wake     chan struct{}
 	queue    chan request
+	playback sync.Mutex
 }
 
 type request struct {
@@ -679,7 +680,9 @@ func (m *Manager) playNotification(ctx context.Context, plan []Part, volume int,
 	}
 	// A failed light must not suppress the requested announcement.
 	if len(pcm) > 0 {
+		m.playback.Lock()
 		e = errors.Join(e, m.player.Play(ctx, pcm, volume))
+		m.playback.Unlock()
 	}
 	if finish != nil {
 		e = errors.Join(e, finish())
