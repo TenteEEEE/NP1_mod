@@ -30,6 +30,19 @@ type intersection struct {
 	blue                          [6]time.Time
 }
 
+// Interrupt clears observations made before a radio outage. Completed timing
+// samples are still usable for the same sender after a new stage edge arrives.
+func (m *Monitor) Interrupt() {
+	m.focus = Cue{}
+	for _, crossing := range m.intersections {
+		crossing.lastType2 = time.Time{}
+		crossing.blue = [6]time.Time{}
+		for i, t := range crossing.lamps {
+			crossing.lamps[i] = timing{samples: t.samples, calibrated: t.calibrated}
+		}
+	}
+}
+
 func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Reception {
 	p, ok := parse(payload)
 	if !ok {

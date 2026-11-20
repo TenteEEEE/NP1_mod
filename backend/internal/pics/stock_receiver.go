@@ -32,12 +32,19 @@ const (
 // Unix socket. The endpoint takes no Bluetooth commands or parameters.
 func RegisterStockReceiver(mux *http.ServeMux) {
 	var session sync.Mutex
+	var nextSession time.Time
+	seed := maphash.MakeSeed()
 	mux.HandleFunc("GET "+BrokerPath, func(w http.ResponseWriter, r *http.Request) {
 		if !session.TryLock() {
 			http.Error(w, "stock receiver already in use", http.StatusConflict)
 			return
 		}
-		defer session.Unlock()
+		defer func() {
+			// A disconnected HTTP client may have left its scan running on the
+			// vendor timer. Do not start another scan before that one can expire.
+			nextSession = time.Now().Add(stockDiscoverySeconds * time.Second)
+			session.Unlock()
+		}()
 		response := http.NewResponseController(w)
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.Header().Set("Cache-Control", "no-store")
@@ -54,7 +61,9 @@ func RegisterStockReceiver(mux *http.ServeMux) {
 			}
 			_ = response.SetWriteDeadline(time.Time{})
 		}
-		seed := maphash.MakeSeed()
+		if delay := time.Until(nextSession); delay > 0 && !waitStockScan(ctx, delay) {
+			return
+		}
 		err := scanStockBLE(ctx, func() { write(receiverMessage{Ready: true}) }, func(source string, payload []byte) {
 			write(receiverMessage{Source: strconv.FormatUint(maphash.String(seed, source), 16), Payload: payload})
 		})
@@ -159,6 +168,7 @@ func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint
 func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, caller uint32, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	confirmed := false
 	for ctx.Err() == nil {
+		started := time.Now()
 		if err := start(ctx); err != nil {
 			return err
 		}
@@ -193,15 +203,28 @@ func runStockDiscovery(ctx context.Context, start func(context.Context) error, s
 		if !complete && ctx.Err() == nil {
 			return errors.New("純正BluetoothからBLE探索の終了通知がありません")
 		}
-		// Leave room for the stock caller between our self-expiring scans.
-		timer := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-		case <-timer.C:
+		if complete {
+			// A complete passive scan is healthy even when it finds no radio
+			// traffic. Send one heartbeat per completed scan to the web worker.
+			ready()
+			confirmed = true
 		}
+		// Leave room for the stock caller between our self-expiring scans.
+		remainder := time.Until(started.Add(stockDiscoverySeconds * time.Second))
+		waitStockScan(ctx, max(0, remainder)+200*time.Millisecond)
 	}
 	return ctx.Err()
+}
+
+func waitStockScan(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func stockDiscoveryEvent(signal *dbus.Signal, caller uint32) ([]byte, bool) {

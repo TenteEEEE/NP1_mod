@@ -143,3 +143,26 @@ func TestReceptionRecordsMeasureOnlyCompleteObservedCycle(t *testing.T) {
 		t.Fatalf("receive gap joined into a cycle: %v", afterGap)
 	}
 }
+
+func TestInterruptedReceptionCannotBridgeOldLightButKeepsLearnedTiming(t *testing.T) {
+	var monitor Monitor
+	now := time.Now()
+	monitor.Receive("same", frame(1, 0x11), now)
+	lamp := &monitor.intersections["00000001"].lamps[0]
+	lamp.samples[1] = []time.Duration{9 * time.Second, 9 * time.Second, 9 * time.Second, 9 * time.Second, 9 * time.Second}
+	lamp.calibrated = now
+	monitor.Interrupt()
+	if len(monitor.Signals(now)) != 0 {
+		t.Fatal("interruption left a stale light visible")
+	}
+	monitor.Receive("same", frame(1, 0x83), now.Add(100*time.Millisecond))
+	if _, ok := monitor.NextCue(now.Add(100 * time.Millisecond)); ok {
+		t.Fatal("red-to-green transition inferred across reconnect")
+	}
+	monitor.Receive("same", frame(1, 0x11), now.Add(300*time.Millisecond))
+	monitor.Receive("same", frame(1, 0x01), now.Add(600*time.Millisecond))
+	signals := monitor.Signals(now.Add(600 * time.Millisecond))
+	if len(signals) != 1 || signals[0].Seconds == nil || *signals[0].Seconds != 9 {
+		t.Fatalf("learned timing not restored on a new stage: %v", signals)
+	}
+}

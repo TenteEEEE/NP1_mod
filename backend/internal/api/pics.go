@@ -154,9 +154,11 @@ func (p *picsService) run(ctx context.Context) {
 }
 
 func (p *picsService) runScan(ctx context.Context) {
+	var retry time.Duration
 	for ctx.Err() == nil {
 		p.mu.Lock()
 		if !p.settings.Enabled {
+			retry = 0
 			p.mu.Unlock()
 			picsWait(ctx, p.scanChanged, 0)
 			continue
@@ -164,10 +166,14 @@ func (p *picsService) runScan(ctx context.Context) {
 		scanCtx, cancel := context.WithCancel(ctx)
 		p.scanCancel = cancel
 		p.mu.Unlock()
+		var confirmed time.Time
 		err := p.scan(scanCtx, func() {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			if scanCtx.Err() == nil {
+				if confirmed.IsZero() {
+					confirmed = time.Now()
+				}
 				p.scanState, p.scanReason = "scanning", ""
 			}
 		}, func(source string, data []byte) {
@@ -181,14 +187,25 @@ func (p *picsService) runScan(ctx context.Context) {
 		})
 		p.mu.Lock()
 		p.scanCancel = nil
-		p.monitor = pics.Monitor{}
+		p.monitor.Interrupt()
 		p.cancelInvalidCue(time.Now())
-		if scanCtx.Err() == nil && err != nil {
+		if scanCtx.Err() == nil {
+			if err == nil {
+				err = errors.New("純正Bluetoothからの受信が切断されました")
+			}
 			p.scanState, p.scanReason = "unavailable", err.Error()
+			if !confirmed.IsZero() && time.Since(confirmed) >= 5*time.Second {
+				retry = 0
+			}
+			retry = min(max(time.Second, 2*retry), 15*time.Second)
+		} else {
+			retry = 0
 		}
 		p.mu.Unlock()
 		cancel()
-		picsWait(ctx, p.scanChanged, 15*time.Second)
+		if retry > 0 {
+			picsWait(ctx, p.scanChanged, retry)
+		}
 	}
 }
 

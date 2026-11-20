@@ -40,7 +40,7 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 	data[0x298] = 0xce
 	completed := make([]byte, 0x298)
 	completed[0x291] = 1
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	signals := make(chan *dbus.Signal, 3)
 	signals <- vendorEvent(caller+1, completed)
@@ -60,8 +60,26 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 			t.Errorf("payload = %x", data)
 		}
 	})
-	if !errors.Is(err, stop) || started != 2 || ready != 1 || received != 1 {
+	if !errors.Is(err, stop) || started != 2 || ready != 2 || received != 1 {
 		t.Fatalf("start=%d ready=%d received=%d err=%v", started, ready, received, err)
+	}
+}
+
+func TestStockDiscoveryCompletesWithNoNearbyAdvertisements(t *testing.T) {
+	const caller = uint32(100)
+	completed := make([]byte, 0x298)
+	completed[0x291] = 1
+	signals := make(chan *dbus.Signal, 1)
+	signals <- vendorEvent(caller, completed)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := 0
+	err := runStockDiscovery(ctx, func(context.Context) error { return nil }, signals, caller, stockAdvertisement, func() {
+		ready++
+		cancel()
+	}, func(string, []byte) { t.Error("unexpected advertisement") })
+	if ready != 1 || !errors.Is(err, context.Canceled) {
+		t.Fatalf("empty scan did not confirm reception readiness: ready=%d, err=%v", ready, err)
 	}
 }
 
@@ -106,6 +124,28 @@ func TestStockReceiverStreamFeedsTheMonitorAndPropagatesFailure(t *testing.T) {
 	got := monitor.Signals(time.Now())
 	if len(got) != 1 || got[0].Color != Green {
 		t.Fatalf("signal = %#v", got)
+	}
+}
+
+func TestStockReceiverRetriesWhenAnOpenBrokerStreamStopsReporting(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		flusher := w.(http.Flusher)
+		_, _ = w.Write([]byte("{\"ready\":true}\n"))
+		flusher.Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	client := &http.Client{Transport: stockTestTransport(func(r *http.Request) (*http.Response, error) {
+		req := r.Clone(r.Context())
+		req.URL.Host = server.Listener.Addr().String()
+		return http.DefaultTransport.RoundTrip(req)
+	})}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	confirmed := false
+	err := scanReceiver(client, 120*time.Millisecond)(ctx, func() { confirmed = true }, func(string, []byte) {})
+	if !confirmed || !errors.Is(err, errStockStreamSilent) {
+		t.Fatalf("open stream stalled without a retryable failure: ready=%v, err=%v", confirmed, err)
 	}
 }
 

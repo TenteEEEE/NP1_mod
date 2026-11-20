@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,35 @@ import (
 	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/trips"
 )
+
+func TestPICSResumesScanningAfterAnInterruptedSession(t *testing.T) {
+	p := newPICSService(t.TempDir(), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	resumed := make(chan struct{})
+	calls := 0
+	p.scan = func(ctx context.Context, ready func(), _ func(string, []byte)) error {
+		calls++
+		if calls == 1 {
+			return errors.New("stock BLE temporarily refused the scan")
+		}
+		ready()
+		close(resumed)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	go p.runScan(ctx)
+	select {
+	case <-resumed:
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.scanState != "scanning" || p.scanReason != "" {
+			t.Fatalf("unexpected recovery state %q: %q", p.scanState, p.scanReason)
+		}
+	case <-ctx.Done():
+		t.Fatal("Bluetooth recovery did not restart discovery")
+	}
+}
 
 func TestPICSDefaultsAndSave(t *testing.T) {
 	s, client, _ := fixture(t)
