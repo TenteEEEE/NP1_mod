@@ -34,7 +34,7 @@ onUnmounted(()=>{active=false;clearTimeout(timer);request?.abort();document.remo
 </script>
 
 <template>
- <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/settings" aria-label="信号（高度化PICS）の設定" :title="signal?.name||status.reason||'信号（高度化PICS）'">
+ <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/pics" aria-label="高度化PICSを開く" :title="signal?.name||status.reason||'信号（高度化PICS）'">
   <span class="signal-dot" :class="signal?.color" aria-hidden="true"></span><span class="signal-label">信号</span>
   <span class="signal-value">{{text}}</span>
   <small v-if="signal&&signal.seconds!==null" class="signal-estimate">目安</small>
