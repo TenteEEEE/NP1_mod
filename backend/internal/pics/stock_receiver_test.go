@@ -54,7 +54,7 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 			return stop
 		}
 		return nil
-	}, signals, caller, func() { ready++ }, func(_ string, data []byte) {
+	}, signals, caller, stockAdvertisement, func() { ready++ }, func(_ string, data []byte) {
 		received++
 		if !bytes.Equal(data, want) {
 			t.Errorf("payload = %x", data)

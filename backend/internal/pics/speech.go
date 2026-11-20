@@ -6,16 +6,22 @@ import (
 )
 
 const (
-	GreenText     = "歩行者用信号が青になりました。"
-	PreviewText   = "歩行者用信号の読み上げを試しています。"
-	remainingText = "歩行者用信号、青まであとおよそ"
+	GreenText      = "信号が青になりました。"
+	PreviewText    = "信号の読み上げを試しています。"
+	remainingText  = "青まであとおよそ"
+	otherBlinkText = "別方向の信号が青点滅しています。"
+	soonText       = "まもなく青になる見込みです。"
 )
 
 func SpeechParts(c Cue) []string {
-	if c.Kind == "green" {
+	switch c.Kind {
+	case "green":
 		return []string{GreenText}
-	}
-	if c.Kind == "number" {
+	case otherBlinkCue:
+		return []string{otherBlinkText}
+	case soonCue:
+		return []string{soonText}
+	case "number":
 		return []string{strconv.Itoa(c.Seconds)}
 	}
 	if c.Seconds <= 0 || c.Seconds > maxSeconds {
@@ -28,7 +34,7 @@ func SpeechParts(c Cue) []string {
 }
 
 func Vocabulary() []string {
-	texts := []string{GreenText, PreviewText, remainingText, "10秒です。"}
+	texts := []string{GreenText, PreviewText, otherBlinkText, soonText, remainingText, "10秒です。"}
 	for n := 5; n >= 1; n-- {
 		texts = append(texts, strconv.Itoa(n))
 	}

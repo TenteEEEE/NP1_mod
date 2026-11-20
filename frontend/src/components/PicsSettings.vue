@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import {onMounted,onUnmounted,ref} from 'vue'
 import {api} from '../services/api'
-import {isPicsStatus,picsSignalText,picsStatusText,type PicsSettings,type PicsSpeech,type PicsStatus} from '../services/pics'
+import {isPicsStatus,picsCourseText,picsSignalText,picsStatusText,type PicsSettings,type PicsSpeech,type PicsStatus} from '../services/pics'
+import PicsHistory from './PicsHistory.vue'
 
 const draft=ref<PicsSettings>(),status=ref<PicsStatus>(),speech=ref<PicsSpeech>()
 const busy=ref(false),playing=ref(false),error=ref(''),notice=ref('')
@@ -42,8 +43,10 @@ onUnmounted(()=>clearInterval(timer))
   <div class="panel-head"><h2 id="pics-settings-title">高度化PICS（実験機能）</h2></div>
   <div class="settings-body pics-settings">
    <form v-if="draft" @submit.prevent="save">
-    <label class="pics-check"><input v-model="draft.enabled" type="checkbox" :disabled="busy">歩行者用信号をダッシュボードに表示する</label>
+    <label class="pics-check"><input v-model="draft.enabled" type="checkbox" :disabled="busy">信号をダッシュボードに表示する</label>
     <label class="pics-check"><input v-model="draft.speech" type="checkbox" :disabled="busy||!draft.enabled">VOICEVOXで本体から発話する</label>
+    <label class="pics-check"><input v-model="draft.directional" type="checkbox" :disabled="busy||!draft.enabled">進行方向で絞り込む</label>
+    <p v-if="draft.directional" class="hint">進行方向 {{picsCourseText(status?.course)}}。受信記録で交差点ごとに灯器の横断方向を登録してください。</p>
     <template v-if="draft.enabled&&draft.speech">
      <div class="pics-voice-controls">
       <label>声<select v-model.number="draft.style" :disabled="busy">
@@ -53,7 +56,7 @@ onUnmounted(()=>clearInterval(timer))
       <label>発話音量 {{draft.volume}}%<input v-model.number="draft.volume" type="range" min="0" max="100" :disabled="busy"></label>
      </div>
      <p class="hint">APIキーは「システム › LED / 音声」で設定できます。音声は本体に保存されます。</p>
-     <p v-if="status?.settings.speech" class="hint">{{speech?.reason||(speech?.ready?'試聴できます':'発話音声を準備中')}}</p>
+     <p v-if="status?.settings.speech" class="hint">{{speech?.reason||(speech?.prepared?'読み上げ音声を準備済み':'読み上げ音声を準備中')}}</p>
      <p v-if="speech?.credit" class="hint">{{speech.credit}}</p>
     </template>
     <div class="pics-actions">
@@ -63,10 +66,11 @@ onUnmounted(()=>clearInterval(timer))
    </form>
    <p v-if="status" class="hint">{{picsStatusText(status)}}</p>
    <ul v-if="status?.signals.length" class="pics-signals">
-    <li v-for="signal in status.signals.slice(0,12)" :key="`${signal.id}-${signal.slot}`"><span>{{signal.name||signal.id}} 信号{{signal.slot}}</span><strong>{{picsSignalText(signal)}}</strong></li>
+    <li v-for="signal in status.signals.slice(0,12)" :key="`${signal.id}-${signal.slot}`"><span>{{signal.name||signal.id}} 信号{{signal.slot}}<small v-if="signal.directionMatch"> · 進行方向</small></span><strong>{{picsSignalText(signal)}}</strong></li>
    </ul>
    <p v-if="notice" class="hint" role="status">{{notice}}</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>
+   <PicsHistory :live="status?.signals??[]"/>
   </div>
  </section>
 </template>

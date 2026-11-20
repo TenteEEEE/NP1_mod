@@ -1,7 +1,20 @@
-export type PicsSettings={enabled:boolean;speech:boolean;style:number;volume:number}
-export type PicsSignal={id:string;name?:string;slot:number;color:'red'|'green'|'blink-green';seconds:number|null}
-export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;signals:PicsSignal[]}
-export type PicsSpeech={ready:boolean;reason?:string;credit?:string;styles:{id:number;speaker:string;name:string}[]}
+export type PicsSettings={enabled:boolean;speech:boolean;directional?:boolean;style:number;volume:number}
+export type PicsColor='red'|'green'|'blink-green'
+export type PicsSignal={id:string;name?:string;slot:number;color:PicsColor;seconds:number|null;directionMatch?:boolean}
+export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;course?:number;signals:PicsSignal[]}
+export type PicsSpeech={ready:boolean;prepared?:boolean;reason?:string;credit?:string;styles:{id:number;speaker:string;name:string}[]}
+export type PicsPoint={lat:number;lon:number}
+export type PicsReception={id:string;name?:string;slot:number;at:string;color:PicsColor;step?:number;position?:PicsPoint;beacon?:PicsPoint;course?:number;previousColor?:PicsColor;phaseSeconds?:number;cycleSeconds?:number;estimatedToGreen?:number}
+export type PicsHistory={date:string;entries:PicsReception[];incomplete:boolean}
+export type PicsAxes=(number|null)[]
+
+export const picsColorText:Record<PicsColor,string>={red:'赤',green:'青','blink-green':'青点滅'}
+
+export function picsCourseText(course?:number){
+ if(course==null)return '方向不明'
+ const labels=['北','北東','東','南東','南','南西','西','北西']
+ return `${labels[Math.round(course/45)%8]} ${Math.round(course)%360}°`
+}
 
 export function isPicsStatus(value:PicsStatus|undefined):value is PicsStatus{
  return typeof value?.settings?.enabled==='boolean'&&Array.isArray(value.signals)

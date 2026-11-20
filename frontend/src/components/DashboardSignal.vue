@@ -4,7 +4,15 @@ import {api} from '../services/api'
 import {isPicsStatus,picsSignalText,picsStatusText,type PicsStatus} from '../services/pics'
 
 const status=ref<PicsStatus>()
-const signal=computed(()=>status.value?.signals[0])
+const signal=computed(()=>status.value?.settings.directional?status.value.signals.find(s=>s.directionMatch):status.value?.signals[0])
+const text=computed(()=>{
+ if(signal.value)return picsSignalText(signal.value)
+ const value=status.value
+ if(!value)return ''
+ if(value.state==='unavailable')return 'BLE受信不可'
+ if(value.settings.directional&&value.signals.length)return value.course==null?'進行方向を確認中':'進行方向に該当する信号なし'
+ return picsStatusText(value)
+})
 let active=false,timer:ReturnType<typeof setTimeout>|undefined,request:AbortController|undefined
 
 async function poll(){
@@ -26,9 +34,9 @@ onUnmounted(()=>{active=false;clearTimeout(timer);request?.abort();document.remo
 </script>
 
 <template>
- <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/settings" aria-label="歩行者用信号（高度化PICS）の設定" :title="signal?.name||status.reason||'歩行者用信号（高度化PICS）'">
+ <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/settings" aria-label="信号（高度化PICS）の設定" :title="signal?.name||status.reason||'信号（高度化PICS）'">
   <span class="signal-dot" :class="signal?.color" aria-hidden="true"></span><span class="signal-label">信号</span>
-  <span class="signal-value">{{signal?picsSignalText(signal):status.state==='unavailable'?'BLE受信不可':picsStatusText(status)}}</span>
+  <span class="signal-value">{{text}}</span>
   <small v-if="signal&&signal.seconds!==null" class="signal-estimate">目安</small>
  </a>
 </template>

@@ -12,15 +12,17 @@ import (
 
 	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/platespeech"
+	"github.com/np1-control-center/ncc/internal/trips"
 )
 
 const picsSettingsFile = "pics/settings.json"
 
 type picsSettings struct {
-	Enabled bool `json:"enabled"`
-	Speech  bool `json:"speech"`
-	Style   int  `json:"style"`
-	Volume  int  `json:"volume"`
+	Enabled     bool `json:"enabled"`
+	Speech      bool `json:"speech"`
+	Directional bool `json:"directional"`
+	Style       int  `json:"style"`
+	Volume      int  `json:"volume"`
 }
 
 func defaultPICSSettings() picsSettings {
@@ -46,10 +48,25 @@ type picsService struct {
 	scanChanged, speechChanged          chan struct{}
 	scanCancel, prepCancel, playCancel  context.CancelFunc
 	playing                             *pics.Cue
+	speechPrepared                      bool
+	gps                                 func(context.Context) *trips.TrackPoint
+	positions                           []trips.TrackPoint
+	course                              *float64
+	directions                          map[string]picsAxes
+	directionsPath                      string
+	historyDir                          string
+	receptions                          chan []picsReception
+	historyIncomplete                   bool
 }
 
 func newPICSService(dir string, voice *platespeech.Manager) *picsService {
-	p := &picsService{path: filepath.Join(dir, picsSettingsFile), voice: voice, settings: defaultPICSSettings(), scanState: "starting", scanChanged: make(chan struct{}, 1), speechChanged: make(chan struct{}, 1)}
+	p := &picsService{
+		path: filepath.Join(dir, picsSettingsFile), voice: voice, settings: defaultPICSSettings(), scanState: "starting",
+		scanChanged: make(chan struct{}, 1), speechChanged: make(chan struct{}, 1),
+		directionsPath: filepath.Join(dir, "pics", "directions.json"), historyDir: filepath.Join(dir, "pics", "receptions"),
+		receptions: make(chan []picsReception, 128),
+	}
+	p.directions = loadPICSDirections(p.directionsPath)
 	if data, err := os.ReadFile(p.path); err == nil {
 		settings := p.settings
 		if json.Unmarshal(data, &settings) == nil && settings.validate() == nil {
@@ -81,6 +98,7 @@ func (p *picsService) save(settings picsSettings) error {
 			p.scanCancel()
 		}
 		p.monitor = pics.Monitor{}
+		p.positions, p.course = nil, nil
 		p.scanState, p.scanReason = "starting", ""
 		wakePICS(p.scanChanged)
 	}
@@ -98,6 +116,7 @@ func (p *picsService) restartPreparation() {
 		p.prepCancel()
 	}
 	p.speechReason = ""
+	p.speechPrepared = false
 	wakePICS(p.speechChanged)
 }
 
@@ -118,6 +137,10 @@ func picsWait(ctx context.Context, changed <-chan struct{}, retry time.Duration)
 func (p *picsService) run(ctx context.Context) {
 	go p.runScan(ctx)
 	go p.prepareSpeech(ctx)
+	go p.collectPICSHistory(ctx)
+	if p.gps != nil {
+		go p.collectPICSGPS(ctx)
+	}
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	for {
@@ -151,8 +174,9 @@ func (p *picsService) runScan(ctx context.Context) {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			if scanCtx.Err() == nil {
-				p.monitor.Receive(source, data, time.Now())
-				p.cancelInvalidCue(time.Now())
+				now := time.Now()
+				p.recordPICS(p.monitor.Receive(source, data, now), now)
+				p.cancelInvalidCue(now)
 			}
 		})
 		p.mu.Lock()
@@ -183,10 +207,13 @@ func (p *picsService) prepareSpeech(ctx context.Context) {
 		err := p.voice.Prepare(prep, cfg.Style, pics.Vocabulary())
 		p.mu.Lock()
 		p.prepCancel = nil
-		if prep.Err() == nil && err != nil {
-			p.speechReason = err.Error()
-		} else if err == nil {
-			p.speechReason = ""
+		if prep.Err() == nil {
+			p.speechPrepared = err == nil
+			if err == nil {
+				p.speechReason = ""
+			} else {
+				p.speechReason = err.Error()
+			}
 		}
 		p.mu.Unlock()
 		cancel()
@@ -199,8 +226,11 @@ func (p *picsService) prepareSpeech(ctx context.Context) {
 }
 
 func (p *picsService) cancelInvalidCue(now time.Time) {
-	if p.playing != nil && !p.monitor.StillValid(*p.playing, now) {
-		p.playCancel()
+	if p.playing != nil {
+		id, slot := p.playing.SignalKey()
+		if !p.monitor.StillValid(*p.playing, now) || !p.directionAllows(id, slot, now) {
+			p.playCancel()
+		}
 	}
 }
 
@@ -210,10 +240,10 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 	now := time.Now()
 	p.cancelInvalidCue(now)
 	cfg := p.settings
-	if !cfg.Enabled || !cfg.Speech || cfg.Volume == 0 || p.playing != nil {
+	if !cfg.Enabled || !cfg.Speech || cfg.Volume == 0 || !p.speechPrepared || p.playing != nil {
 		return
 	}
-	cue, ok := p.monitor.NextCue(now)
+	cue, ok := p.monitor.NextCueFor(now, func(id string, slot int) bool { return p.directionAllows(id, slot, now) })
 	if !ok {
 		return
 	}
@@ -234,7 +264,8 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			now := time.Now()
-			if !p.monitor.Valid(cue, now) || play.Err() != nil || cue.Kind != "green" && length >= time.Duration(cue.Seconds)*time.Second {
+			id, slot := cue.SignalKey()
+			if !p.monitor.Valid(cue, now) || !p.directionAllows(id, slot, now) || play.Err() != nil || cue.Seconds > 0 && length >= time.Duration(cue.Seconds)*time.Second {
 				return false
 			}
 			p.monitor.Claim(cue, now)
@@ -248,14 +279,25 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 
 func (s *Server) registerPICS() {
 	p := s.pics
+	s.mux.HandleFunc("GET /api/v1/pics/history", s.picsHistory)
+	s.mux.HandleFunc("GET /api/v1/pics/directions", s.picsDirectionRules)
+	s.mux.HandleFunc("PUT /api/v1/pics/directions/{id}", s.savePICSDirectionRule)
 	s.mux.HandleFunc("GET /api/v1/pics", func(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
+		now := time.Now()
+		signals := p.monitor.Signals(now)
+		if p.settings.Directional {
+			for i := range signals {
+				signals[i].DirectionMatch = p.directionAllows(signals[i].ID, signals[i].Slot, now)
+			}
+		}
 		out := struct {
 			Settings picsSettings  `json:"settings"`
 			State    string        `json:"state"`
 			Reason   string        `json:"reason,omitempty"`
+			Course   *float64      `json:"course,omitempty"`
 			Signals  []pics.Signal `json:"signals"`
-		}{p.settings, p.scanState, p.scanReason, p.monitor.Signals(time.Now())}
+		}{p.settings, p.scanState, p.scanReason, p.currentPICSCourse(now), signals}
 		p.mu.Unlock()
 		if !out.Settings.Enabled {
 			out.State, out.Reason = "off", ""
@@ -264,7 +306,7 @@ func (s *Server) registerPICS() {
 	})
 	s.mux.HandleFunc("GET /api/v1/pics/speech", func(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
-		cfg, reason := p.settings, p.speechReason
+		cfg, reason, prepared := p.settings, p.speechReason, p.speechPrepared
 		p.mu.Unlock()
 		ready := p.voice.Prepared(cfg.Style, pics.PreviewText)
 		if err := p.voice.HardwareAvailable(); err != nil {
@@ -281,7 +323,7 @@ func (s *Server) registerPICS() {
 				break
 			}
 		}
-		jsonOut(w, http.StatusOK, map[string]any{"ready": ready, "reason": reason, "styles": styles, "credit": credit})
+		jsonOut(w, http.StatusOK, map[string]any{"ready": ready, "prepared": prepared, "reason": reason, "styles": styles, "credit": credit})
 	})
 	s.mux.HandleFunc("PUT /api/v1/pics", func(w http.ResponseWriter, r *http.Request) {
 		var body *picsSettings

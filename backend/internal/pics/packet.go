@@ -1,6 +1,7 @@
 package pics
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 )
@@ -24,6 +25,12 @@ type packet struct {
 	id, name string
 	kind     byte
 	lamps    [6]Lamp
+	position *Coordinates
+}
+
+type Coordinates struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }
 
 // Manufacturer Data offsets follow ble-pics-viewer (MIT, Tsubasa Yumura).
@@ -44,6 +51,16 @@ func parse(payload []byte) (packet, bool) {
 			}
 			return r
 		}, strings.ToValidUTF8(string(payload[10:24]), "")))
+	case 1:
+		if len(payload) < 18 {
+			return packet{}, false
+		}
+		lat := float64(int32(binary.BigEndian.Uint32(payload[10:14]))) / 1e6
+		lon := float64(int32(binary.BigEndian.Uint32(payload[14:18]))) / 1e6
+		if lat < -90 || lat > 90 || lon < -180 || lon > 180 || lat == 0 && lon == 0 {
+			return packet{}, false
+		}
+		p.position = &Coordinates{Lat: lat, Lon: lon}
 	case 2:
 		if len(payload) < 11 {
 			return packet{}, false

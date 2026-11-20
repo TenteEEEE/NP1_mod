@@ -82,6 +82,12 @@ func stockBusAddress(contents string) string {
 }
 
 func scanStockBLE(ctx context.Context, ready func(), receive func(string, []byte)) error {
+	return scanStockBLEWith(ctx, stockAdvertisement, ready, receive)
+}
+
+type advertisementDecoder func([]byte) (source string, payload []byte, done bool)
+
+func scanStockBLEWith(ctx context.Context, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	info, err := os.Lstat(stockBusFile)
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o022 != 0 {
 		return errors.New("純正Bluetoothのセッションバスが利用できません")
@@ -126,7 +132,7 @@ func scanStockBLE(ctx context.Context, ready func(), receive func(string, []byte
 	}
 	caller := uint32(os.Getpid())
 	object := conn.Object(owner, stockBLEPath)
-	return runStockDiscovery(ctx, func(ctx context.Context) error { return startStockDiscovery(ctx, object, caller) }, signals, caller, ready, receive)
+	return runStockDiscovery(ctx, func(ctx context.Context) error { return startStockDiscovery(ctx, object, caller) }, signals, caller, decode, ready, receive)
 }
 
 func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint32) error {
@@ -150,7 +156,7 @@ func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint
 	return nil
 }
 
-func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, caller uint32, ready func(), receive func(string, []byte)) error {
+func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, caller uint32, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	confirmed := false
 	for ctx.Err() == nil {
 		if err := start(ctx); err != nil {
@@ -170,7 +176,7 @@ func runStockDiscovery(ctx context.Context, start func(context.Context) error, s
 				if !ok {
 					continue
 				}
-				source, payload, done := stockAdvertisement(data)
+				source, payload, done := decode(data)
 				complete = done
 				if source != "" {
 					if !confirmed {
@@ -210,6 +216,10 @@ func stockDiscoveryEvent(signal *dbus.Signal, caller uint32) ([]byte, bool) {
 }
 
 func stockAdvertisement(data []byte) (source string, payload []byte, done bool) {
+	return stockAdvertisementFor(data, Manufacturer)
+}
+
+func stockAdvertisementFor(data []byte, manufacturer uint16) (source string, payload []byte, done bool) {
 	// NPBTLEDiscoveryResponseEvent::Pack emits a 0x298-byte fixed body,
 	// followed by the manufacturer AD value and any service-data values.
 	const fixedSize = 0x298
@@ -225,7 +235,7 @@ func stockAdvertisement(data []byte) (source string, payload []byte, done bool) 
 	}
 	source = string(address[:])
 	length := int(data[0x1ec])
-	if length >= 12 && length <= 29 && fixedSize+length <= len(data) && binary.LittleEndian.Uint16(data[fixedSize:]) == Manufacturer {
+	if length >= 12 && length <= 29 && fixedSize+length <= len(data) && binary.LittleEndian.Uint16(data[fixedSize:]) == manufacturer {
 		payload = data[fixedSize+2 : fixedSize+length]
 	}
 	return source, payload, false

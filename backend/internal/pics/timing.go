@@ -21,6 +21,10 @@ type timing struct {
 	phase                    uint64
 	announced, ten           bool
 	lastNumber               int
+	hint                     signalHint
+	hintAnnounced            string
+	colorSince, cycleStart   time.Time
+	lastRecorded             time.Time
 }
 
 func (t *timing) observe(lamp Lamp, at time.Time, phase uint64) (blue bool) {
@@ -39,6 +43,7 @@ func (t *timing) observe(lamp Lamp, at time.Time, phase uint64) (blue bool) {
 		t.deadline = time.Time{}
 		if lamp.Color == Red {
 			t.phase, t.announced, t.ten, t.lastNumber = phase, false, false, 6
+			t.hint, t.hintAnnounced = signalHint{}, ""
 		}
 		return blue
 	}

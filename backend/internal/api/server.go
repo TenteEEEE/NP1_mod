@@ -92,6 +92,7 @@ func New(c config.Config) *Server {
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
 	s.pics = newPICSService(c.StateDir, s.plates.voice)
 	s.pics.scan = pics.Scan(s.client)
+	s.pics.gps = picsGPS(s.client)
 	s.numberShare = numbershare.New(c.StateDir, &http.Client{Timeout: 30 * time.Second})
 	s.plates.share = s.numberShare
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
