@@ -51,7 +51,7 @@ GNSSの期限付き診断は `python tools/inspect-gnss.py --help` を参照し�
 | 映像での評価 | 手順と考え方は [ナンバー認識の評価方法](plate-evaluation.md)。録画を `ffmpeg -vf fps=2` で `<クリップ>/f_%05d.jpg` に切り出し、`tools/plate/eval_video.py run` でエンジンに流します。`score` は教師ラベルとの一致と、本体の記録規則（2回検出・1回で記録する信頼度など）を再現した記録単位の指標を出します。教師も誤るため、最終的な比較は目視の正解で行います：`tools/plate/gt_candidates.py` が読まれた番号を時間ごとにまとめて確認用の画像を作り、`verdicts.json` に正誤を書くと、`tools/plate/gt_score.py` がモデル・確定方式ごとに採点します。`tools/plate/review_records.py` は記録の確認用の画像を作ります（いずれも他人のナンバーを含むため、Git外に出力） |
 | 学習の補助 | `tools/plate/train/lipla_label.py --skip/--only`（ラベル済みの画像を飛ばす・対象のフォルダを絞る）、`tools/plate/train/calibrate_reader.py`（読取り器の信頼度を温度で校正）、`tools/plate/train/convert_tflite.py --reuse-detector`（検出器を作り直さずにパッケージを作る） |
 | PCでの通し検証 | `ncc --mode plate-replay` に録画済み映像のマニフェスト（`tools/plate/make_replay_manifest.py`）を渡すと、本物の認識プロセス・エンジン・Webに映像を流せます |
-| 実機 | `tools/plate/bench_inference.py`（端末での推論時間）、`tools/device/plate-speech-play.py`（本体スピーカーでの再生確認） |
+| 実機 | `tools/device/bench-plate-engine.py`（同一フレームでのCPU・GPU比較）、`tools/plate/bench_inference.py`（純正ランタイムでの単体モデル計測）、`tools/device/plate-speech-play.py`（本体スピーカーでの再生確認） |
 
 学習途中のチェックポイント（PyTorch `.pt`・ONNX・評価結果）、x86_64版エンジン、モデル一式のzipは、GitHubのRelease `plate-models-v1b` に置いています。量子化に使った画像（`calibration.npy`）と学習データは、他人のナンバーを含むため配布しません。
 

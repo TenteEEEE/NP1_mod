@@ -30,9 +30,10 @@ func (f *fakeSource) Next(buf []byte) ([2]int64, bool, error) {
 }
 
 type fakeEngine struct {
-	plates []EnginePlate
-	fail   bool
-	calls  int
+	plates  []EnginePlate
+	backend string
+	fail    bool
+	calls   int
 }
 
 func (f *fakeEngine) Info() EngineInfo {
@@ -43,7 +44,7 @@ func (f *fakeEngine) Process(_ context.Context, seq uint64, _ []byte, _, _ int) 
 	if f.fail {
 		return EngineReply{}, errors.New("boom")
 	}
-	return EngineReply{Seq: seq, Plates: f.plates}, nil
+	return EngineReply{Seq: seq, Plates: f.plates, Backend: f.backend}, nil
 }
 func (f *fakeEngine) Close() error { return nil }
 
@@ -139,6 +140,27 @@ func TestStepQueuesDetectionsWithLocationAndFrames(t *testing.T) {
 	s.expireFrames(now)
 	if res, _ = http.Get(srv.URL + "/frames/1"); res.StatusCode != 404 {
 		t.Fatal("expired frame served")
+	}
+}
+
+func TestStepUpdatesBackendAfterFallback(t *testing.T) {
+	s := New(setup(t, true, true), &fakeSource{}, nil, nil)
+	s.status.Backend = "gpu"
+	engine := &fakeEngine{backend: "cpu"}
+	buf := make([]byte, FrameBytes+stampBytes)
+	if err := s.step(context.Background(), engine, buf); err != nil {
+		t.Fatal(err)
+	}
+	if s.status.Backend != "cpu" {
+		t.Fatalf("fallback reported backend %q", s.status.Backend)
+	}
+
+	engine.backend = "" // older engines omit the field on frame replies
+	if err := s.step(context.Background(), engine, buf); err != nil {
+		t.Fatal(err)
+	}
+	if s.status.Backend != "cpu" {
+		t.Fatalf("reply with no backend erased %q", s.status.Backend)
 	}
 }
 
@@ -263,5 +285,42 @@ func TestFramesKeptForPendingAndConfidentReadsOnly(t *testing.T) {
 	}
 	if _, ok := s.frames[first]; !ok {
 		t.Fatal("frame of a detection still waiting for GNSS was evicted")
+	}
+}
+
+func TestReadMinConfidenceAndRestartOnChange(t *testing.T) {
+	cfg := setup(t, true, true)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.6 {
+		t.Fatalf("default minConfidence = %v, want 0.6", got)
+	}
+	settingsPath := filepath.Join(cfg.StateDir, "plate", "settings.json")
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.35}`), 0600)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.35 {
+		t.Fatalf("custom minConfidence = %v, want 0.35", got)
+	}
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.1}`), 0600)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.6 {
+		t.Fatalf("out-of-range minConfidence = %v, want fallback 0.6", got)
+	}
+
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.6}`), 0600)
+	now := time.Date(2026, 11, 20, 6, 0, 0, 0, time.UTC)
+	var seen []float64
+	s := New(cfg, &fakeSource{}, nil, func(context.Context) (Engine, error) {
+		seen = append(seen, ReadMinConfidence(cfg.StateDir))
+		return &fakeEngine{}, nil
+	})
+	s.clock = func() time.Time {
+		now = now.Add(settingsPoll)
+		if len(seen) == 1 {
+			os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.3}`), 0600)
+		}
+		return now
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	s.Run(ctx)
+	if len(seen) < 2 || seen[0] != 0.6 || seen[1] != 0.3 {
+		t.Fatalf("engine restarts on minConfidence change = %v", seen)
 	}
 }

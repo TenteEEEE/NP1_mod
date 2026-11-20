@@ -73,6 +73,8 @@ cp "$ROOT/models/plate/detector.tflite" \
     "$ROOT/models/plate/ocr-kana.tflite" \
     "$ROOT/models/plate/ocr-classification.tflite" \
     "$ROOT/models/plate/ppocrv6_rec.onnx" \
+    "$ROOT/models/plate/ppocrv6_rec_np1_int8.onnx" \
+    "$ROOT/models/plate/ppocrv6_rec_np1_w8.mnn" \
     "$ROOT/models/plate/plate-model.json" \
     "$ROOT/models/plate/ppocr-dictionary.json" \
     "$ROOT/models/plate/model-manifest.json" \

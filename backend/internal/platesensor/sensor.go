@@ -37,13 +37,15 @@ type Config struct {
 var ModelFiles = []string{"detector.tflite", "ocr.tflite", "plate-model.json"}
 
 const (
-	maxQueued      = 2000
-	maxBatch       = 500
-	frameRingSize  = 24  // ~75 MB of NV12; detections wait up to locateWait for GNSS
-	keepFrameConf  = 0.5 // frames are kept only for readings that could become records
-	frameTTL       = 90 * time.Second
-	locateWait     = 8 * time.Second
-	engineTimeout  = 5 * time.Second
+	maxQueued     = 2000
+	maxBatch      = 500
+	frameRingSize = 24  // ~75 MB of NV12; detections wait up to locateWait for GNSS
+	keepFrameConf = 0.5 // frames are kept only for readings that could become records
+	frameTTL      = 90 * time.Second
+	locateWait    = 8 * time.Second
+	// PP-OCR may refine several detected plates in one frame. Give the
+	// bounded, synchronous request time to finish on the CPU fallback.
+	engineTimeout  = 20 * time.Second
 	engineStartup  = 30 * time.Second
 	settingsPoll   = 5 * time.Second
 	restartBackoff = 10 * time.Second
@@ -127,6 +129,22 @@ func (s *Sensor) enabled() bool {
 	return json.Unmarshal(b, &v) == nil && v.Enabled
 }
 
+// ReadMinConfidence returns the configured recording confidence floor (0.3–0.99),
+// defaulting to 0.6 when unset or unreadable.
+func ReadMinConfidence(stateDir string) float64 {
+	b, e := os.ReadFile(filepath.Join(stateDir, "plate", "settings.json"))
+	if e != nil {
+		return 0.6
+	}
+	var v struct {
+		MinConfidence float64 `json:"minConfidence"`
+	}
+	if json.Unmarshal(b, &v) != nil || v.MinConfidence < 0.3 || v.MinConfidence > 0.99 {
+		return 0.6
+	}
+	return v.MinConfidence
+}
+
 // readiness explains why recognition cannot run, or returns "" when it can.
 func (s *Sensor) readiness() (state, reason string) {
 	if !s.enabled() {
@@ -155,7 +173,9 @@ func (s *Sensor) Run(ctx context.Context) {
 	interval := time.Duration(float64(time.Second) / s.cfg.FPS)
 	var checkedAt, retryAt time.Time
 	ready := false
+	activeMinConf := ReadMinConfidence(s.cfg.StateDir)
 	for ctx.Err() == nil {
+		started := time.Now()
 		now := s.clock()
 		s.flushPending(ctx, false)
 		s.expireFrames(now)
@@ -169,9 +189,16 @@ func (s *Sensor) Run(ctx context.Context) {
 					engine = nil
 				}
 				s.setStatus(state, reason)
+			} else if nextMinConf := ReadMinConfidence(s.cfg.StateDir); nextMinConf != activeMinConf {
+				activeMinConf = nextMinConf
+				if engine != nil {
+					engine.Close()
+					engine = nil
+				}
 			}
 		}
 		if ready && engine == nil && !now.Before(retryAt) {
+			activeMinConf = ReadMinConfidence(s.cfg.StateDir)
 			s.setStatus("starting", "認識エンジンを起動しています")
 			e2, e := s.start(ctx)
 			if e != nil {
@@ -196,9 +223,13 @@ func (s *Sensor) Run(ctx context.Context) {
 				retryAt = s.clock().Add(restartBackoff)
 			}
 		}
-		select {
-		case <-ctx.Done():
-		case <-time.After(interval):
+		// FPS is the interval between frame starts. An expensive frame already
+		// consumed that interval, and the source can return the newest frame.
+		if wait := time.Until(started.Add(interval)); wait > 0 {
+			select {
+			case <-ctx.Done():
+			case <-time.After(wait):
+			}
 		}
 	}
 	s.flushPending(context.Background(), true)
@@ -229,6 +260,9 @@ func (s *Sensor) step(ctx context.Context, engine Engine, buf []byte) error {
 	s.mu.Lock()
 	s.status.LastFrameAt = &at
 	s.status.Reason = ""
+	if reply.Backend != "" {
+		s.status.Backend = reply.Backend
+	}
 	s.processed = append(s.processed, at)
 	for len(s.processed) > 0 && at.Sub(s.processed[0]) > 10*time.Second {
 		s.processed = s.processed[1:]
