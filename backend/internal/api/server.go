@@ -23,6 +23,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/broker"
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/numbershare"
+	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/store"
 	"github.com/np1-control-center/ncc/internal/trips"
@@ -90,6 +91,7 @@ func New(c config.Config) *Server {
 	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
 	s.pics = newPICSService(c.StateDir, s.plates.voice)
+	s.pics.scan = pics.Scan(s.client)
 	s.numberShare = numbershare.New(c.StateDir, &http.Client{Timeout: 30 * time.Second})
 	s.plates.share = s.numberShare
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}

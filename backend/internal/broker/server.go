@@ -8,6 +8,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/audio"
 	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/model"
+	"github.com/np1-control-center/ncc/internal/pics"
 	"net"
 	"net/http"
 	"os"
@@ -64,6 +65,7 @@ func Serve(socket string, uid uint32) error {
 	defer cancel()
 	modemObserver := adapters.NewModemObserver(ctx)
 	mux := http.NewServeMux()
+	pics.RegisterStockReceiver(mux)
 	adapters.RegisterNASBackupHandlers(mux)
 	go adapters.RunNASBackupScheduler(ctx)
 	defer func() {

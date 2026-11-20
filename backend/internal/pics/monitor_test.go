@@ -5,8 +5,6 @@ import (
 	"slices"
 	"testing"
 	"time"
-
-	"github.com/godbus/dbus/v5"
 )
 
 func frame(id byte, lamps ...byte) []byte {
@@ -74,7 +72,7 @@ func TestFirstVisitUsesEverySlotAndIgnoresStaleChanges(t *testing.T) {
 	}
 }
 
-func TestMetadataAndRSSIHaveNoSignalFreshness(t *testing.T) {
+func TestMetadataHasNoSignalFreshness(t *testing.T) {
 	var m Monitor
 	now := time.Now()
 	m.Receive("device", frame(1, 0x83), now)
@@ -85,14 +83,5 @@ func TestMetadataAndRSSIHaveNoSignalFreshness(t *testing.T) {
 	m.Receive("device", frame(1), now.Add(4*time.Second))
 	if got := m.Signals(now.Add(6 * time.Second)); len(got) != 0 {
 		t.Fatalf("metadata refreshed a stale signal: %#v", got)
-	}
-	adapter := dbus.ObjectPath("/org/bluez/hci0")
-	event := &dbus.Signal{Path: adapter + "/dev_TEST", Name: propertiesInterface + ".PropertiesChanged", Body: []any{deviceInterface, map[string]dbus.Variant{"RSSI": dbus.MakeVariant(int16(-30))}}}
-	if _, payload := advertisement(event, adapter); payload != nil {
-		t.Fatal("RSSI notification was treated as advertising")
-	}
-	event.Body[1] = map[string]dbus.Variant{"ManufacturerData": dbus.MakeVariant(map[uint16]dbus.Variant{Manufacturer: dbus.MakeVariant(frame(1, 0x83))})}
-	if _, payload := advertisement(event, adapter); len(payload) != 11 {
-		t.Fatal("PICS advertising was not decoded")
 	}
 }

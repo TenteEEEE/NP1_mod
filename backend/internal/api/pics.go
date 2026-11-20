@@ -49,7 +49,7 @@ type picsService struct {
 }
 
 func newPICSService(dir string, voice *platespeech.Manager) *picsService {
-	p := &picsService{path: filepath.Join(dir, picsSettingsFile), voice: voice, scan: pics.Scan, settings: defaultPICSSettings(), scanState: "starting", scanChanged: make(chan struct{}, 1), speechChanged: make(chan struct{}, 1)}
+	p := &picsService{path: filepath.Join(dir, picsSettingsFile), voice: voice, settings: defaultPICSSettings(), scanState: "starting", scanChanged: make(chan struct{}, 1), speechChanged: make(chan struct{}, 1)}
 	if data, err := os.ReadFile(p.path); err == nil {
 		settings := p.settings
 		if json.Unmarshal(data, &settings) == nil && settings.validate() == nil {
