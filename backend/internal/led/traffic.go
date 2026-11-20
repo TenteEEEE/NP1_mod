@@ -27,24 +27,32 @@ type trafficState struct {
 	ExpiresAt time.Time     `json:"expiresAt"`
 }
 
-func SetTrafficColors(colors TrafficColors) error {
-	return writeTrafficColors(trafficFramePath, colors, time.Now())
+func SetTrafficColors(colors TrafficColors, deadline time.Time) error {
+	return writeTrafficColors(trafficFramePath, colors, deadline, time.Now())
 }
 
-func writeTrafficColors(path string, colors TrafficColors, now time.Time) error {
+func writeTrafficColors(path string, colors TrafficColors, deadline, now time.Time) error {
 	if !colors.Valid() {
 		return errors.New("invalid traffic signal colors")
 	}
-	if err := screenPath(path, colors != 0); err != nil {
+	active := colors != 0 && now.Before(deadline)
+	if err := screenPath(path, active); err != nil {
 		return err
 	}
-	if colors == 0 {
+	if !active {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		return nil
 	}
-	return config.Atomic(path, trafficState{colors, now.Add(trafficLease).UTC()})
+	return config.Atomic(path, trafficState{colors, minTime(deadline, now.Add(trafficLease)).UTC()})
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 func readTrafficFrame(path string, now time.Time) (ScreenFrame, bool, error) {

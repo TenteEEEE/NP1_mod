@@ -21,11 +21,15 @@ const trialVoiceCache = "/overlay/owner-apps/np1-control/state/plate/speech"
 
 type trialPlayer struct {
 	platespeech.Pacat
-	pcm []byte
+	pcm    []byte
+	silent bool
 }
 
 func (p *trialPlayer) Play(ctx context.Context, pcm []byte, volume int) error {
 	p.pcm = pcm
+	if p.silent {
+		return nil
+	}
 	return p.Pacat.Play(ctx, pcm, volume)
 }
 
@@ -54,8 +58,19 @@ func TestPICSDevice(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 65*time.Second)
 	defer cancel()
-	player := &trialPlayer{Pacat: platespeech.Pacat{Path: "/usr/bin/pacat"}}
+	player := &trialPlayer{
+		Pacat:  platespeech.Pacat{Path: "/usr/bin/pacat"},
+		silent: os.Getenv("NCC_PICS_DEVICE_SILENT") == "1",
+	}
 	voice := platespeech.NewManager(trialVoiceCache, nil, player)
+	if player.silent {
+		for _, text := range Vocabulary() {
+			if !voice.Prepared(1, text) {
+				t.Fatalf("a prepared VOICEVOX clip is missing: %q", text)
+			}
+		}
+		t.Logf("All %d cached VOICEVOX clips are present", len(Vocabulary()))
+	}
 	var monitor Monitor
 	var cue Cue
 	if mode == "replay" {
@@ -77,7 +92,7 @@ func TestPICSDevice(t *testing.T) {
 			if !bytes.HasPrefix(payload, tag) {
 				return address, nil, done
 			}
-			return "trial", payload[len(tag):], done
+			return address, payload[len(tag):], done
 		}
 		scan, stop := context.WithTimeout(ctx, 38*time.Second)
 		red, green := 0, 0
@@ -110,7 +125,7 @@ func TestPICSDevice(t *testing.T) {
 			}
 			err = observeTrialDiscovery(scan, uint32(caller), decode, receive)
 		} else {
-			err = scanStockBLEWith(scan, decode, func() { t.Log("stock BLE reports received") }, receive)
+			err = scanStockBLEWith(scan, new(time.Time), decode, func() { t.Log("stock BLE reports received") }, receive)
 		}
 		stop()
 		t.Logf("matched over-air trial reports red=%d green=%d", red, green)
@@ -175,6 +190,21 @@ func observeTrialDiscovery(ctx context.Context, caller uint32, decode advertisem
 
 func testTrialPlayback(t *testing.T, ctx context.Context, voice *platespeech.Manager, player *trialPlayer, phrase []string, allow func(time.Duration) bool) {
 	t.Helper()
+	if player.silent {
+		player.pcm = nil
+		if err := voice.PlayPrepared(ctx, 1, 50, phrase, allow); err != nil {
+			t.Fatal(err)
+		}
+		var peak float64
+		for _, level := range trialEnvelope(player.pcm) {
+			peak = math.Max(peak, level)
+		}
+		if len(player.pcm)%2 != 0 || len(player.pcm) < 4800 || peak == 0 {
+			t.Fatal("cached phrase did not yield non-silent, 16-bit PCM")
+		}
+		t.Logf("cached VOICEVOX phrase %q produced %d sample bytes with no speaker playback", phrase, len(player.pcm))
+		return
+	}
 	var recording bytes.Buffer
 	recordCtx, stopRecord := context.WithCancel(ctx)
 	defer stopRecord()

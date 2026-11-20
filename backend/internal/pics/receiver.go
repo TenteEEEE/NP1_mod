@@ -19,16 +19,17 @@ type receiverMessage struct {
 	Source  string `json:"source,omitempty"`
 	Payload []byte `json:"payload,omitempty"`
 	Error   string `json:"error,omitempty"`
+	AtMS    int64  `json:"atMs,omitempty"`
 }
 
 // Scan consumes the stock Bluetooth stream from the credential-checked local
 // broker. The unprivileged web process never connects to the vendor bus.
-func Scan(client *http.Client) func(context.Context, func(), func(string, []byte)) error {
-	return scanReceiver(client, 8*time.Second)
+func Scan(client *http.Client) func(context.Context, func(), func(string, []byte, time.Time)) error {
+	return scanReceiver(client, 13*time.Second)
 }
 
-func scanReceiver(client *http.Client, inactivity time.Duration) func(context.Context, func(), func(string, []byte)) error {
-	return func(ctx context.Context, ready func(), receive func(string, []byte)) error {
+func scanReceiver(client *http.Client, inactivity time.Duration) func(context.Context, func(), func(string, []byte, time.Time)) error {
+	return func(ctx context.Context, ready func(), receive func(string, []byte, time.Time)) error {
 		stream, cancel := context.WithCancelCause(ctx)
 		defer cancel(nil)
 		timer := time.AfterFunc(inactivity, func() { cancel(errStockStreamSilent) })
@@ -63,7 +64,15 @@ func scanReceiver(client *http.Client, inactivity time.Duration) func(context.Co
 				ready()
 			case message.Source != "" && len(message.Payload) >= 10 && len(message.Payload) <= 27:
 				timer.Reset(inactivity)
-				receive(message.Source, message.Payload)
+				now := time.Now()
+				if message.AtMS != 0 {
+					age := now.Sub(time.UnixMilli(message.AtMS))
+					if age < 0 || age >= freshFor {
+						continue
+					}
+					now = now.Add(-age)
+				}
+				receive(message.Source, message.Payload, now)
 			}
 		}
 		if cause := context.Cause(stream); cause != nil {

@@ -20,7 +20,7 @@ func TestPICSResumesScanningAfterAnInterruptedSession(t *testing.T) {
 	defer cancel()
 	resumed := make(chan struct{})
 	calls := 0
-	p.scan = func(ctx context.Context, ready func(), _ func(string, []byte)) error {
+	p.scan = func(ctx context.Context, ready func(), _ func(string, []byte, time.Time)) error {
 		calls++
 		if calls == 1 {
 			return errors.New("stock BLE temporarily refused the scan")
@@ -79,11 +79,11 @@ func TestPICSLightsFreshDirectionsOnly(t *testing.T) {
 	now := time.Now()
 	p.scanState = "scanning"
 	p.monitor.Receive("beacon", []byte{0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0x81, 0x82, 0x83}, now)
-	if got := p.trafficColors(now); got != 0 {
+	if got, _ := p.trafficColors(now); got != 0 {
 		t.Fatalf("disabled LED showed %v", got)
 	}
 	p.settings.LED = true
-	if got := p.trafficColors(now); got != led.TrafficRed|led.TrafficBlinkGreen|led.TrafficGreen {
+	if got, _ := p.trafficColors(now); got != led.TrafficRed|led.TrafficBlinkGreen|led.TrafficGreen {
 		t.Fatalf("LED did not show all visible colors: %v", got)
 	}
 	axis, course := 90.0, 270.0
@@ -91,14 +91,14 @@ func TestPICSLightsFreshDirectionsOnly(t *testing.T) {
 	p.directions["00000001"] = picsAxes{nil, nil, &axis}
 	p.positions = []trips.TrackPoint{{At: now}}
 	p.course = &course
-	if got := p.trafficColors(now); got != led.TrafficGreen {
+	if got, _ := p.trafficColors(now); got != led.TrafficGreen {
 		t.Fatalf("LED ignored the selected directions: %v", got)
 	}
-	if got := p.trafficColors(now.Add(2 * time.Second)); got != 0 {
+	if got, _ := p.trafficColors(now.Add(2 * time.Second)); got != 0 {
 		t.Fatalf("expired signal still shown: %v", got)
 	}
 	p.scanState = "unavailable"
-	if got := p.trafficColors(now); got != 0 {
+	if got, _ := p.trafficColors(now); got != 0 {
 		t.Fatalf("interrupted scanner still shown: %v", got)
 	}
 }
@@ -160,7 +160,7 @@ func TestPICSDisableReleasesScannerAndPersists(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	started, stopped := make(chan struct{}), make(chan struct{})
-	p.scan = func(ctx context.Context, ready func(), _ func(string, []byte)) error {
+	p.scan = func(ctx context.Context, ready func(), _ func(string, []byte, time.Time)) error {
 		ready()
 		close(started)
 		<-ctx.Done()

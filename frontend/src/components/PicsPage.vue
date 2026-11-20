@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import {nextTick,onMounted,onUnmounted,ref} from 'vue'
+import {nextTick,ref} from 'vue'
 import {Radio} from '@lucide/vue'
 import {api} from '../services/api'
-import {isPicsStatus,picsCourseText,picsSignalText,picsStatusText,type PicsSettings,type PicsSpeech,type PicsStatus} from '../services/pics'
+import {picsCourseText,picsSignalText,picsStatusText,type PicsSettings,type PicsSpeech} from '../services/pics'
+import {useLivePICS} from '../services/pics-live'
 import PicsHistory from './PicsHistory.vue'
 import '../plate-recognition.css'
 
 const tabs=[{id:'records',label:'受信記録'},{id:'settings',label:'受信・発話設定'}] as const
 const tab=ref<(typeof tabs)[number]['id']>('records')
 const tablist=ref<HTMLElement>()
-const draft=ref<PicsSettings>(),status=ref<PicsStatus>(),speech=ref<PicsSpeech>()
+const draft=ref<PicsSettings>(),speech=ref<PicsSpeech>()
 const busy=ref(false),playing=ref(false),error=ref(''),notice=ref('')
-let timer:ReturnType<typeof setInterval>|undefined
+let nextSpeech=0
+let speechLoading=false
 const message=(e:unknown)=>e instanceof Error?e.message:String(e)
 
 async function moveTab(event:KeyboardEvent){
@@ -22,20 +24,24 @@ async function moveTab(event:KeyboardEvent){
  tablist.value?.querySelector<HTMLElement>('[aria-selected=true]')?.focus()
 }
 
-async function refresh(){
- try{
-  const next=await api<PicsStatus>('/pics')
-  if(!isPicsStatus(next))throw new Error('高度化PICSの設定を取得できません')
-  status.value=next
-  if(!draft.value){draft.value={...next.settings};error.value=''}
-  if(next.settings.enabled&&next.settings.speech)speech.value=await api<PicsSpeech>('/pics/speech')
- }catch(e){if(!status.value)error.value=message(e)}
+const {status,connected,error:liveError,refresh}=useLivePICS(next=>{
+ if(!draft.value)draft.value={...next.settings}
+ if(next.settings.enabled&&next.settings.speech)void refreshSpeech()
+})
+
+async function refreshSpeech(force=false){
+ if(speechLoading||!force&&performance.now()<nextSpeech)return
+ speechLoading=true
+ nextSpeech=performance.now()+3000
+ try{speech.value=await api<PicsSpeech>('/pics/speech','GET',undefined,true,AbortSignal.timeout(1800))}
+ catch{speech.value=undefined}
+ finally{speechLoading=false}
 }
 
 async function save(){
  if(!draft.value)return
  busy.value=true;notice.value='';error.value=''
- try{draft.value=await api<PicsSettings>('/pics','PUT',draft.value);await refresh();notice.value='保存しました'}
+ try{draft.value=await api<PicsSettings>('/pics','PUT',draft.value);await refresh();if(draft.value.speech)await refreshSpeech(true);notice.value='保存しました'}
  catch(e){error.value=message(e)}
  finally{busy.value=false}
 }
@@ -47,8 +53,6 @@ async function preview(){
  finally{playing.value=false}
 }
 
-onMounted(()=>{void refresh();timer=setInterval(()=>void refresh(),3000)})
-onUnmounted(()=>clearInterval(timer))
 </script>
 
 <template>
@@ -56,11 +60,13 @@ onUnmounted(()=>clearInterval(timer))
   <section class="panel plate-summary" aria-labelledby="pics-title">
    <div class="plate-summary-main"><Radio :size="22" aria-hidden="true"/><div><h2 id="pics-title">高度化PICS（実験機能）</h2></div></div>
    <dl v-if="status" class="plate-chips">
-    <div><dt>受信</dt><dd :class="status.state==='unavailable'?'warn':status.settings.enabled?'on':'off'">{{status.state==='unavailable'?'BLE受信不可':picsStatusText(status)}}</dd></div>
+    <div><dt>受信</dt><dd :class="status.state==='unavailable'||status.stale||!connected?'warn':status.settings.enabled?'on':'off'">{{!connected?'信号の更新停止':status.state==='unavailable'?'BLE受信不可':picsStatusText(status)}}</dd></div>
     <div><dt>発話</dt><dd :class="status.settings.speech?'on':'off'">{{status.settings.speech?(speech?.prepared?'準備済み':'有効'):'オフ'}}</dd></div>
    </dl>
+   <p class="hint">高度化PICSの補助情報です。現地の信号を確認してください。</p>
   </section>
-  <p v-if="status?.state==='unavailable'&&status.reason" class="banner neutral" role="note">{{status.reason}}</p>
+  <p v-if="liveError&&!status" class="banner neutral" role="note">{{liveError}}</p>
+  <p v-if="connected&&status?.state==='unavailable'&&status.reason" class="banner neutral" role="note">{{status.reason}}</p>
   <nav ref="tablist" class="plate-tabs" role="tablist" aria-label="高度化PICS" @keydown="moveTab">
    <button v-for="item in tabs" :id="`pics-tab-${item.id}`" :key="item.id" type="button" role="tab" :aria-controls="`pics-panel-${item.id}`" :aria-selected="tab===item.id" :tabindex="tab===item.id?0:-1" :class="{active:tab===item.id}" @click="tab=item.id">{{item.label}}</button>
   </nav>
@@ -94,7 +100,7 @@ onUnmounted(()=>clearInterval(timer))
     </div>
    </form>
    <ul v-if="status?.signals.length" class="pics-signals">
-    <li v-for="signal in status.signals.slice(0,12)" :key="`${signal.id}-${signal.slot}`"><span>{{signal.name||signal.id}} 信号{{signal.slot}}<small v-if="signal.directionMatch"> · 進行方向</small></span><strong>{{picsSignalText(signal)}}</strong></li>
+    <li v-for="signal in status.signals.slice(0,12)" :key="`${signal.id}-${signal.slot}`"><span>{{signal.name||signal.id}} 信号{{signal.slot}}<small v-if="signal.directionMatch"> · 進行方向</small></span><strong>{{picsSignalText(signal)}}<small v-if="signal.seconds!==null">（目安）</small><small v-else-if="signal.step"> · 段階 {{signal.step}}</small></strong></li>
    </ul>
    <p v-if="notice" class="hint" role="status">{{notice}}</p>
    <p v-if="error" class="error" role="alert">{{error}}</p>

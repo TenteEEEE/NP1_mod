@@ -1,7 +1,7 @@
 export type PicsSettings={enabled:boolean;speech:boolean;directional?:boolean;led?:boolean;style:number;volume:number}
 export type PicsColor='red'|'green'|'blink-green'
-export type PicsSignal={id:string;name?:string;slot:number;color:PicsColor;seconds:number|null;directionMatch?:boolean}
-export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;course?:number;signals:PicsSignal[]}
+export type PicsSignal={id:string;name?:string;slot:number;color:PicsColor;seconds:number|null;directionMatch?:boolean;step?:number;freshnessMs?:number;validForMs?:number;estimateMs?:number;estimateForMs?:number}
+export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;course?:number;signals:PicsSignal[];stale?:boolean}
 export type PicsSpeech={ready:boolean;prepared?:boolean;reason?:string;credit?:string;styles:{id:number;speaker:string;name:string}[]}
 export type PicsPoint={lat:number;lon:number}
 export type PicsReception={id:string;name?:string;slot:number;at:string;color:PicsColor;step?:number;position?:PicsPoint;beacon?:PicsPoint;course?:number;previousColor?:PicsColor;phaseSeconds?:number;cycleSeconds?:number;estimatedToGreen?:number}
@@ -24,6 +24,7 @@ export function picsStatusText(status:PicsStatus){
  if(status.state==='off')return '無効'
  if(status.state==='unavailable')return status.reason||'BLE受信を利用できません'
  if(status.state==='starting')return 'BLEを確認中'
+ if(status.stale&&!status.signals.length)return '信号の更新停止'
  return status.signals.length?'受信中':'受信待ち'
 }
 

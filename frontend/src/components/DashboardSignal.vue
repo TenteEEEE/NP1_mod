@@ -1,40 +1,23 @@
 <script setup lang="ts">
-import {computed,onMounted,onUnmounted,ref} from 'vue'
-import {api} from '../services/api'
-import {isPicsStatus,picsSignalText,picsStatusText,type PicsStatus} from '../services/pics'
+import {computed} from 'vue'
+import {useLivePICS} from '../services/pics-live'
+import {picsSignalText,picsStatusText} from '../services/pics'
 
-const status=ref<PicsStatus>()
+const {status,connected}=useLivePICS()
 const signal=computed(()=>status.value?.settings.directional?status.value.signals.find(s=>s.directionMatch):status.value?.signals[0])
 const text=computed(()=>{
  if(signal.value)return picsSignalText(signal.value)
  const value=status.value
  if(!value)return ''
+ if(!connected.value)return '信号の更新停止'
  if(value.state==='unavailable')return 'BLE受信不可'
  if(value.settings.directional&&value.signals.length)return value.course==null?'進行方向を確認中':'進行方向に該当する信号なし'
  return picsStatusText(value)
 })
-let active=false,timer:ReturnType<typeof setTimeout>|undefined,request:AbortController|undefined
-
-async function poll(){
- timer=undefined
- if(!active||document.hidden)return
- request=new AbortController()
- const timeout=setTimeout(()=>request?.abort(),1800)
- try{
-  const next=await api<PicsStatus>('/pics','GET',undefined,true,request.signal)
-  status.value=isPicsStatus(next)?next:undefined
- }
- catch{status.value=undefined}
- finally{clearTimeout(timeout);request=undefined}
- if(active)timer=setTimeout(poll,status.value?.settings.enabled?500:3000)
-}
-function followVisibility(){if(!document.hidden&&!timer&&!request)void poll()}
-onMounted(()=>{active=true;document.addEventListener('visibilitychange',followVisibility);void poll()})
-onUnmounted(()=>{active=false;clearTimeout(timer);request?.abort();document.removeEventListener('visibilitychange',followVisibility)})
 </script>
 
 <template>
- <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/pics" aria-label="高度化PICSを開く" :title="signal?.name||status.reason||'信号（高度化PICS）'">
+ <a v-if="status?.settings.enabled" class="dashboard-signal" href="#system/pics" aria-label="高度化PICSを開く" :title="[signal?.name,status.reason,'高度化PICSの補助情報です。現地の信号を確認してください'].filter(Boolean).join(' · ')">
   <span class="signal-dot" :class="signal?.color" aria-hidden="true"></span><span class="signal-label">信号</span>
   <span class="signal-value">{{text}}</span>
   <small v-if="signal&&signal.seconds!==null" class="signal-estimate">目安</small>

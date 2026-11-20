@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	freshFor       = 1250 * time.Millisecond
-	showFor        = 5 * time.Second
+	freshFor       = 1650 * time.Millisecond
+	showFor        = 1850 * time.Millisecond
 	timingLifetime = 20 * time.Minute
 	timingSamples  = 5
 	maxSeconds     = 99

@@ -42,22 +42,25 @@ func parse(payload []byte) (packet, bool) {
 	p := packet{kind: payload[2], id: strings.ToUpper(hex.EncodeToString(payload[6:10]))}
 	switch p.kind {
 	case 0:
-		if len(payload) < 24 {
+		if len(payload) == 10 {
 			return packet{}, false
 		}
+		name, _, _ := strings.Cut(string(payload[10:min(24, len(payload))]), "\x00")
 		p.name = strings.TrimSpace(strings.Map(func(r rune) rune {
 			if r < ' ' || r == 0x7f {
 				return -1
 			}
 			return r
-		}, strings.ToValidUTF8(string(payload[10:24]), "")))
+		}, strings.ToValidUTF8(name, "")))
 	case 1:
 		if len(payload) < 18 {
 			return packet{}, false
 		}
 		lat := float64(int32(binary.BigEndian.Uint32(payload[10:14]))) / 1e6
 		lon := float64(int32(binary.BigEndian.Uint32(payload[14:18]))) / 1e6
-		if lat < -90 || lat > 90 || lon < -180 || lon > 180 || lat == 0 && lon == 0 {
+		// The supported roadside deployments are in Japan. This generous extent
+		// includes outlying islands and rejects coordinates decoded at the wrong scale.
+		if lat < 20 || lat > 47 || lon < 122 || lon > 155 {
 			return packet{}, false
 		}
 		p.position = &Coordinates{Lat: lat, Lon: lon}

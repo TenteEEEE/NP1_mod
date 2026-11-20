@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 
-test('installed service controls and hotspot priorities reflect the actual device',async({page,request})=>{
+test('installed service controls and internet modes reflect the actual device',async({page,request})=>{
  test.skip(process.env.NCC_STOCK_HARDWARE!=='1','Set NCC_STOCK_HARDWARE=1 for GET-only installed UI review.')
  const response=await request.get('/api/v1/system/services'),value=await response.json()
  expect(value.status).toBe('available')
@@ -21,7 +21,7 @@ test('installed service controls and hotspot priorities reflect the actual devic
  await page.setViewportSize({width:390,height:844})
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.goto('/#wifi')
- await expect(page.getByRole('radio',{name:'4Gを優先',exact:true})).toBeVisible()
- await expect(page.getByRole('radio',{name:'Wi-Fi STAを優先',exact:true})).toBeVisible()
+ const modes=page.getByRole('radiogroup',{name:'回線の切替方法'})
+ for(const label of [/^自動 /,/^Wi-Fi /,/^4G /])await expect(modes.getByRole('radio',{name:label})).toBeVisible()
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
 })

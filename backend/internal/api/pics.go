@@ -41,8 +41,8 @@ func (v picsSettings) validate() error {
 type picsService struct {
 	path   string
 	voice  *platespeech.Manager
-	scan   func(context.Context, func(), func(string, []byte)) error
-	setLED func(context.Context, led.TrafficColors) error
+	scan   func(context.Context, func(), func(string, []byte, time.Time)) error
+	setLED func(context.Context, led.TrafficColors, time.Time) error
 
 	mu                                  sync.Mutex
 	settings                            picsSettings
@@ -182,12 +182,12 @@ func (p *picsService) runScan(ctx context.Context) {
 				}
 				p.scanState, p.scanReason = "scanning", ""
 			}
-		}, func(source string, data []byte) {
+		}, func(source string, data []byte, received time.Time) {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			if scanCtx.Err() == nil {
 				now := time.Now()
-				p.recordPICS(p.monitor.Receive(source, data, now), now)
+				p.recordPICS(p.monitor.Receive(source, data, received), received)
 				p.cancelInvalidCue(now)
 			}
 		})
@@ -203,7 +203,7 @@ func (p *picsService) runScan(ctx context.Context) {
 			if !confirmed.IsZero() && time.Since(confirmed) >= 5*time.Second {
 				retry = 0
 			}
-			retry = min(max(time.Second, 2*retry), 15*time.Second)
+			retry = min(max(250*time.Millisecond, 2*retry), 4*time.Second)
 		} else {
 			retry = 0
 		}
@@ -288,7 +288,7 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 			defer p.mu.Unlock()
 			now := time.Now()
 			id, slot := cue.SignalKey()
-			if !p.monitor.Valid(cue, now) || !p.directionAllows(id, slot, now) || play.Err() != nil || cue.Seconds > 0 && length >= time.Duration(cue.Seconds)*time.Second {
+			if !p.monitor.CanStart(cue, now, length) || !p.directionAllows(id, slot, now) || play.Err() != nil {
 				return false
 			}
 			p.monitor.Claim(cue, now)
@@ -306,6 +306,7 @@ func (s *Server) registerPICS() {
 	s.mux.HandleFunc("GET /api/v1/pics/directions", s.picsDirectionRules)
 	s.mux.HandleFunc("PUT /api/v1/pics/directions/{id}", s.savePICSDirectionRule)
 	s.mux.HandleFunc("GET /api/v1/pics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		p.mu.Lock()
 		now := time.Now()
 		signals := p.monitor.Signals(now)
@@ -320,7 +321,8 @@ func (s *Server) registerPICS() {
 			Reason   string        `json:"reason,omitempty"`
 			Course   *float64      `json:"course,omitempty"`
 			Signals  []pics.Signal `json:"signals"`
-		}{p.settings, p.scanState, p.scanReason, p.currentPICSCourse(now), signals}
+			Stale    bool          `json:"stale,omitempty"`
+		}{p.settings, p.scanState, p.scanReason, p.currentPICSCourse(now), signals, p.scanState == "scanning" && len(signals) == 0 && p.monitor.HasSeenSignal()}
 		p.mu.Unlock()
 		if !out.Settings.Enabled {
 			out.State, out.Reason = "off", ""

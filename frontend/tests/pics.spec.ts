@@ -131,3 +131,35 @@ for(const width of [1440,390])test(`高度化PICS専用画面と受信記録 (${
  await expect(page.locator('.dashboard-camera-pair')).toBeVisible()
  await expect(item).toHaveCount(0)
 })
+
+test('PICS settings expire a stalled snapshot and recover with current data',async({page})=>{
+ let phase:'red'|'offline'|'green'='red'
+ await page.addInitScript(()=>{localStorage.setItem('ncc.dashboard','overview');(window as any).EventSource=class extends EventTarget{close(){}}})
+ await page.route('**/api/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname
+  if(path==='/api/v1/pics'&&phase==='offline'){
+   await new Promise(resolve=>setTimeout(resolve,1700))
+   await route.fulfill({status:503,json:{}}).catch(()=>{})
+   return
+  }
+  const json=path==='/api/v1/settings'?{revision:1,theme:'light',locale:'ja',favorites:[]}
+   :path==='/api/v1/auth/session'?{csrf:'fixture'}
+   :path==='/api/v1/pics'?{settings:{enabled:true,speech:false,style:1,volume:60},state:'scanning',signals:[{id:'00000001',slot:1,color:phase,seconds:phase==='red'?27:null,validForMs:700,estimateMs:26900,estimateForMs:phase==='red'?700:0}]}
+   :path==='/api/v1/pics/history'?{date:'2026-11-21',entries:[],incomplete:false}:{}
+  await route.fulfill({json})
+ })
+ await page.goto(base!+'/#system/pics')
+ await page.getByRole('tab',{name:'受信・発話設定'}).click()
+ const signal=page.locator('.pics-signals strong')
+ await expect(signal).toContainText('青まであと27秒')
+ phase='offline'
+ await expect(signal).toHaveCount(0,{timeout:1600})
+ await expect(page.locator('.plate-chips')).toContainText('信号の更新停止')
+ phase='green'
+ await expect(signal).toHaveText('青')
+ await page.goto(base!)
+ const dashboard=page.getByRole('link',{name:'高度化PICSを開く'})
+ await expect(dashboard.locator('.signal-value')).toHaveText('青')
+ phase='offline'
+ await expect(dashboard.locator('.signal-value')).toHaveText('信号の更新停止',{timeout:1600})
+})

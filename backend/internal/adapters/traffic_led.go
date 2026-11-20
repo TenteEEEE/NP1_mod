@@ -15,10 +15,12 @@ func RegisterTrafficLEDHandler(mux *http.ServeMux) {
 		if !ok {
 			return
 		}
-		fields, err := led.DecodeScreenObject(data, "colors")
+		fields, err := led.DecodeScreenObject(data, "colors", "expiresAtMs")
 		value, parseErr := strconv.ParseUint(string(fields["colors"]), 10, 8)
+		unix, expiryErr := strconv.ParseInt(string(fields["expiresAtMs"]), 10, 64)
+		deadline := time.UnixMilli(unix)
 		colors := led.TrafficColors(value)
-		if err != nil || parseErr != nil || !colors.Valid() {
+		if err != nil || parseErr != nil || expiryErr != nil || !colors.Valid() || deadline.After(time.Now().Add(2*time.Second)) {
 			screenLEDJSON(w, http.StatusBadRequest, map[string]string{"reason": "信号のLED表示を確認してください"})
 			return
 		}
@@ -27,14 +29,17 @@ func RegisterTrafficLEDHandler(mux *http.ServeMux) {
 			return
 		}
 		defer ledApplyMu.Unlock()
-		if colors != 0 && time.Since(preparedAt) >= 5*time.Second {
+		if colors != 0 && time.Now().Before(deadline) && time.Since(preparedAt) >= 5*time.Second {
 			if err := prepareScreenLED(); err != nil {
 				screenLEDFailure(w, err)
 				return
 			}
 			preparedAt = time.Now()
 		}
-		if err := led.SetTrafficColors(colors); err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
+		if err := led.SetTrafficColors(colors, deadline); err != nil {
 			screenLEDFailure(w, err)
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -53,7 +54,7 @@ func TestStockDiscoveryOnlyDeliversManufacturerDataFromOwnRequest(t *testing.T) 
 	signals <- vendorEvent(caller, completed)
 	stop := errors.New("done")
 	started, ready, received := 0, 0, 0
-	err := runStockDiscovery(ctx, func(context.Context) error {
+	err := runStockDiscovery(ctx, new(time.Time), func(context.Context, uint32) error {
 		started++
 		if started == 2 {
 			return stop
@@ -101,12 +102,53 @@ func TestStockDiscoveryCompletesWithNoNearbyAdvertisements(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ready := 0
-	err := runStockDiscovery(ctx, func(context.Context) error { return nil }, signals, func(signal *dbus.Signal) ([]byte, bool) { return stockDiscoveryEvent(signal, caller) }, stockAdvertisement, func() {
+	err := runStockDiscovery(ctx, new(time.Time), func(context.Context, uint32) error { return nil }, signals, func(signal *dbus.Signal) ([]byte, bool) { return stockDiscoveryEvent(signal, caller) }, stockAdvertisement, func() {
 		ready++
 		cancel()
 	}, func(string, []byte) { t.Error("unexpected advertisement") })
 	if ready != 1 || !errors.Is(err, context.Canceled) {
 		t.Fatalf("empty scan did not confirm reception readiness: ready=%d, err=%v", ready, err)
+	}
+}
+
+func TestStockDiscoveryLengthensAnEmptyWindowAndResumesShortScans(t *testing.T) {
+	const caller = uint32(100)
+	completed := make([]byte, 0x298)
+	completed[0x291] = 1
+	otherDevice := make([]byte, 0x298)
+	otherDevice[0x20] = 1
+	signals := make(chan *dbus.Signal, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want := [...]uint32{stockDiscoverySeconds, stockQuietSeconds, stockDiscoverySeconds}
+	attempt := 0
+	err := runStockDiscovery(ctx, new(time.Time), func(_ context.Context, seconds uint32) error {
+		if attempt >= len(want) || seconds != want[attempt] {
+			t.Fatalf("unexpected scan %d with %d seconds", attempt, seconds)
+		}
+		attempt++
+		if attempt == 2 {
+			signals <- vendorEvent(caller, otherDevice)
+		}
+		if attempt == len(want) {
+			return context.Canceled
+		}
+		signals <- vendorEvent(caller, completed)
+		return nil
+	}, signals, func(signal *dbus.Signal) ([]byte, bool) { return stockDiscoveryEvent(signal, caller) }, stockAdvertisement,
+		func() {}, func(string, []byte) { t.Error("non-PICS advertisement was passed through") })
+	if err != context.Canceled || attempt != len(want) {
+		t.Fatalf("attempts=%d: %v", attempt, err)
+	}
+}
+
+func TestStockDiscoveryClearsLeaseOnlyForDefinitiveRejection(t *testing.T) {
+	for _, err := range []error{errStockDiscoveryRejected, context.DeadlineExceeded} {
+		var lease time.Time
+		result := runStockDiscovery(context.Background(), &lease, func(context.Context, uint32) error { return err }, nil, nil, nil, nil, nil)
+		if result != err || lease.IsZero() != (err == errStockDiscoveryRejected) {
+			t.Fatalf("lease=%v error=%v", lease, result)
+		}
 	}
 }
 
@@ -130,7 +172,19 @@ func TestStockReceiverStreamFeedsTheMonitorAndPropagatesFailure(t *testing.T) {
 		if r.URL.Path != BrokerPath {
 			t.Errorf("stock path = %s", r.URL.Path)
 		}
-		w.Write([]byte("{\"ready\":true}\n{\"source\":\"test\",\"payload\":\"AAACAAAAAAAAAYM=\"}\n{\"error\":\"scanner unavailable\"}\n"))
+		send := json.NewEncoder(w)
+		now := time.Now()
+		for _, event := range []receiverMessage{
+			{Ready: true},
+			{Source: "old", Payload: frame(2, 0x81), AtMS: now.Add(-3 * time.Second).UnixMilli()},
+			{Source: "future", Payload: frame(3, 0x81), AtMS: now.Add(3 * time.Second).UnixMilli()},
+			{Source: "test", Payload: frame(1, 0x83), AtMS: now.Add(-200 * time.Millisecond).UnixMilli()},
+			{Error: "scanner unavailable"},
+		} {
+			if err := send.Encode(event); err != nil {
+				t.Error(err)
+			}
+		}
 	}))
 	defer server.Close()
 	transport := server.Client().Transport
@@ -144,12 +198,12 @@ func TestStockReceiverStreamFeedsTheMonitorAndPropagatesFailure(t *testing.T) {
 	})}
 	var monitor Monitor
 	ready := false
-	err := Scan(client)(context.Background(), func() { ready = true }, func(source string, data []byte) { monitor.Receive(source, data, time.Now()) })
+	err := Scan(client)(context.Background(), func() { ready = true }, func(source string, data []byte, received time.Time) { monitor.Receive(source, data, received) })
 	if err == nil || err.Error() != "scanner unavailable" || !ready {
 		t.Fatalf("ready=%v err=%v", ready, err)
 	}
 	got := monitor.Signals(time.Now())
-	if len(got) != 1 || got[0].Color != Green {
+	if len(got) != 1 || got[0].Color != Green || got[0].FreshnessMS < 200 {
 		t.Fatalf("signal = %#v", got)
 	}
 }
@@ -170,7 +224,7 @@ func TestStockReceiverRetriesWhenAnOpenBrokerStreamStopsReporting(t *testing.T) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	confirmed := false
-	err := scanReceiver(client, 120*time.Millisecond)(ctx, func() { confirmed = true }, func(string, []byte) {})
+	err := scanReceiver(client, 120*time.Millisecond)(ctx, func() { confirmed = true }, func(string, []byte, time.Time) {})
 	if !confirmed || !errors.Is(err, errStockStreamSilent) {
 		t.Fatalf("open stream stalled without a retryable failure: ready=%v, err=%v", confirmed, err)
 	}

@@ -26,26 +26,27 @@ const (
 	stockBLEInterface      = "SPF.EventBase.v1_0"
 	stockBLEEvent          = stockBLEInterface + ".SPFEvent"
 	stockDiscoveryFunction = 15
-	stockDiscoverySeconds  = 2
+	// The controller filters repeated reports from the same address within a scan.
+	stockDiscoverySeconds = 1
+	// Longer windows cover more of the radio schedule when no reports come back.
+	stockQuietSeconds = 5
+	stockScanSpacing  = 40 * time.Millisecond
 )
+
+var errStockDiscoveryRejected = errors.New("純正BluetoothがBLE探索を受け付けません（純正側のBLE準備または探索状態を確認してください）")
 
 // RegisterStockReceiver is only mounted on the local broker's UID-checked
 // Unix socket. The endpoint takes no Bluetooth commands or parameters.
 func RegisterStockReceiver(mux *http.ServeMux) {
 	var session sync.Mutex
-	var nextSession time.Time
+	var stockLease time.Time
 	seed := maphash.MakeSeed()
 	mux.HandleFunc("GET "+BrokerPath, func(w http.ResponseWriter, r *http.Request) {
 		if !session.TryLock() {
 			http.Error(w, "stock receiver already in use", http.StatusConflict)
 			return
 		}
-		defer func() {
-			// A disconnected HTTP client may have left its scan running on the
-			// vendor timer. Do not start another scan before that one can expire.
-			nextSession = time.Now().Add(stockDiscoverySeconds * time.Second)
-			session.Unlock()
-		}()
+		defer session.Unlock()
 		response := http.NewResponseController(w)
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.Header().Set("Cache-Control", "no-store")
@@ -62,11 +63,11 @@ func RegisterStockReceiver(mux *http.ServeMux) {
 			}
 			_ = response.SetWriteDeadline(time.Time{})
 		}
-		if delay := time.Until(nextSession); delay > 0 && !waitStockScan(ctx, delay) {
+		if delay := time.Until(stockLease); delay > 0 && !waitStockScan(ctx, delay) {
 			return
 		}
-		err := scanStockBLE(ctx, func() { write(receiverMessage{Ready: true}) }, func(source string, payload []byte) {
-			write(receiverMessage{Source: strconv.FormatUint(maphash.String(seed, source), 16), Payload: payload})
+		err := scanStockBLEWith(ctx, &stockLease, stockAdvertisement, func() { write(receiverMessage{Ready: true}) }, func(source string, payload []byte) {
+			write(receiverMessage{Source: strconv.FormatUint(maphash.String(seed, source), 16), Payload: payload, AtMS: time.Now().UnixMilli()})
 		})
 		if err != nil && ctx.Err() == nil {
 			write(receiverMessage{Error: err.Error()})
@@ -91,10 +92,6 @@ func stockBusAddress(contents string) string {
 	return ""
 }
 
-func scanStockBLE(ctx context.Context, ready func(), receive func(string, []byte)) error {
-	return scanStockBLEWith(ctx, stockAdvertisement, ready, receive)
-}
-
 type advertisementDecoder func([]byte) (source string, payload []byte, done bool)
 
 type stockBLESession struct {
@@ -104,13 +101,13 @@ type stockBLESession struct {
 	sender string
 }
 
-func scanStockBLEWith(ctx context.Context, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
+func scanStockBLEWith(ctx context.Context, lease *time.Time, decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	session, err := connectStockBLE(ctx)
 	if err != nil {
 		return err
 	}
 	defer session.conn.Close()
-	signals := make(chan *dbus.Signal, 32)
+	signals := make(chan *dbus.Signal, 128)
 	session.conn.Signal(signals)
 	defer session.conn.RemoveSignal(signals)
 	if err := session.watchDiscovery(ctx); err != nil {
@@ -118,7 +115,9 @@ func scanStockBLEWith(ctx context.Context, decode advertisementDecoder, ready fu
 	}
 	caller := uint32(os.Getpid())
 	object := session.conn.Object(session.owner, stockBLEPath)
-	return runStockDiscovery(ctx, func(ctx context.Context) error { return startStockDiscovery(ctx, object, caller) }, signals,
+	return runStockDiscovery(ctx, lease, func(ctx context.Context, seconds uint32) error {
+		return startStockDiscovery(ctx, object, caller, seconds)
+	}, signals,
 		func(signal *dbus.Signal) ([]byte, bool) { return session.discoveryData(ctx, signal, caller) }, decode, ready, receive)
 }
 
@@ -140,7 +139,7 @@ func connectStockBLE(ctx context.Context) (*stockBLESession, error) {
 	if address == "" {
 		return nil, errors.New("純正Bluetoothのセッションバスを識別できません")
 	}
-	conn, err := dbus.Connect(address, dbus.WithContext(ctx))
+	conn, err := dbus.Connect(address, dbus.WithContext(ctx), dbus.WithSignalHandler(dbus.NewSequentialSignalHandler()))
 	if err != nil {
 		return nil, errors.New("純正Bluetoothのセッションバスに接続できません")
 	}
@@ -199,36 +198,45 @@ func (session *stockBLESession) discoveryData(ctx context.Context, signal *dbus.
 	return data, true
 }
 
-func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller uint32) error {
+func startStockDiscovery(ctx context.Context, object dbus.BusObject, caller, seconds uint32) error {
 	request, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	// The vendor API's passive discovery request expires in two seconds.
+	// The vendor API's passive discovery request expires on its own timer.
 	// There is no per-client StopDiscovery, so never issue the global stop,
 	// initialize GATT or retry before the completion callback from this request.
 	var payload [24]byte
 	binary.LittleEndian.PutUint32(payload[4:8], stockDiscoveryFunction)
 	binary.LittleEndian.PutUint32(payload[8:12], stockDiscoveryFunction)
-	binary.LittleEndian.PutUint32(payload[16:20], stockDiscoverySeconds)
+	binary.LittleEndian.PutUint32(payload[16:20], seconds)
 	var result []byte
 	var returned []uint32
 	if object.CallWithContext(request, stockBLEInterface+".CallFunction", 0, uint32(1), caller, uint32(stockDiscoveryFunction), []uint32{}, payload[:], uint32(1)).Store(&result, &returned) != nil || len(result) != 1 {
 		return errors.New("純正BluetoothのBLE探索要求に応答がありません")
 	}
 	if result[0] != 1 {
-		return errors.New("純正BluetoothがBLE探索を受け付けません（純正側のBLE準備または探索状態を確認してください）")
+		return errStockDiscoveryRejected
 	}
 	return nil
 }
 
-func runStockDiscovery(ctx context.Context, start func(context.Context) error, signals <-chan *dbus.Signal, read func(*dbus.Signal) ([]byte, bool), decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
+func runStockDiscovery(ctx context.Context, lease *time.Time, start func(context.Context, uint32) error, signals <-chan *dbus.Signal, read func(*dbus.Signal) ([]byte, bool), decode advertisementDecoder, ready func(), receive func(string, []byte)) error {
 	confirmed := false
+	seconds := uint32(stockDiscoverySeconds)
 	for ctx.Err() == nil {
-		started := time.Now()
-		if err := start(ctx); err != nil {
+		window := time.Duration(seconds) * time.Second
+		// An in-flight request may have started even if its acknowledgement is lost.
+		// An unanswered request can still start late. Reserve time for both the
+		// acknowledgement and the controller's delayed completion.
+		*lease = time.Now().Add(window + 3*time.Second)
+		if err := start(ctx, seconds); err != nil {
+			if errors.Is(err, errStockDiscoveryRejected) {
+				*lease = time.Time{}
+			}
 			return err
 		}
-		timeout, cancel := context.WithTimeout(ctx, 4*time.Second)
+		timeout, cancel := context.WithTimeout(ctx, window+2*time.Second)
 		complete := false
+		reported := false
 		for !complete && timeout.Err() == nil {
 			select {
 			case <-timeout.Done():
@@ -244,6 +252,7 @@ func runStockDiscovery(ctx context.Context, start func(context.Context) error, s
 				source, payload, done := decode(data)
 				complete = done
 				if source != "" {
+					reported = true
 					if !confirmed {
 						ready()
 						confirmed = true
@@ -259,14 +268,16 @@ func runStockDiscovery(ctx context.Context, start func(context.Context) error, s
 			return errors.New("純正BluetoothからBLE探索の終了通知がありません")
 		}
 		if complete {
-			// A complete passive scan is healthy even when it finds no radio
-			// traffic. Send one heartbeat per completed scan to the web worker.
+			// Only a clean callback allows the next bounded scan to start quickly.
+			*lease = time.Now().Add(stockScanSpacing)
+			seconds = stockQuietSeconds
+			if reported {
+				seconds = stockDiscoverySeconds
+			}
 			ready()
 			confirmed = true
+			waitStockScan(ctx, time.Until(*lease))
 		}
-		// Leave room for the stock caller between our self-expiring scans.
-		remainder := time.Until(started.Add(stockDiscoverySeconds * time.Second))
-		waitStockScan(ctx, max(0, remainder)+200*time.Millisecond)
 	}
 	return ctx.Err()
 }

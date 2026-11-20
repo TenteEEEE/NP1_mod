@@ -36,6 +36,11 @@ func TestCountdownUsesObservedCyclesAndBlueUsesAdvertisement(t *testing.T) {
 				if !m.Valid(cue, now) {
 					t.Fatal("fresh cue rejected", cue)
 				}
+				if cue.Kind == "number" && cue.Seconds == 1 {
+					if !m.CanStart(cue, now, 500*time.Millisecond) || m.CanStart(cue, now.Add(900*time.Millisecond), 500*time.Millisecond) {
+						t.Fatal("one-second cue did not check the remaining fraction")
+					}
+				}
 				if cycle == timingSamples {
 					heard = append(heard, fmt.Sprintf("%s:%d", cue.Kind, cue.Seconds))
 				}
@@ -121,20 +126,63 @@ func TestOtherDirectionChangesWhenSecondsAreUnknown(t *testing.T) {
 	advance("", 0x81, 0x81) // A reception gap is not an observed transition.
 }
 
+func TestInProgressBlinkHintContinuesWhileItsSignalIsFresh(t *testing.T) {
+	var m Monitor
+	now := time.Now()
+	m.Receive("device", frame(1, 0x81, 0x83), now.Add(-500*time.Millisecond))
+	m.Receive("device", frame(1, 0x81, 0x82), now)
+	cue, ok := m.NextCue(now)
+	if !ok || cue.Kind != otherBlinkCue || !m.CanStart(cue, now, 3700*time.Millisecond) {
+		t.Fatalf("unexpected cue: %#v", cue)
+	}
+	for i := 1; i <= 4; i++ {
+		m.Receive("device", frame(1, 0x81, 0x82), now.Add(time.Duration(i)*time.Second))
+	}
+	late := now.Add(4 * time.Second)
+	if _, ok := m.NextCue(late); ok || m.Valid(cue, late) || !m.StillValid(cue, late) {
+		t.Fatal("a late start and an ongoing announcement did not use separate deadlines")
+	}
+	m.Receive("device", frame(1, 0x81, 0x81), late)
+	if m.StillValid(cue, late) {
+		t.Fatal("the blink announcement survived the other lamp changing to red")
+	}
+}
+
+func TestParallelSignalHeadsShareAnAnnouncement(t *testing.T) {
+	var m Monitor
+	now := time.Now()
+	m.Receive("device", frame(1, 0x81, 0x83, 0x81, 0x83), now)
+	for _, next := range []struct {
+		color byte
+		cue   string
+	}{{0x82, otherBlinkCue}, {0x81, soonCue}} {
+		now = now.Add(time.Second)
+		m.Receive("device", frame(1, 0x81, next.color, 0x81, next.color), now)
+		cue, ok := m.NextCueFor(now, func(_ string, slot int) bool { return slot == 3 })
+		if !ok || cue.Kind != next.cue || !m.Valid(cue, now) {
+			t.Fatalf("directional target cue = %#v, expected %s", cue, next.cue)
+		}
+		m.Claim(cue, now)
+		if cue, ok := m.NextCue(now); ok {
+			t.Fatalf("another head announced the same event: %#v", cue)
+		}
+	}
+}
+
 func TestReceptionRecordsMeasureOnlyCompleteObservedCycle(t *testing.T) {
 	var m Monitor
 	now := time.Now()
 	position := make([]byte, 18)
 	position[2], position[9] = 1, 1
-	binary.BigEndian.PutUint32(position[10:14], 10000000)
-	binary.BigEndian.PutUint32(position[14:18], 20000000)
+	binary.BigEndian.PutUint32(position[10:14], 35000000)
+	binary.BigEndian.PutUint32(position[14:18], 140000000)
 	m.Receive("device", position, now)
 	var records []Reception
 	for _, lamp := range []byte{0x81, 0x83, 0x83, 0x82, 0x81, 0x81, 0x83, 0x81} {
 		records = append(records, m.Receive("device", frame(1, lamp), now)...)
 		now = now.Add(time.Second)
 	}
-	if len(records) != 6 || records[0].Beacon == nil || records[0].Beacon.Lon != 20 || records[1].CycleSeconds != 0 || records[1].PhaseSeconds != 0 || records[4].CycleSeconds != 5 || records[4].PreviousColor != Red || records[4].PhaseSeconds != 2 {
+	if len(records) != 6 || records[0].Beacon == nil || records[0].Beacon.Lon != 140 || records[1].CycleSeconds != 0 || records[1].PhaseSeconds != 0 || records[4].CycleSeconds != 5 || records[4].PreviousColor != Red || records[4].PhaseSeconds != 2 {
 		t.Fatalf("unexpected received cycle evidence: %v", records)
 	}
 	m.Receive("device", frame(1, 0x81), now.Add(3*time.Second))
@@ -164,5 +212,24 @@ func TestInterruptedReceptionCannotBridgeOldLightButKeepsLearnedTiming(t *testin
 	signals := monitor.Signals(now.Add(600 * time.Millisecond))
 	if len(signals) != 1 || signals[0].Seconds == nil || *signals[0].Seconds != 9 {
 		t.Fatalf("learned timing not restored on a new stage: %v", signals)
+	}
+}
+
+func TestIdenticalAlternateUpdatesDisplayWithoutBridgingColorChange(t *testing.T) {
+	var m Monitor
+	now := time.Now()
+	m.Receive("first", frame(1, 0x81), now)
+	m.Receive("second", frame(1, 0x81), now.Add(time.Second))
+	if len(m.FreshSignals(now.Add(freshFor+50*time.Millisecond))) != 1 {
+		t.Fatal("identical alternate report did not keep the display fresh")
+	}
+	m.Receive("second", frame(1, 0x83), now.Add(freshFor+100*time.Millisecond))
+	if _, ok := m.NextCue(now.Add(freshFor + 100*time.Millisecond)); ok {
+		t.Fatal("green announcement crossed sender identities")
+	}
+	m.Receive("second", frame(1, 0x81), now.Add(freshFor+75*time.Millisecond))
+	signals := m.Signals(now.Add(freshFor + 150*time.Millisecond))
+	if len(signals) != 1 || signals[0].Color != Green {
+		t.Fatal("out-of-order report rolled back the current state")
 	}
 }

@@ -11,7 +11,7 @@ import (
 func TestTrafficColorsUseDistinctZonesAndExpire(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "traffic.json")
 	now := time.Unix(100, 0)
-	if err := writeTrafficColors(path, TrafficRed|TrafficBlinkGreen|TrafficGreen, now); err != nil {
+	if err := writeTrafficColors(path, TrafficRed|TrafficBlinkGreen|TrafficGreen, now.Add(2*time.Second), now); err != nil {
 		t.Fatal(err)
 	}
 	frame, active, err := readTrafficFrame(path, now)
@@ -56,4 +56,21 @@ func TestTrafficYieldsToScreenOverlayAndResumes(t *testing.T) {
 	f.wait(t, func(s State) bool { return s.Mode == "traffic" && s.ScreenSequence == 2 })
 	trafficOn.Store(false)
 	f.wait(t, func(s State) bool { return s.Mode == "solid" && s.ScreenSequence == 0 })
+}
+
+func TestDelayedTrafficWriteCannotExtendSourceDeadline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	deadline := time.Unix(100, 0).Add(1250 * time.Millisecond)
+	if err := writeTrafficColors(path, TrafficRed, deadline, deadline.Add(-50*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, active, err := readTrafficFrame(path, deadline); err != nil || active {
+		t.Fatalf("source expired: active=%v err=%v", active, err)
+	}
+	if err := writeTrafficColors(path, TrafficGreen, deadline, deadline.Add(300*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, active, err := readTrafficFrame(path, deadline.Add(310*time.Millisecond)); err != nil || active {
+		t.Fatalf("delayed request relit the LED: active=%v err=%v", active, err)
+	}
 }
