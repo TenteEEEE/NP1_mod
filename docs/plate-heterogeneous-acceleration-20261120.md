@@ -62,6 +62,8 @@
 
 既設機へ PP-OCRv6 GPU 経路を含めて一括反映する場合は、`--models models/plate` と `--worker`（`--min-confidence` 伝播対応の ARM64 `ncc`）を付けて配備する。`plate-engine-update.sh` は `plate-model.json` に `"gpuFile"` がある場合にキャッシュ検証で `gpu detector` と `gpu ppocr` の両方を必須チェックし、失敗時は自動ロールバックする。
 
+モデル一式のコピーは認識サービスの停止前に完了させる。コピーが失敗した場合は既設モデルでの認識を継続する。
+
 ```sh
 bash tools/plate/build_engine.sh all
 # 既設機へエンジン・ワーカー・PP-OCRv6 含むモデル一式・全 5 モデルキャッシュを配備

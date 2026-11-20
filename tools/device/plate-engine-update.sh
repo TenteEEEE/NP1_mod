@@ -161,6 +161,12 @@ if test -f "$BACKUP/plate/ncc-worker"; then
     grep -Fxq "ExecStartPre=/bin/cp $WORKER /run/np1-control-plate/ncc" "$BACKUP/next-unit"
 fi
 
+# Complete staging before entering the transaction. A failed copy must leave
+# the active model directory and service untouched.
+if test -d "$BACKUP/plate/models"; then
+    cp -a "$BACKUP/plate/models" "$BACKUP/next-models"
+fi
+
 completed=0
 finish() {
     result=$?
@@ -174,7 +180,6 @@ trap finish 0
 systemctl stop "$SERVICE"
 if test -d "$BACKUP/plate/models"; then
     touch "$BACKUP/models-update"
-    cp -a "$BACKUP/plate/models" "$BACKUP/next-models"
     if test -d "$MODELS"; then mv "$MODELS" "$BACKUP/previous-models"; fi
     mv "$BACKUP/next-models" "$MODELS"
 fi
