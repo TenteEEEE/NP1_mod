@@ -34,6 +34,16 @@
 #include <nlohmann/json.hpp>
 #include <onnxruntime_cxx_api.h>
 
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
+
+#ifdef NP1_PLATE_MNN_GPU
+#include <MNN/Interpreter.hpp>
+#include <future>
+#include <mutex>
+#endif
+
 #include "tensorflow/lite/interpreter.h"
 #include "tensorflow/lite/kernels/register.h"
 #include "tensorflow/lite/model.h"
@@ -81,6 +91,83 @@ inline void nv12_rgb(const uint8_t* f, int W, int H, int x, int y, uint8_t* rgb)
   rgb[2] = clamp8((298 * c + 516 * d + 128) >> 8);
 }
 
+#if defined(__aarch64__)
+// Exact 1/2-scale NEON NV12 -> NHWC float32 [0,1] for ROI 2*dw x 2*dh (e.g., 1280x768 -> 640x384).
+inline void fill_det_neon_half_f32(const uint8_t* f, int W, int H, int rx, int ry,
+                                   int dw, int dh, float* out) {
+  const uint8_t* uv_base = f + W * H;
+  float* dst = out;
+  const uint8x8_t v16 = vdup_n_u8(16);
+  const int16x8_t v128 = vdupq_n_s16(128);
+  const float32x4_t vinv255 = vdupq_n_f32(1.0f / 255.0f);
+  for (int y = 0; y < dh; ++y) {
+    const int sy = ry + 2 * y + 1;
+    const uint8_t* y_row = f + sy * W + rx;
+    const uint8_t* uv_row = uv_base + (sy >> 1) * W + (rx & ~1);
+    for (int x = 0; x + 8 <= dw; x += 8) {
+      uint8x8x2_t y_pair = vld2_u8(y_row + x * 2);
+      uint8x8x2_t uv_pair = vld2_u8(uv_row + x * 2);
+      int16x8_t c = vreinterpretq_s16_u16(vsubl_u8(y_pair.val[1], v16));
+      int16x8_t d = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(uv_pair.val[0])), v128);
+      int16x8_t e = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(uv_pair.val[1])), v128);
+      int32x4_t c_lo = vmlal_n_s16(vdupq_n_s32(128), vget_low_s16(c), 298);
+      int32x4_t c_hi = vmlal_n_s16(vdupq_n_s32(128), vget_high_s16(c), 298);
+      uint8x8_t r8 = vqmovun_s16(vcombine_s16(vshrn_n_s32(vmlal_n_s16(c_lo, vget_low_s16(e), 409), 8),
+                                              vshrn_n_s32(vmlal_n_s16(c_hi, vget_high_s16(e), 409), 8)));
+      uint8x8_t g8 = vqmovun_s16(vcombine_s16(
+          vshrn_n_s32(vmlal_n_s16(vmlal_n_s16(c_lo, vget_low_s16(d), -100), vget_low_s16(e), -208), 8),
+          vshrn_n_s32(vmlal_n_s16(vmlal_n_s16(c_hi, vget_high_s16(d), -100), vget_high_s16(e), -208), 8)));
+      uint8x8_t b8 = vqmovun_s16(vcombine_s16(vshrn_n_s32(vmlal_n_s16(c_lo, vget_low_s16(d), 516), 8),
+                                              vshrn_n_s32(vmlal_n_s16(c_hi, vget_high_s16(d), 516), 8)));
+      uint16x8_t r16 = vmovl_u8(r8), g16 = vmovl_u8(g8), b16 = vmovl_u8(b8);
+      float32x4x3_t lo, hi;
+      lo.val[0] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(r16))), vinv255);
+      lo.val[1] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(g16))), vinv255);
+      lo.val[2] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(b16))), vinv255);
+      vst3q_f32(dst, lo);
+      hi.val[0] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(r16))), vinv255);
+      hi.val[1] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(g16))), vinv255);
+      hi.val[2] = vmulq_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(b16))), vinv255);
+      vst3q_f32(dst + 12, hi);
+      dst += 24;
+    }
+  }
+}
+
+inline void fill_det_neon_half_int8(const uint8_t* f, int W, int H, int rx, int ry,
+                                    int dw, int dh, int8_t* out) {
+  const uint8_t* uv_base = f + W * H;
+  int8_t* dst = out;
+  const uint8x8_t v16 = vdup_n_u8(16);
+  const int16x8_t v128 = vdupq_n_s16(128);
+  const uint8x8_t v0x80 = vdup_n_u8(0x80);
+  for (int y = 0; y < dh; ++y) {
+    const int sy = ry + 2 * y + 1;
+    const uint8_t* y_row = f + sy * W + rx;
+    const uint8_t* uv_row = uv_base + (sy >> 1) * W + (rx & ~1);
+    for (int x = 0; x + 8 <= dw; x += 8) {
+      uint8x8x2_t y_pair = vld2_u8(y_row + x * 2);
+      uint8x8x2_t uv_pair = vld2_u8(uv_row + x * 2);
+      int16x8_t c = vreinterpretq_s16_u16(vsubl_u8(y_pair.val[1], v16));
+      int16x8_t d = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(uv_pair.val[0])), v128);
+      int16x8_t e = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(uv_pair.val[1])), v128);
+      int32x4_t c_lo = vmlal_n_s16(vdupq_n_s32(128), vget_low_s16(c), 298);
+      int32x4_t c_hi = vmlal_n_s16(vdupq_n_s32(128), vget_high_s16(c), 298);
+      uint8x8x3_t rgb;
+      rgb.val[0] = veor_u8(vqmovun_s16(vcombine_s16(vshrn_n_s32(vmlal_n_s16(c_lo, vget_low_s16(e), 409), 8),
+                                                    vshrn_n_s32(vmlal_n_s16(c_hi, vget_high_s16(e), 409), 8))), v0x80);
+      rgb.val[1] = veor_u8(vqmovun_s16(vcombine_s16(
+          vshrn_n_s32(vmlal_n_s16(vmlal_n_s16(c_lo, vget_low_s16(d), -100), vget_low_s16(e), -208), 8),
+          vshrn_n_s32(vmlal_n_s16(vmlal_n_s16(c_hi, vget_high_s16(d), -100), vget_high_s16(e), -208), 8))), v0x80);
+      rgb.val[2] = veor_u8(vqmovun_s16(vcombine_s16(vshrn_n_s32(vmlal_n_s16(c_lo, vget_low_s16(d), 516), 8),
+                                                    vshrn_n_s32(vmlal_n_s16(c_hi, vget_high_s16(d), 516), 8))), v0x80);
+      vst3_u8(reinterpret_cast<uint8_t*>(dst), rgb);
+      dst += 24;
+    }
+  }
+}
+#endif
+
 inline uint8_t nv12_gray(const uint8_t* f, int W, int H, float fx, float fy) {
   // Bilinear on luma, expanded to full range.
   fx = std::clamp(fx, 0.f, W - 1.001f);
@@ -127,22 +214,23 @@ enum class GPU { off, full_graph, one_partition, cached_partition };
 
 class TFLiteModel {
  public:
-  TFLiteModel(const std::string& path, int threads, GPU gpu, std::string cache_dir = {})
+  TFLiteModel(const std::string& path, int threads, GPU gpu, std::string cache_dir = {}, bool prepare_cache = false)
       : name_(std::filesystem::path(path).filename().string()), threads_(threads),
         model_(tflite::FlatBufferModel::BuildFromFile(path.c_str())) {
     if (!model_) throw std::runtime_error("cannot load model: " + name_);
 #ifdef NP1_PLATE_GPU
     bool allow_partial = gpu == GPU::one_partition || gpu == GPU::cached_partition;
-    if (allow_partial && !cache_dir.empty()) {
+    if (!cache_dir.empty()) {
       cache_dir_ = std::move(cache_dir);
       const auto* bytes = static_cast<const uint8_t*>(model_->allocation()->base());
       uint64_t fingerprint = 14695981039346656037ULL;
       for (size_t i = 0; i < model_->allocation()->bytes(); ++i)
         fingerprint = (fingerprint ^ bytes[i]) * 1099511628211ULL;
-      cache_token_ = "np1-detector-fp16-v1-" + std::to_string(fingerprint);
+      cache_token_ = std::string(allow_partial ? "np1-detector-fp16-v1-" : "np1-ocr-fp32-v1-") +
+                     std::to_string(fingerprint);
     }
-    if (gpu == GPU::cached_partition &&
-        (cache_dir_.empty() || !std::filesystem::is_regular_file(cache_marker()))) gpu = GPU::off;
+    const bool has_ready_cache = !cache_dir_.empty() && std::filesystem::is_regular_file(cache_marker());
+    if (gpu == GPU::cached_partition && !has_ready_cache) gpu = GPU::off;
     if (gpu != GPU::off) {
       TfLiteGpuDelegateOptionsV2 options = TfLiteGpuDelegateOptionsV2Default();
       options.experimental_flags = TFLITE_GPU_EXPERIMENTAL_FLAGS_CL_ONLY;
@@ -150,7 +238,9 @@ class TFLiteModel {
       options.inference_preference = TFLITE_GPU_INFERENCE_PREFERENCE_SUSTAINED_SPEED;
       options.inference_priority1 = allow_partial ? TFLITE_GPU_INFERENCE_PRIORITY_MIN_LATENCY
                                                  : TFLITE_GPU_INFERENCE_PRIORITY_MAX_PRECISION;
-      if (!cache_dir_.empty()) {
+      // Only enable serialization when explicitly preparing caches or reading a verified cache,
+      // so a read-only /overlay sandbox never fails trying to write new cache files at runtime.
+      if (!cache_dir_.empty() && (prepare_cache || has_ready_cache)) {
         options.experimental_flags |= TFLITE_GPU_EXPERIMENTAL_FLAGS_ENABLE_SERIALIZATION;
         options.serialization_dir = cache_dir_.c_str();
         options.model_token = cache_token_.c_str();
@@ -164,6 +254,7 @@ class TFLiteModel {
 #else
     (void)gpu;
     (void)cache_dir;
+    (void)prepare_cache;
 #endif
     start_cpu();
   }
@@ -178,7 +269,7 @@ class TFLiteModel {
 #endif
   }
 
-  void mark_cache_ready() const {
+  void mark_cache_ready(bool required = true) const {
 #ifdef NP1_PLATE_GPU
     if (uses_gpu() && !cache_dir_.empty()) {
       // A delegate which cannot serialize a program must use the normal CPU
@@ -194,7 +285,7 @@ class TFLiteModel {
       }
     }
 #endif
-    throw std::runtime_error("detector GPU cache could not be prepared");
+    if (required) throw std::runtime_error("GPU cache could not be prepared: " + name_);
   }
 
   template <typename Fill>
@@ -563,8 +654,9 @@ void fill_reader_input(tflite::Interpreter* interpreter, const uint8_t* frame, i
 class AuxReader {
  public:
   AuxReader(const std::string& path, const json& config, std::vector<Head> heads,
-            int threads, bool use_gpu)
-      : heads_(std::move(heads)), model_(path, threads, use_gpu ? GPU::full_graph : GPU::off) {
+            int threads, bool use_gpu, const std::string& cache_dir = {}, bool prepare_cache = false)
+      : heads_(std::move(heads)),
+        model_(path, threads, use_gpu ? GPU::full_graph : GPU::off, cache_dir, prepare_cache) {
     auto values = config.at("rect").get<std::vector<double>>();
     if (values.size() != 4) throw std::runtime_error("aux reader rect must contain four values");
     std::copy(values.begin(), values.end(), rect_.begin());
@@ -577,6 +669,7 @@ class AuxReader {
   }
 
   bool uses_gpu() const { return model_.uses_gpu(); }
+  void mark_cache_ready() const { model_.mark_cache_ready(false); }
 
   Choice read(const uint8_t* frame, int W, int H, const Box& box) {
     model_.invoke([&](auto* interpreter) { fill_reader_input(interpreter, frame, W, H, box, rect_); });
@@ -619,12 +712,151 @@ struct FrameProfile {
   }
 };
 
+#ifdef NP1_PLATE_MNN_GPU
+uint64_t file_fingerprint(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) throw std::runtime_error("cannot hash model: " + path);
+  uint64_t hash = 14695981039346656037ULL;
+  char buf[65536];
+  while (in.read(buf, sizeof(buf)) || in.gcount() > 0) {
+    const auto n = static_cast<size_t>(in.gcount());
+    for (size_t i = 0; i < n; ++i) hash = (hash ^ static_cast<uint8_t>(buf[i])) * 1099511628211ULL;
+  }
+  return hash;
+}
+
+// Cached fixed-width MNN OpenCL batch runner for Adreno PP-OCR acceleration.
+// In normal operation it loads only from an already-prepared cache file so it
+// never blocks startup or attempts writes inside a read-only /overlay sandbox.
+class MnnGpuBatch {
+ public:
+  MnnGpuBatch(const std::string& model_path, const std::string& cache_dir,
+              int batch, int width, size_t labels, bool prepare_cache)
+      : batch_(batch), width_(width), labels_(labels), prepare_cache_(prepare_cache),
+        model_(MNN::Interpreter::createFromFile(model_path.c_str())) {
+    if (!model_) throw std::runtime_error("cannot open MNN GPU model: " + model_path);
+    if (cache_dir.empty()) throw std::runtime_error("MNN GPU requires cache directory");
+    const std::string token = "np1-ppocr-w8-b" + std::to_string(batch_) + "-w" + std::to_string(width_) +
+                              "-v1-" + std::to_string(file_fingerprint(model_path));
+    cache_file_ = (std::filesystem::path(cache_dir) / (token + ".mnncache")).string();
+    cache_marker_ = (std::filesystem::path(cache_dir) / (token + ".ready")).string();
+    if (!prepare_cache_) {
+      if (!std::filesystem::is_regular_file(cache_marker_) || !std::filesystem::is_regular_file(cache_file_)) {
+        throw std::runtime_error("MNN GPU cache not prepared");
+      }
+      const auto actual_size = std::filesystem::file_size(cache_file_);
+      if (actual_size == 0) throw std::runtime_error("MNN GPU cache is empty");
+      std::ifstream marker(cache_marker_);
+      std::string tag;
+      uintmax_t expected_size = 0;
+      uint64_t expected_hash = 0;
+      if (!(marker >> tag >> expected_size >> expected_hash) || tag != "MNN-OpenCL-v1" ||
+          expected_size != actual_size || expected_hash != file_fingerprint(cache_file_)) {
+        throw std::runtime_error("MNN GPU cache integrity check failed");
+      }
+    }
+    model_->setCacheFile(cache_file_.c_str());
+
+    MNN::BackendConfig bcfg;
+    bcfg.precision = MNN::BackendConfig::Precision_Low;
+    bcfg.power = MNN::BackendConfig::Power_High;
+
+    MNN::ScheduleConfig scfg;
+    scfg.type = MNN_FORWARD_OPENCL;
+    scfg.backupType = MNN_FORWARD_CPU;
+    scfg.numThread = MNN_GPU_TUNING_FAST | MNN_GPU_RECORD_BATCH | MNN_GPU_MEMORY_IMAGE;
+    scfg.backendConfig = &bcfg;
+
+    model_->setSessionMode(MNN::Interpreter::Session_Resize_Defer);
+    session_ = model_->createSession(scfg);
+    if (!session_) throw std::runtime_error("cannot create MNN OpenCL session");
+
+    input_ = model_->getSessionInput(session_, nullptr);
+    model_->resizeTensor(input_, {batch_, 3, 48, width_});
+    model_->resizeSession(session_);
+    output_ = model_->getSessionOutput(session_, nullptr);
+    steps_ = (width_ + 3) / 8;
+    if (!output_ || output_->shape() != std::vector<int>{batch_, steps_, static_cast<int>(labels_)}) {
+      throw std::runtime_error("unexpected MNN PP-OCR output shape");
+    }
+    cpu_in_ = std::make_unique<MNN::Tensor>(input_, MNN::Tensor::CAFFE);
+    cpu_out_ = std::make_unique<MNN::Tensor>(output_, MNN::Tensor::CAFFE);
+
+    std::array<int, 3> backends{-1, -1, -1};
+    model_->getSessionInfo(session_, MNN::Interpreter::BACKENDS, backends.data());
+    if (backends[0] != MNN_FORWARD_OPENCL || backends[1] != -1) {
+      throw std::runtime_error("MNN PP-OCR graph did not stay fully on OpenCL");
+    }
+    if (prepare_cache_) model_->updateCacheFile(session_);
+    std::fill_n(cpu_in_->host<float>(), cpu_in_->elementSize(), 0.0f);
+    input_->copyFromHostTensor(cpu_in_.get());
+    if (model_->runSession(session_) != MNN::NO_ERROR) throw std::runtime_error("MNN GPU warmup failed");
+    output_->copyToHostTensor(cpu_out_.get());
+    if (prepare_cache_) model_->updateCacheFile(session_);
+  }
+
+  int batch() const { return batch_; }
+  int width() const { return width_; }
+  int steps() const { return steps_; }
+
+  void mark_cache_ready() const {
+    if (std::filesystem::is_regular_file(cache_file_)) {
+      const auto size = std::filesystem::file_size(cache_file_);
+      if (size > 0) {
+        std::ofstream marker(cache_marker_);
+        marker << "MNN-OpenCL-v1 " << size << ' ' << file_fingerprint(cache_file_) << '\n' << std::flush;
+        if (marker) return;
+      }
+    }
+    throw std::runtime_error("PP-OCR GPU cache could not be prepared");
+  }
+
+  std::vector<float> run_batch(const std::vector<std::vector<float>>& inputs) {
+    std::lock_guard<std::mutex> lk(mu_);
+    const size_t one_in = static_cast<size_t>(3) * 48 * width_;
+    const size_t one_out = static_cast<size_t>(steps_) * labels_;
+    std::vector<float> out(inputs.size() * one_out);
+    float* dst = cpu_in_->host<float>();
+    const size_t bsz = static_cast<size_t>(batch_);
+    for (size_t offset = 0; offset < inputs.size(); offset += bsz) {
+      const size_t count = std::min(bsz, inputs.size() - offset);
+      for (size_t i = 0; i < count; ++i) {
+        std::memcpy(dst + i * one_in, inputs[offset + i].data(), one_in * sizeof(float));
+      }
+      for (size_t i = count; i < bsz; ++i) {
+        std::memset(dst + i * one_in, 0, one_in * sizeof(float));
+      }
+      input_->copyFromHostTensor(cpu_in_.get());
+      if (model_->runSession(session_) != MNN::NO_ERROR) throw std::runtime_error("MNN GPU inference failed");
+      output_->copyToHostTensor(cpu_out_.get());
+      std::memcpy(out.data() + offset * one_out, cpu_out_->host<float>(), count * one_out * sizeof(float));
+    }
+    return out;
+  }
+
+ private:
+  int batch_, width_, steps_;
+  size_t labels_;
+  bool prepare_cache_;
+  std::string cache_file_, cache_marker_;
+  std::unique_ptr<MNN::Interpreter> model_;
+  MNN::Session* session_ = nullptr;
+  MNN::Tensor* input_ = nullptr;
+  MNN::Tensor* output_ = nullptr;
+  std::unique_ptr<MNN::Tensor> cpu_in_, cpu_out_;
+  std::mutex mu_;
+};
+#endif
+
 class TextOCR {
  public:
   TextOCR(const std::string& model_path, const std::string& fast_path, const std::string& dictionary_path, const json& config,
-          const std::vector<std::string>& regions, const std::vector<std::string>& kana)
+          const std::vector<std::string>& regions, const std::vector<std::string>& kana,
+          bool use_gpu = false, const std::string& gpu_cache = {}, bool prepare_cache = false,
+          float min_confidence = 0.3f)
       : threads_(std::clamp(config.value("cpuThreads", 2), 1, 4)),
         fast_max_width_(std::clamp(config.value("fastMaxInputWidth", 512), 64, 512)),
+        min_confidence_(std::clamp(min_confidence, 0.0f, 0.99f)),
         regions_(regions.begin(), regions.end()), kana_(kana.begin(), kana.end()) {
     std::ifstream dictionary_file(dictionary_path);
     if (!dictionary_file) throw std::runtime_error("cannot open PP-OCR dictionary");
@@ -643,11 +875,48 @@ class TextOCR {
       }
     }
     if (!session_) open(model_path);
+#ifdef NP1_PLATE_MNN_GPU
+    const char* ppocr_env = std::getenv("NCC_PLATE_PPOCR");
+    const bool allow_gpu = use_gpu && (!ppocr_env || (std::strcmp(ppocr_env, "original") != 0 && std::strcmp(ppocr_env, "cpu") != 0));
+    const auto gpu_file = config.value("gpuFile", std::string{});
+    if (allow_gpu && !gpu_file.empty() && !gpu_cache.empty()) {
+      const auto gpu_path = (std::filesystem::path(dictionary_path).parent_path() / gpu_file).string();
+      if (std::filesystem::is_regular_file(gpu_path)) {
+        const int gpu_width = std::clamp(config.value("gpuWidth", 64), 32, 128);
+        const int gpu_batch = std::clamp(config.value("gpuBatch", 3), 1, 4);
+        try {
+          gpu_batch_ = std::make_unique<MnnGpuBatch>(gpu_path, gpu_cache, gpu_batch, gpu_width,
+                                                     dictionary_.size(), prepare_cache);
+        } catch (const std::exception& error) {
+          if (prepare_cache) throw;
+          std::fprintf(stderr, "plate-engine: PP-OCR GPU disabled, using CPU: %s\n", error.what());
+          gpu_batch_.reset();
+        }
+      }
+    }
+#else
+    (void)use_gpu;
+    (void)gpu_cache;
+    (void)prepare_cache;
+#endif
     region_lexicon_ = CtcLexicon(dictionary_, regions, false);
     kana_lexicon_ = CtcLexicon(dictionary_, kana, true);
   }
 
   bool uses_int8() const { return !fallback_path_.empty(); }
+  bool uses_gpu() const {
+#ifdef NP1_PLATE_MNN_GPU
+    return static_cast<bool>(gpu_batch_);
+#else
+    return false;
+#endif
+  }
+
+  void mark_gpu_cache_ready() const {
+#ifdef NP1_PLATE_MNN_GPU
+    if (gpu_batch_) gpu_batch_->mark_cache_ready();
+#endif
+  }
 
   template <typename ReadKana, typename ReadClass>
   json refine(const uint8_t* frame, int W, int H, const Box& box,
@@ -672,22 +941,219 @@ class TextOCR {
       open(original);
       return recognize();
     }
+#ifdef NP1_PLATE_MNN_GPU
+    catch (const std::exception& error) {
+      if (!gpu_batch_) throw;
+      std::fprintf(stderr, "plate-engine: PP-OCR GPU inference failed, falling back to CPU: %s\n", error.what());
+      gpu_batch_.reset();
+      return recognize();
+    }
+#endif
   }
 
  private:
+  struct Candidate { std::string text; float score = 0; };
+
+  OCRText decode_probs(const float* values, int steps) const {
+    OCRText decoded;
+    int previous = -1;
+    float maximum = 0;
+    for (int t = 0; t <= steps; ++t) {
+      int index = -1;
+      float score = 0;
+      if (t < steps) {
+        index = 0;
+        for (size_t i = 1; i < dictionary_.size(); ++i)
+          if (values[t * dictionary_.size() + i] > values[t * dictionary_.size() + index]) index = static_cast<int>(i);
+        score = values[t * dictionary_.size() + index];
+      }
+      if (index != previous) {
+        if (previous > 0) {
+          for (auto token : utf8_tokens(dictionary_[previous])) {
+            token = canonical_token(token);
+            if (token != " " && token != "\t" && token != "\n") {
+              decoded.tokens.push_back(token);
+              decoded.scores.push_back(maximum);
+            }
+          }
+        }
+        previous = index;
+        maximum = score;
+      } else maximum = std::max(maximum, score);
+    }
+    return decoded;
+  }
+
+  std::string match_region_context_text(const OCRText& value, const std::string& classification) const {
+    for (const auto& region : regions_) {
+      auto region_tokens = utf8_tokens(region);
+      if (value.tokens.size() < region_tokens.size() + classification.size()) continue;
+      bool match = true;
+      double log_probability = 0;
+      for (size_t i = 0; i < region_tokens.size(); ++i) {
+        if (canonical_token(value.tokens[i]) != region_tokens[i] || value.scores[i] < .85f) match = false;
+        log_probability += std::log(std::max(1e-30f, value.scores[i]));
+      }
+      if (!match || std::exp(log_probability / region_tokens.size()) < .95) continue;
+      for (size_t i = 0; i < classification.size(); ++i) {
+        size_t at = region_tokens.size() + i;
+        if (value.tokens[at] != classification.substr(i, 1) || value.scores[at] < .98f) match = false;
+      }
+      if (match) return region;
+    }
+    return {};
+  }
+
+#ifdef NP1_PLATE_MNN_GPU
+  std::vector<float> make_fixed_input(const uint8_t* frame, int W, int H, const Box& box,
+                                      const std::array<double, 4>& rect, int width) const {
+    int x0 = std::max(0, static_cast<int>(rect[0] * box.w));
+    int y0 = std::max(0, static_cast<int>(rect[1] * box.h));
+    int x1 = std::min(static_cast<int>(box.w), std::max(x0 + 1, static_cast<int>(rect[2] * box.w)));
+    int y1 = std::min(static_cast<int>(box.h), std::max(y0 + 1, static_cast<int>(rect[3] * box.h)));
+    int crop_width = x1 - x0, crop_height = y1 - y0;
+    int content_width = std::clamp(static_cast<int>(std::lround(48.0 * crop_width / crop_height)), 8, width);
+    size_t plane = static_cast<size_t>(48) * width;
+    std::vector<float> input(3 * plane, 0.0f);
+    uint8_t rgb[3];
+    for (int y = 0; y < 48; ++y) {
+      float sy = std::clamp((y + .5f) * crop_height / 48.f - .5f, 0.f, crop_height - 1.f);
+      for (int x = 0; x < content_width; ++x) {
+        float sx = std::clamp((x + .5f) * crop_width / content_width - .5f, 0.f, crop_width - 1.f);
+        nv12_rgb(frame, W, H, static_cast<int>(box.x) + x0 + static_cast<int>(std::lround(sx)),
+                 static_cast<int>(box.y) + y0 + static_cast<int>(std::lround(sy)), rgb);
+        for (int c = 0; c < 3; ++c) input[c * plane + static_cast<size_t>(y) * width + x] = rgb[c] / 127.5f - 1.f;
+      }
+    }
+    return input;
+  }
+
+  std::vector<float> run_gpu_rects(const uint8_t* frame, int W, int H, const Box& box,
+                                   const std::vector<std::array<double, 4>>& rects) {
+    const auto t_in = ProfileClock::now();
+    std::vector<std::vector<float>> batch_in;
+    batch_in.reserve(rects.size());
+    for (const auto& rect : rects) batch_in.push_back(make_fixed_input(frame, W, H, box, rect, gpu_batch_->width()));
+    const auto t_run = ProfileClock::now();
+    auto probs = gpu_batch_->run_batch(batch_in);
+    const double run_ms = elapsed_ms(t_run);
+    const double in_ms = std::chrono::duration<double, std::milli>(t_run - t_in).count();
+    {
+      std::lock_guard<std::mutex> lk(prof_mu_);
+      if (profile_) {
+        profile_->input += in_ms;
+        profile_->onnx += run_ms;
+        profile_->calls += static_cast<int>(rects.size());
+      }
+    }
+    return probs;
+  }
+
+  LexMatch lex_gpu_batch(const uint8_t* frame, int W, int H, const Box& box,
+                         const std::vector<std::array<double, 4>>& rects, const CtcLexicon& lexicon,
+                         const std::string& known, double threshold) {
+    auto probs = run_gpu_rects(frame, W, H, box, rects);
+    const int steps = gpu_batch_->steps();
+    const size_t stride = static_cast<size_t>(steps) * dictionary_.size();
+    if (probs.size() < rects.size() * stride) throw std::runtime_error("MNN GPU batch output truncated");
+    LexMatch best;
+    std::set<std::string> strong;
+    for (size_t i = 0; i < rects.size(); ++i) {
+      LexMatch match = lexicon.score(probs.data() + i * stride, steps, static_cast<int>(dictionary_.size()));
+      if (match.posterior < .9) continue;
+      if (!known.empty() && match.text == known && match.likelihood >= std::max(.6, threshold)) return match;
+      if (match.likelihood >= .6) strong.insert(match.text);
+      if (known.empty() && strong.size() > 1) return {};
+      if (match.likelihood > best.likelihood) best = match;
+    }
+    return strong.size() > 1 ? LexMatch{} : best;
+  }
+
+  std::string region_context_gpu(const uint8_t* frame, int W, int H, const Box& box,
+                                 const std::string& classification,
+                                 const std::vector<std::array<double, 4>>& rects) {
+    if (rects.size() < 2) return {};
+    auto probs = run_gpu_rects(frame, W, H, box, rects);
+    const int steps = gpu_batch_->steps();
+    const size_t stride = static_cast<size_t>(steps) * dictionary_.size();
+    if (probs.size() < 2 * stride) throw std::runtime_error("MNN GPU context output truncated");
+    std::string first = match_region_context_text(decode_probs(probs.data(), steps), classification);
+    if (first.empty()) return {};
+    return first == match_region_context_text(decode_probs(probs.data() + stride, steps), classification) ? first : "";
+  }
+#endif
+
   template <typename ReadKana, typename ReadClass>
   json refine_once(const uint8_t* frame, int W, int H, const Box& box,
                    const Choice& base_class, const Choice& base_kana, const Choice& base_serial,
                    ReadKana read_kana, ReadClass read_class) {
     static const std::vector<std::array<double, 4>> region_rects{{{.194, 0, .519, .325}}, {{.15, 0, .53, .37}}, {{.12, 0, .56, .42}}};
     static const std::vector<std::array<double, 4>> kana_rects{{{.02, .52, .195, .84}}, {{.015, .47, .215, .88}}, {{.04, .42, .18, .95}}};
-    LexMatch region_match = lex(frame, W, H, box, region_rects, region_lexicon_, "", region_threshold_);
-    std::string region = region_match.likelihood >= region_threshold_ ? region_match.text : "";
     std::string classification = base_class.confidence >= .6f ? base_class.text : "";
     std::string kana = base_kana.confidence >= .6f ? base_kana.text : "";
     std::string serial = base_serial.text;
     float serial_confidence = base_serial.confidence;
-    LexMatch kana_match = lex(frame, W, H, box, kana_rects, kana_lexicon_, kana, kana_threshold_);
+
+    auto resolve_number = [&]() {
+      Candidate number = number_candidate(frame, W, H, box, {.195, .34, 1, 1});
+      if (number.score >= .98f) {
+        if (serial_confidence < .6f && number.text.size() == base_serial.text.size()) {
+          serial = number.text;
+          serial_confidence = number.score;
+        } else if (serial_confidence >= .6f && number.text != serial) {
+          Candidate second = number_candidate(frame, W, H, box, {.215, .38, 1, .98});
+          if (second.score >= .98f && second.text == number.text && number.text.size() == base_serial.text.size()) {
+            serial = number.text;
+            serial_confidence = std::min(number.score, second.score);
+          } else serial_confidence = 0;
+        }
+      }
+    };
+
+    // Skip expensive region/kana/night-context passes only when serial confidence
+    // remains below the configured recording floor (min_confidence_) after PP-OCR
+    // serial recovery/verification.
+    bool number_done = false;
+    if (min_confidence_ > 0.0f && serial_confidence < min_confidence_) {
+      resolve_number();
+      number_done = true;
+      if (serial_confidence < min_confidence_) {
+        return {{"region", ""}, {"class", classification}, {"kana", kana}, {"number", serial}, {"confidence", serial_confidence}};
+      }
+    }
+
+    LexMatch region_match;
+    LexMatch kana_match;
+#ifdef NP1_PLATE_MNN_GPU
+    if (gpu_batch_) {
+      // Run Adreno GPU (region batch-3) and Kryo CPU (number + kana) in parallel.
+      auto region_future = std::async(std::launch::async, [&] {
+        return lex_gpu_batch(frame, W, H, box, region_rects, region_lexicon_, "", region_threshold_);
+      });
+      if (!number_done) {
+        resolve_number();
+        number_done = true;
+      }
+      if (min_confidence_ <= 0.0f || serial_confidence >= min_confidence_) {
+        kana_match = lex(frame, W, H, box, kana_rects, kana_lexicon_, kana, kana_threshold_);
+      }
+      region_match = region_future.get();
+    } else
+#endif
+    {
+      region_match = lex(frame, W, H, box, region_rects, region_lexicon_, "", region_threshold_);
+      kana_match = lex(frame, W, H, box, kana_rects, kana_lexicon_, kana, kana_threshold_);
+      if (!number_done) {
+        resolve_number();
+        number_done = true;
+      }
+    }
+
+    if (min_confidence_ > 0.0f && serial_confidence < min_confidence_) {
+      return {{"region", ""}, {"class", classification}, {"kana", kana}, {"number", serial}, {"confidence", serial_confidence}};
+    }
+
+    std::string region = region_match.likelihood >= region_threshold_ ? region_match.text : "";
     if (kana_match.likelihood >= kana_threshold_) kana = kana_match.text;
     else if (!kana.empty() && kana_match.likelihood >= .6 && kana_match.text != kana) kana.clear();
     else if (kana.empty()) {
@@ -698,31 +1164,34 @@ class TextOCR {
       auto trained = read_class();
       if (trained.confidence >= .98f && trained.text == base_class.text) classification = trained.text;
     }
-    Candidate number = number_candidate(frame, W, H, box, {.195, .34, 1, 1});
-    if (number.score >= .98f) {
-      if (serial_confidence < .6f && number.text.size() == base_serial.text.size()) {
-        serial = number.text;
-        serial_confidence = number.score;
-      } else if (serial_confidence >= .6f && number.text != serial) {
-        Candidate second = number_candidate(frame, W, H, box, {.215, .38, 1, .98});
-        if (second.score >= .98f && second.text == number.text && number.text.size() == base_serial.text.size()) {
-          serial = number.text;
-          serial_confidence = std::min(number.score, second.score);
-        } else serial_confidence = 0;
-      }
-    }
     if (night_fallback_) {
-      if (region.empty() && !classification.empty()) {
-        region = region_context(frame, W, H, box, classification, {{{.14, .055, .92, .365}}, {{.08, 0, .94, .4}}});
-        if (region.empty()) region = region_context(frame, W, H, box, classification, {{{.08, 0, .95, .48}}, {{.08, 0, .95, .55}}});
-      }
-      if (kana.empty() && serial_confidence >= .6f)
+      const bool need_reg_ctx = region.empty() && !classification.empty();
+      const bool need_kana_ctx = kana.empty() && serial_confidence >= .6f;
+#ifdef NP1_PLATE_MNN_GPU
+      if (gpu_batch_ && need_reg_ctx && need_kana_ctx) {
+        auto reg_future = std::async(std::launch::async, [&] {
+          std::string r = region_context_gpu(frame, W, H, box, classification, {{{.14, .055, .92, .365}}, {{.08, 0, .94, .4}}});
+          if (r.empty()) r = region_context_gpu(frame, W, H, box, classification, {{{.08, 0, .95, .48}}, {{.08, 0, .95, .55}}});
+          return r;
+        });
         kana = kana_context(frame, W, H, box, serial, {{{0, .34, 1, 1}}, {{.015, .40, .99, .98}}});
+        region = reg_future.get();
+      } else if (gpu_batch_ && need_reg_ctx) {
+        region = region_context_gpu(frame, W, H, box, classification, {{{.14, .055, .92, .365}}, {{.08, 0, .94, .4}}});
+        if (region.empty()) region = region_context_gpu(frame, W, H, box, classification, {{{.08, 0, .95, .48}}, {{.08, 0, .95, .55}}});
+      } else
+#endif
+      {
+        if (need_reg_ctx) {
+          region = region_context(frame, W, H, box, classification, {{{.14, .055, .92, .365}}, {{.08, 0, .94, .4}}});
+          if (region.empty()) region = region_context(frame, W, H, box, classification, {{{.08, 0, .95, .48}}, {{.08, 0, .95, .55}}});
+        }
+        if (need_kana_ctx)
+          kana = kana_context(frame, W, H, box, serial, {{{0, .34, 1, 1}}, {{.015, .40, .99, .98}}});
+      }
     }
     return {{"region", region}, {"class", classification}, {"kana", kana}, {"number", serial}, {"confidence", serial_confidence}};
   }
-
-  struct Candidate { std::string text; float score = 0; };
 
   void open(const std::string& path) {
     Ort::SessionOptions options;
@@ -764,10 +1233,15 @@ class TextOCR {
     const char* outputs[] = {output_name_.c_str()};
     const auto run_start = ProfileClock::now();
     auto result = session_->Run(Ort::RunOptions{nullptr}, inputs, &tensor, 1, outputs, 1);
-    if (profile_) {
-      profile_->input += std::chrono::duration<double, std::milli>(run_start - start).count();
-      profile_->onnx += elapsed_ms(run_start);
-      ++profile_->calls;
+    {
+#ifdef NP1_PLATE_MNN_GPU
+      std::lock_guard<std::mutex> lk(prof_mu_);
+#endif
+      if (profile_) {
+        profile_->input += std::chrono::duration<double, std::milli>(run_start - start).count();
+        profile_->onnx += elapsed_ms(run_start);
+        ++profile_->calls;
+      }
     }
     auto info = result[0].GetTensorTypeAndShapeInfo();
     auto output_shape = info.GetShape();
@@ -780,34 +1254,7 @@ class TextOCR {
   OCRText text(const uint8_t* frame, int W, int H, const Box& box, const std::array<double, 4>& rect) {
     int steps = 0;
     const auto result = infer(frame, W, H, box, rect, steps);
-    const float* values = result.GetTensorData<float>();
-    OCRText decoded;
-    int previous = -1;
-    float maximum = 0;
-    for (int t = 0; t <= steps; ++t) {
-      int index = -1;
-      float score = 0;
-      if (t < steps) {
-        index = 0;
-        for (size_t i = 1; i < dictionary_.size(); ++i)
-          if (values[t * dictionary_.size() + i] > values[t * dictionary_.size() + index]) index = static_cast<int>(i);
-        score = values[t * dictionary_.size() + index];
-      }
-      if (index != previous) {
-        if (previous > 0) {
-          for (auto token : utf8_tokens(dictionary_[previous])) {
-            token = canonical_token(token);
-            if (token != " " && token != "\t" && token != "\n") {
-              decoded.tokens.push_back(token);
-              decoded.scores.push_back(maximum);
-            }
-          }
-        }
-        previous = index;
-        maximum = score;
-      } else maximum = std::max(maximum, score);
-    }
-    return decoded;
+    return decode_probs(result.GetTensorData<float>(), steps);
   }
 
   LexMatch lex(const uint8_t* frame, int W, int H, const Box& box,
@@ -842,24 +1289,7 @@ class TextOCR {
                              const std::string& classification,
                              const std::vector<std::array<double, 4>>& rects) {
     auto decode = [&](const std::array<double, 4>& rect) {
-      OCRText value = text(frame, W, H, box, rect);
-      for (const auto& region : regions_) {
-        auto region_tokens = utf8_tokens(region);
-        if (value.tokens.size() < region_tokens.size() + classification.size()) continue;
-        bool match = true;
-        double log_probability = 0;
-        for (size_t i = 0; i < region_tokens.size(); ++i) {
-          if (canonical_token(value.tokens[i]) != region_tokens[i] || value.scores[i] < .85f) match = false;
-          log_probability += std::log(std::max(1e-30f, value.scores[i]));
-        }
-        if (!match || std::exp(log_probability / region_tokens.size()) < .95) continue;
-        for (size_t i = 0; i < classification.size(); ++i) {
-          size_t at = region_tokens.size() + i;
-          if (value.tokens[at] != classification.substr(i, 1) || value.scores[at] < .98f) match = false;
-        }
-        if (match) return region;
-      }
-      return std::string{};
+      return match_region_context_text(text(frame, W, H, box, rect), classification);
     };
     if (rects.size() < 2) return {};
     std::string first = decode(rects[0]);
@@ -901,12 +1331,17 @@ class TextOCR {
   std::string input_name_, output_name_, fallback_path_;
   const int threads_;
   const int fast_max_width_;
+  const float min_confidence_;
   std::vector<std::string> dictionary_;
   std::set<std::string> regions_, kana_;
   CtcLexicon region_lexicon_, kana_lexicon_;
   double region_threshold_ = .6, kana_threshold_ = .6;
   bool night_fallback_ = false;
   FrameProfile* profile_ = nullptr;
+#ifdef NP1_PLATE_MNN_GPU
+  std::unique_ptr<MnnGpuBatch> gpu_batch_;
+  std::mutex prof_mu_;
+#endif
 };
 
 float iou(const Box& a, const Box& b) {
@@ -919,9 +1354,10 @@ float iou(const Box& a, const Box& b) {
 class Engine {
  public:
   Engine(const std::string& det, const std::string& ocr, const Config& cfg, int threads,
-         GPU detector_gpu, bool use_gpu, const std::string& gpu_cache)
-      : cfg_(cfg), threads_(threads), det_(det, threads, detector_gpu, gpu_cache),
-        ocr_(ocr, threads, use_gpu ? GPU::full_graph : GPU::off) {
+         GPU detector_gpu, bool use_gpu, const std::string& gpu_cache, bool prepare_cache = false,
+         float min_confidence = 0.3f)
+      : cfg_(cfg), threads_(threads), det_(det, threads, detector_gpu, gpu_cache, prepare_cache),
+        ocr_(ocr, threads, use_gpu ? GPU::full_graph : GPU::off, gpu_cache, prepare_cache) {
     auto* in = det_->tensor(det_->inputs()[0]);
     if (in->dims->size != 4 || in->dims->data[3] != 3) throw std::runtime_error("detector input must be NHWC RGB");
     dh_ = in->dims->data[1];
@@ -949,12 +1385,12 @@ class Engine {
     if (cfg_.field_readers.contains("kana")) {
       auto spec = cfg_.field_readers.at("kana");
       aux_kana_ = std::make_unique<AuxReader>((std::filesystem::path(cfg_.model_dir) / spec.at("file").get<std::string>()).string(),
-                                               spec, kana_heads, threads, use_gpu);
+                                               spec, kana_heads, threads, use_gpu, gpu_cache, prepare_cache);
     }
     if (cfg_.field_readers.contains("classification")) {
       auto spec = cfg_.field_readers.at("classification");
       aux_class_ = std::make_unique<AuxReader>((std::filesystem::path(cfg_.model_dir) / spec.at("file").get<std::string>()).string(),
-                                                 spec, class_heads, threads, use_gpu);
+                                                 spec, class_heads, threads, use_gpu, gpu_cache, prepare_cache);
     }
     if (!cfg_.text_ocr.is_null() && !cfg_.text_ocr.empty()) {
       auto model = (std::filesystem::path(cfg_.model_dir) / cfg_.text_ocr.at("file").get<std::string>()).string();
@@ -963,7 +1399,8 @@ class Engine {
       const char* ppocr = std::getenv("NCC_PLATE_PPOCR");
       if (ppocr && std::strcmp(ppocr, "original") == 0) fast.clear();
       if (!fast.empty()) fast = (std::filesystem::path(cfg_.model_dir) / fast).string();
-      text_ocr_ = std::make_unique<TextOCR>(model, fast, dictionary, cfg_.text_ocr, regions, kana);
+      text_ocr_ = std::make_unique<TextOCR>(model, fast, dictionary, cfg_.text_ocr, regions, kana,
+                                            use_gpu, gpu_cache, prepare_cache, min_confidence);
     }
   }
 
@@ -1002,7 +1439,13 @@ class Engine {
   void prepare_gpu_cache() {
     std::vector<uint8_t> frame(1920 * 1080 * 3 / 2, 128);
     detect(frame.data(), 1920, 1080);
-    det_.mark_cache_ready();
+    det_.mark_cache_ready(true);
+    Box b{800, 600, 200, 100, 1};
+    read(frame.data(), 1920, 1080, b, false);
+    ocr_.mark_cache_ready(false);
+    if (aux_kana_) aux_kana_->mark_cache_ready();
+    if (aux_class_) aux_class_->mark_cache_ready();
+    if (text_ocr_) text_ocr_->mark_gpu_cache_ready();
   }
 
   bool latest_models() const { return aux_kana_ && aux_class_ && text_ocr_; }
@@ -1013,7 +1456,10 @@ class Engine {
     if (ocr_.uses_gpu()) name += " + gpu ocr";
     if (aux_kana_ && aux_kana_->uses_gpu()) name += " + gpu kana";
     if (aux_class_ && aux_class_->uses_gpu()) name += " + gpu class";
-    if (text_ocr_) name += text_ocr_->uses_int8() ? " + onnx int8 cpu" : " + onnx cpu";
+    if (text_ocr_) {
+      if (text_ocr_->uses_gpu()) name += " + gpu ppocr";
+      name += text_ocr_->uses_int8() ? " + onnx int8 cpu" : " + onnx cpu";
+    }
     return name;
   }
 
@@ -1024,7 +1470,20 @@ class Engine {
     float s = std::min(static_cast<float>(dw_) / rw, static_cast<float>(dh_) / rh);
     float px = (dw_ - rw * s) / 2, py = (dh_ - rh * s) / 2;
     det_.invoke([&](auto* interpreter) {
-      InputWriter in{interpreter->tensor(interpreter->inputs()[0])};
+      TfLiteTensor* t = interpreter->tensor(interpreter->inputs()[0]);
+#if defined(__aarch64__)
+      if ((rx & 1) == 0 && rw == dw_ * 2 && rh == dh_ * 2 && (dw_ % 8) == 0) {
+        if (t->type == kTfLiteFloat32) {
+          fill_det_neon_half_f32(f, W, H, rx, ry, dw_, dh_, t->data.f);
+          return;
+        }
+        if (t->type == kTfLiteInt8 && std::fabs(t->params.scale - (1.f / 255.f)) < 1e-6f && t->params.zero_point == -128) {
+          fill_det_neon_half_int8(f, W, H, rx, ry, dw_, dh_, t->data.int8);
+          return;
+        }
+      }
+#endif
+      InputWriter in{t};
       uint8_t rgb[3];
       for (int y = 0; y < dh_; ++y) {
         for (int x = 0; x < dw_; ++x) {
@@ -1209,6 +1668,7 @@ int main(int argc, char** argv) {
 
   std::string det, ocr, conf, gpu_cache;
   int threads = 2, bench = 0;
+  float min_confidence = 0.3f;
   bool use_gpu = access("/dev/kgsl-3d0", R_OK | W_OK) == 0;
   GPU detector_gpu = GPU::cached_partition;
   bool prepare_gpu_cache = false;
@@ -1220,6 +1680,7 @@ int main(int argc, char** argv) {
     else if (k == "--ocr") ocr = v;
     else if (k == "--config") conf = v;
     else if (k == "--threads") threads = std::clamp(std::atoi(v.c_str()), 1, 4);
+    else if (k == "--min-confidence") min_confidence = std::clamp(std::strtof(v.c_str(), nullptr), 0.0f, 0.99f);
     else if (k == "--bench") bench = std::clamp(std::atoi(v.c_str()), 1, 1000);
     else if (k == "--profile") profile_frames = v == "1";
     else if (k == "--backend" && v == "cpu") use_gpu = false;
@@ -1239,7 +1700,8 @@ int main(int argc, char** argv) {
     if (gpu_cache.empty() && detector_gpu == GPU::cached_partition)
       gpu_cache = (std::filesystem::path(det).parent_path().parent_path() / "opencl-cache").string();
     engine = std::make_unique<Engine>(det, ocr, load_config(conf), threads,
-                                     use_gpu ? detector_gpu : GPU::off, use_gpu && !prepare_gpu_cache, gpu_cache);
+                                     use_gpu ? detector_gpu : GPU::off, use_gpu, gpu_cache, prepare_gpu_cache,
+                                     min_confidence);
     if (prepare_gpu_cache) engine->prepare_gpu_cache();
   } catch (const std::exception& e) {
     emit({{"ready", false}, {"error", e.what()}});

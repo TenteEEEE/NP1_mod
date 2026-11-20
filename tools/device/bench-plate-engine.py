@@ -26,6 +26,8 @@ MODEL_FILES = (
     "ppocrv6_rec.onnx", "ppocr-dictionary.json", "plate-model.json",
 )
 FAST_TEXT_MODEL = "ppocrv6_rec_np1_int8.onnx"
+GPU_TEXT_MODEL = "ppocrv6_rec_np1_w8.mnn"
+OPTIONAL_MODELS = (FAST_TEXT_MODEL, GPU_TEXT_MODEL)
 WIDTH, HEIGHT = 1920, 1080
 FRAME_BYTES = WIDTH * HEIGHT * 3 // 2
 
@@ -47,7 +49,7 @@ def make_frames(path):
 
 
 def stage_models(device, local, remote, *, shared=None):
-    names = (*MODEL_FILES, FAST_TEXT_MODEL) if (local / FAST_TEXT_MODEL).is_file() else MODEL_FILES
+    names = (*MODEL_FILES, *(name for name in OPTIONAL_MODELS if (local / name).is_file()))
     for name in names:
         target = remote + "/" + name
         if shared and (shared[0] / name).is_file() and filecmp.cmp(local / name, shared[0] / name, shallow=False):

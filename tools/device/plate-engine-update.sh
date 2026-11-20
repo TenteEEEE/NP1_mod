@@ -13,6 +13,7 @@ OWNER_UNIT=$BASE/units/$SERVICE
 ENGINE=$PLATE/plate-engine
 RUNTIME=$PLATE/libonnxruntime.so.1.30.0
 WORKER=$PLATE/ncc-worker
+MODELS=$PLATE/models
 CACHE=$PLATE/opencl-cache
 PREPARE=${3:-}
 
@@ -26,7 +27,7 @@ test "${#suffix}" -eq 8 && test "$BACKUP" = "$BASE/recovery/plate-update-$suffix
 test -d "$BACKUP" && test ! -L "$BACKUP" || exit 1
 test -f "$UNIT" && test ! -L "$UNIT" && test "$UNIT" -ef "/overlay$UNIT" || exit 1
 test ! -L "$OWNER_UNIT" && test ! -L "$PLATE" && test ! -L "$ENGINE" &&
-    test ! -L "$RUNTIME" && test ! -L "$CACHE" && test ! -L "$WORKER" || exit 1
+    test ! -L "$RUNTIME" && test ! -L "$CACHE" && test ! -L "$WORKER" && test ! -L "$MODELS" || exit 1
 case "$PREPARE" in ''|prepare-detector) ;; *) exit 1 ;; esac
 exec 9>"$BASE/recovery/.plate-engine-update.lock"
 flock -n 9
@@ -64,6 +65,10 @@ restore() {
             rm -f "$WORKER" || return 1
         fi
     fi
+    if test -f "$BACKUP/models-update" && test ! -d "$BACKUP/next-models" && test -d "$MODELS"; then
+        mv "$MODELS" "$BACKUP/next-models" || return 1
+    fi
+    if test -d "$BACKUP/previous-models"; then mv "$BACKUP/previous-models" "$MODELS" || return 1; fi
     if test -f "$BACKUP/cache-update" && test ! -d "$BACKUP/next-cache" && test -d "$CACHE"; then
         mv "$CACHE" "$BACKUP/next-cache" || return 1
     fi
@@ -106,6 +111,7 @@ capture_stock > "$BACKUP/stock-before"
 if systemctl is-active --quiet "$SERVICE"; then touch "$BACKUP/was-active"; fi
 
 prepare_cache() (
+    target_models=$1
     work=$(mktemp -d /run/np1-plate-prepare-XXXXXXXX)
     trap 'rm -f "$work/plate-engine" "$work/libonnxruntime.so.1"; rmdir "$work"' 0
     cp -p "$BACKUP/plate/plate-engine" "$work/plate-engine"
@@ -120,17 +126,27 @@ prepare_cache() (
         else
             set -- timeout "$limit" "$work/plate-engine" "$@"
         fi
-        "$@" --detector "$PLATE/models/detector.tflite" --ocr "$PLATE/models/ocr.tflite" \
-            --config "$PLATE/models/plate-model.json"
+        "$@" --detector "$target_models/detector.tflite" --ocr "$target_models/ocr.tflite" \
+            --config "$target_models/plate-model.json"
     }
-    run_engine 150 --prepare-gpu-cache "$BACKUP/next-cache" > "$BACKUP/cache-preparation.json"
+    run_engine 180 --prepare-gpu-cache "$BACKUP/next-cache" > "$BACKUP/cache-preparation.json"
     run_engine 25 --gpu-cache "$BACKUP/next-cache" --bench 1 > "$BACKUP/cache-readback.json"
     grep -Fq 'gpu detector' "$BACKUP/cache-readback.json"
+    if grep -Fq '"gpuFile"' "$target_models/plate-model.json"; then
+        grep -Fq 'gpu ppocr' "$BACKUP/cache-readback.json"
+    fi
     grep -Fq '"bench":' "$BACKUP/cache-readback.json"
 )
+TARGET_MODELS=$MODELS
+if test -d "$BACKUP/plate/models"; then
+    chmod 0755 "$BACKUP/plate/models"
+    if test -d "$BACKUP/plate/models/notices"; then chmod 0755 "$BACKUP/plate/models/notices"; fi
+    find "$BACKUP/plate/models" -type f -exec chmod 0644 {} +
+    TARGET_MODELS=$BACKUP/plate/models
+fi
 if test "$PREPARE" = prepare-detector; then
-    echo "Preparing the Adreno detector before the worker update"
-    prepare_cache
+    echo "Preparing the Adreno OpenCL caches before the worker update"
+    prepare_cache "$TARGET_MODELS"
 fi
 
 # Preserve the installed unit's ownership and sandbox, including owner recovery
@@ -156,6 +172,12 @@ finish() {
 }
 trap finish 0
 systemctl stop "$SERVICE"
+if test -d "$BACKUP/plate/models"; then
+    touch "$BACKUP/models-update"
+    cp -a "$BACKUP/plate/models" "$BACKUP/next-models"
+    if test -d "$MODELS"; then mv "$MODELS" "$BACKUP/previous-models"; fi
+    mv "$BACKUP/next-models" "$MODELS"
+fi
 if test "$PREPARE" = prepare-detector; then
     touch "$BACKUP/cache-update"
     if test -d "$CACHE"; then mv "$CACHE" "$BACKUP/previous-cache"; fi

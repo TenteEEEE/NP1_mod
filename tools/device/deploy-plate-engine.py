@@ -11,12 +11,21 @@ ROOT = Path(__file__).resolve().parents[2]
 RECOVERY = "/overlay/owner-apps/np1-control/recovery"
 
 
+MODEL_FILES = (
+    "detector.tflite", "ocr.tflite", "ocr-kana.tflite", "ocr-classification.tflite",
+    "ppocrv6_rec.onnx", "ppocrv6_rec_np1_int8.onnx", "ppocrv6_rec_np1_w8.mnn",
+    "plate-model.json", "ppocr-dictionary.json", "model-manifest.json",
+    "README.md", "LICENSING.md", "ONNX_RUNTIME_LICENSE.txt", "PPOCR_MODEL_CARD.md",
+)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--artifacts", default=ROOT / "artifacts/plate", type=Path)
     parser.add_argument("--worker", type=Path, help="Deploy this ARM64 NCC binary for the plate service only")
-    parser.add_argument("--prepare-detector", action="store_true", help="Compile and validate the Adreno detector cache")
+    parser.add_argument("--models", type=Path, help="Deploy this model bundle directory (e.g. models/plate) with backup/rollback")
+    parser.add_argument("--prepare-detector", action="store_true", help="Compile and validate the Adreno OpenCL caches (detector, OCR, and PP-OCR when configured)")
     parser.add_argument("--rollback", help="Recovery directory printed by an earlier deployment")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9._:-]+", args.serial):
@@ -51,8 +60,17 @@ def main():
     }
     if args.worker:
         files["plate/ncc-worker"] = args.worker
+    if args.models:
+        for name in MODEL_FILES:
+            files["plate/models/" + name] = args.models / name
+        notices_dir = args.models / "notices"
+        if notices_dir.is_dir():
+            for notice in sorted(notices_dir.iterdir()):
+                if notice.is_file():
+                    files["plate/models/notices/" + notice.name] = notice
     if not all(f.is_file() for f in files.values()):
-        parser.error("Build the device engine before deployment")
+        missing = [str(f) for f in files.values() if not f.is_file()]
+        parser.error("Missing required deployment file(s): " + ", ".join(missing[:5]))
     stage = subprocess.check_output(
         [*adb, "shell", "mktemp -d " + shlex.quote(RECOVERY + "/plate-update-XXXXXXXX")],
         text=True,
@@ -60,7 +78,10 @@ def main():
     if not re.fullmatch(pattern, stage):
         raise SystemExit("Could not allocate device recovery directory")
     print("Recovery directory:", stage, flush=True)
-    shell("mkdir " + shlex.quote(stage + "/plate"))
+    dirs = [stage + "/plate"]
+    if args.models:
+        dirs.extend([stage + "/plate/models", stage + "/plate/models/notices"])
+    shell("mkdir -p " + " ".join(shlex.quote(d) for d in dirs))
     checksums = []
     for name, source in files.items():
         digest = hashlib.sha256(source.read_bytes()).hexdigest()

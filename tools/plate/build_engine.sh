@@ -20,6 +20,7 @@ JOBS=${JOBS:-$(nproc)}
 ZIG_VERSION=0.13.0
 ZIG_SHA256=d45312e61ebcc48032b77bc4cf7fd6915c11fa16e4aad116b66c9468211230ea
 TF_TAG=v2.16.1
+MNN_TAG=3.2.5
 JSON_VERSION=3.11.3
 JSON_SHA256=9bea4c8066ef4a1c206b2be5a36302f8926f7fdc6087af5d20b417d0cf103ea6
 ORT_VERSION=1.30.0
@@ -112,17 +113,24 @@ build_aarch64() {
     cat > "bin/zig-$tool" <<EOF
 #!/usr/bin/env bash
 args=()
+has_s=0
+has_fp16=0
 for a in "\$@"; do
+  if [[ \$a == *.S ]] || [[ \$a == *.s ]]; then has_s=1; fi
   if [[ \$a == -march=armv8* ]]; then
     spec=\${a#-march=armv}; base=\${spec%%+*}; ext=""
     [[ \$spec == *+* ]] && ext=+\${spec#*+}
     ver=\${base%-a}; ver=v\${ver/./_}a
-    ext=\${ext//+fp16fml/+FP16FML}; ext=\${ext//+fp16/+fullfp16}; ext=\${ext//+FP16FML/+fp16fml}
+    [[ \$ext == *fp16* ]] && has_fp16=1
+    ext=\${ext//+fp16/+fullfp16}; ext=\${ext//+fullfp16fml/+fp16fml}
     args+=("-mcpu=generic+\$ver\$ext")
   else
     args+=("\$a")
   fi
 done
+if [ "\$has_s" = "1" ] && [ "\$has_fp16" = "1" ]; then
+  args+=("-Wa,-march=armv8.2-a+fp16+dotprod")
+fi
 exec "$ZIG" $tool -target aarch64-linux-gnu.2.28 "\${args[@]}"
 EOF
   done
@@ -135,6 +143,7 @@ set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 set(CMAKE_C_COMPILER "$WORK/bin/zig-cc")
 set(CMAKE_CXX_COMPILER "$WORK/bin/zig-c++")
+set(CMAKE_ASM_COMPILER "$WORK/bin/zig-cc")
 set(CMAKE_AR "$WORK/bin/zig-ar")
 set(CMAKE_RANLIB "$WORK/bin/zig-ranlib")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
@@ -142,8 +151,29 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 EOF
   export ZIG_GLOBAL_CACHE_DIR="$WORK/zig-cache" ZIG_LOCAL_CACHE_DIR="$WORK/zig-cache"
+  if [ ! -d MNN/.git ]; then
+    git clone --quiet --depth 1 --branch "$MNN_TAG" https://github.com/alibaba/MNN.git MNN
+  fi
+  [ "$(git -C MNN describe --tags --exact-match)" = "$MNN_TAG" ] || { echo "unexpected MNN checkout" >&2; exit 1; }
+  if [ ! -f build-mnn-aarch64/libMNN.a ]; then
+    cmake -S MNN -B build-mnn-aarch64 -DCMAKE_TOOLCHAIN_FILE="$WORK/aarch64.cmake" \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DMNN_BUILD_SHARED_LIBS=OFF \
+      -DMNN_OPENCL=ON \
+      -DMNN_ARM82=ON \
+      -DMNN_LOW_MEMORY=ON \
+      -DMNN_KLEIDIAI=OFF \
+      -DMNN_SUPPORT_TRANSFORMER_FUSE=ON \
+      -DMNN_USE_THREAD_POOL=ON \
+      -DMNN_BUILD_TOOLS=OFF \
+      -DMNN_BUILD_CONVERTER=OFF \
+      -DMNN_BUILD_BENCHMARK=OFF \
+      -DMNN_SEP_BUILD=OFF >/dev/null
+    cmake --build build-mnn-aarch64 --target MNN -j "$JOBS" >/dev/null
+  fi
   cmake -S "$ROOT/tools/plate/engine" -B build-aarch64 -DCMAKE_TOOLCHAIN_FILE="$WORK/aarch64.cmake" \
-    "${common_flags[@]}" -DTFLITE_ENABLE_GPU=ON -DORT_ROOT="$ort_root" >/dev/null
+    "${common_flags[@]}" -DTFLITE_ENABLE_GPU=ON -DORT_ROOT="$ort_root" \
+    -DMNN_INCLUDE_DIR="$WORK/MNN/include" -DMNN_LIBRARY="$WORK/build-mnn-aarch64/libMNN.a" >/dev/null
   cmake --build build-aarch64 --target plate-engine -j "$JOBS"
   install -m 0755 build-aarch64/plate-engine "$ROOT/artifacts/plate/plate-engine-aarch64"
   install -m 0755 "$ort_root/lib/libonnxruntime.so.$ORT_VERSION" "$ROOT/artifacts/plate/libonnxruntime.so.$ORT_VERSION"

@@ -129,6 +129,22 @@ func (s *Sensor) enabled() bool {
 	return json.Unmarshal(b, &v) == nil && v.Enabled
 }
 
+// ReadMinConfidence returns the configured recording confidence floor (0.3–0.99),
+// defaulting to 0.6 when unset or unreadable.
+func ReadMinConfidence(stateDir string) float64 {
+	b, e := os.ReadFile(filepath.Join(stateDir, "plate", "settings.json"))
+	if e != nil {
+		return 0.6
+	}
+	var v struct {
+		MinConfidence float64 `json:"minConfidence"`
+	}
+	if json.Unmarshal(b, &v) != nil || v.MinConfidence < 0.3 || v.MinConfidence > 0.99 {
+		return 0.6
+	}
+	return v.MinConfidence
+}
+
 // readiness explains why recognition cannot run, or returns "" when it can.
 func (s *Sensor) readiness() (state, reason string) {
 	if !s.enabled() {
@@ -157,6 +173,7 @@ func (s *Sensor) Run(ctx context.Context) {
 	interval := time.Duration(float64(time.Second) / s.cfg.FPS)
 	var checkedAt, retryAt time.Time
 	ready := false
+	activeMinConf := ReadMinConfidence(s.cfg.StateDir)
 	for ctx.Err() == nil {
 		started := time.Now()
 		now := s.clock()
@@ -172,9 +189,16 @@ func (s *Sensor) Run(ctx context.Context) {
 					engine = nil
 				}
 				s.setStatus(state, reason)
+			} else if nextMinConf := ReadMinConfidence(s.cfg.StateDir); nextMinConf != activeMinConf {
+				activeMinConf = nextMinConf
+				if engine != nil {
+					engine.Close()
+					engine = nil
+				}
 			}
 		}
 		if ready && engine == nil && !now.Before(retryAt) {
+			activeMinConf = ReadMinConfidence(s.cfg.StateDir)
 			s.setStatus("starting", "認識エンジンを起動しています")
 			e2, e := s.start(ctx)
 			if e != nil {

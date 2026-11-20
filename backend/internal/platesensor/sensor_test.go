@@ -287,3 +287,40 @@ func TestFramesKeptForPendingAndConfidentReadsOnly(t *testing.T) {
 		t.Fatal("frame of a detection still waiting for GNSS was evicted")
 	}
 }
+
+func TestReadMinConfidenceAndRestartOnChange(t *testing.T) {
+	cfg := setup(t, true, true)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.6 {
+		t.Fatalf("default minConfidence = %v, want 0.6", got)
+	}
+	settingsPath := filepath.Join(cfg.StateDir, "plate", "settings.json")
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.35}`), 0600)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.35 {
+		t.Fatalf("custom minConfidence = %v, want 0.35", got)
+	}
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.1}`), 0600)
+	if got := ReadMinConfidence(cfg.StateDir); got != 0.6 {
+		t.Fatalf("out-of-range minConfidence = %v, want fallback 0.6", got)
+	}
+
+	os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.6}`), 0600)
+	now := time.Date(2026, 11, 20, 6, 0, 0, 0, time.UTC)
+	var seen []float64
+	s := New(cfg, &fakeSource{}, nil, func(context.Context) (Engine, error) {
+		seen = append(seen, ReadMinConfidence(cfg.StateDir))
+		return &fakeEngine{}, nil
+	})
+	s.clock = func() time.Time {
+		now = now.Add(settingsPoll)
+		if len(seen) == 1 {
+			os.WriteFile(settingsPath, []byte(`{"enabled":true,"minConfidence":0.3}`), 0600)
+		}
+		return now
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	s.Run(ctx)
+	if len(seen) < 2 || seen[0] != 0.6 || seen[1] != 0.3 {
+		t.Fatalf("engine restarts on minConfidence change = %v", seen)
+	}
+}

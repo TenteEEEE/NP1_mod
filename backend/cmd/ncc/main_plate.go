@@ -60,11 +60,13 @@ func runPlateSensor(confPath string) error {
 	}
 	forceCPU := false
 	start := func(ctx context.Context) (platesensor.Engine, error) {
+		minConf := platesensor.ReadMinConfidence(cfg.StateDir)
 		args := []string{
 			"--detector", filepath.Join(cfg.ModelDir, "detector.tflite"),
 			"--ocr", filepath.Join(cfg.ModelDir, "ocr.tflite"),
 			"--config", filepath.Join(cfg.ModelDir, "plate-model.json"),
 			"--threads", strconv.Itoa(cfg.Threads),
+			"--min-confidence", strconv.FormatFloat(minConf, 'f', 2, 64),
 		}
 		if forceCPU {
 			return platesensor.StartProcessEngine(ctx, cfg.EnginePath, append(args, "--backend", "cpu"), 30*time.Second)
