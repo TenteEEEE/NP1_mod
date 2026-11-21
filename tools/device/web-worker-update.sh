@@ -13,6 +13,7 @@ case "${*:-}" in
 esac
 STAGE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 test "$(id -u)" = 0
+. "$STAGE/tools/update-lock.sh"
 cd "$STAGE"
 sha256sum -c SHA256SUMS >/dev/null
 /bin/chmod 0755 bin/ncc
@@ -27,9 +28,7 @@ mkdir -m 0700 "$BACKUP"
 cp -p "$BASE/bin/ncc" "$BACKUP/ncc"
 capture(){
     systemctl show np1-control-ap.service np1-control-modem.service np1-control-native.service -p Id -p MainPID -p InvocationID -p ActiveState -p SubState
-    if test "$UPDATE_UPLINK" = 1; then
-        systemctl show app-@Communication.service app-@DriveRec.service app-@ImageRecog.service app-@Voice.service qmmf-server.service -p Id -p MainPID -p InvocationID -p ActiveState -p SubState
-    fi
+    systemctl show app-@Communication.service app-@DriveRec.service app-@ImageRecog.service app-@Voice.service qmmf-server.service -p Id -p MainPID -p InvocationID -p ActiveState -p SubState
 }
 capture > "$BACKUP/workers-before.txt"
 COMPLETED=0

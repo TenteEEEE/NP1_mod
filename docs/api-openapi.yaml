@@ -754,6 +754,51 @@ paths:
         '404': {description: '未対応の音声設定'}
         '409': {description: '現在値不一致または他の操作中'}
         '503': {description: '現在値・変更・永続保存・最終照会のいずれかが未確認'}
+  /system/np1cc-update:
+    get:
+      summary: NP1 Control Centerの現在版、更新候補、設定と適用結果
+      responses:
+        '200': {description: 更新サービスの状態}
+        '503': {description: 更新サービスが未導入または停止中}
+    put:
+      summary: NP1 Control Centerの更新モードと利用回線を保存
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [mode, allow4G]
+              properties:
+                mode: {type: string, enum: [immediate, next-boot, check, 'off']}
+                allow4G: {type: boolean}
+      responses:
+        '200': {description: 設定を保存済み}
+        '400': {description: 入力が不正}
+        '409': {description: 更新処理を実行中}
+  /system/np1cc-update/check:
+    post:
+      summary: NP1 Control Centerの更新をその場で確認
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '202': {description: 確認を開始}
+        '409': {description: 更新処理を実行中}
+  /system/np1cc-update/apply:
+    post:
+      summary: 署名済みのNP1 Control Center更新をその場で適用
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false}
+      responses:
+        '202': {description: 更新処理を開始。結果は更新サービスの状態から取得}
+        '409': {description: 更新処理を実行中}
   /device/ota-policy:
     get:
       summary: 純正OTAの新規取得抑止状態

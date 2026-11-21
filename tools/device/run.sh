@@ -5,7 +5,7 @@ case "${1:-}" in
     install-owner-recovery) set -- install-owner-recovery ;;
     rollback-owner-recovery) set -- install-owner-recovery rollback ;;
 esac
-case "${1:-}" in install|install-owner-recovery|install-vpn|verify|rollback|uninstall|stock-start-install|nas-backup-install|web-worker-update|web-worker-prune|recorder-hook-update|recorder-hook-prune|journey-update|native-worker-update|modem-worker-update|ap-worker-update|ap-smoke|ap-dhcp-smoke|gobinet-readonly|gobinet-status-readonly|gobinet-profiles-readonly|gobinet-profile-list-readonly|native-apn-status-readonly|native-apn-network-readonly|native-apn-same-profile-trial|native-apn-route-recover|apn-editor-seed|native-preflight|native-alexa-preflight|native-alexa-get|native-alexa-roundtrip|native-vendor-read|native-sensitivity-trial|native-detection-trial|firewall-update) ;; *) exit 2;; esac
+case "${1:-}" in install|install-owner-recovery|install-vpn|verify|rollback|uninstall|stock-start-install|nas-backup-install|web-worker-update|update-install|web-worker-prune|recorder-hook-update|recorder-hook-prune|journey-update|native-worker-update|modem-worker-update|ap-worker-update|ap-smoke|ap-dhcp-smoke|gobinet-readonly|gobinet-status-readonly|gobinet-profiles-readonly|gobinet-profile-list-readonly|native-apn-status-readonly|native-apn-network-readonly|native-apn-same-profile-trial|native-apn-route-recover|apn-editor-seed|native-preflight|native-alexa-preflight|native-alexa-get|native-alexa-roundtrip|native-vendor-read|native-sensitivity-trial|native-detection-trial|firewall-update) ;; *) exit 2;; esac
 # This firmware exposes only the legacy PTY shell. Disable echo BEFORE the host sends credentials.
 stty -echo || exit 3
 printf 'NCC_STDIN_READY\n'

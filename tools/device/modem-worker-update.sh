@@ -5,6 +5,7 @@ umask 077
 BASE=/overlay/owner-apps/np1-control
 STAGE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 test "$(id -u)" = 0
+if test -x "$BASE/bin/ncc-updater"; then . "$STAGE/tools/update-lock.sh"; fi
 test -f "$BASE/bin/ncc" && test ! -L "$BASE/bin/ncc"
 test -d "$BASE/recovery" && test ! -L "$BASE/recovery"
 test ! -e /run/np1-control-apn/observer-paused.json

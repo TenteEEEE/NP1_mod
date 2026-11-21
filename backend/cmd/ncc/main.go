@@ -16,6 +16,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/otapolicy"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/trips"
+	"github.com/np1-control-center/ncc/internal/update"
 	"log"
 	"net"
 	"os"
@@ -48,11 +49,43 @@ func main() {
 	radioRepairStateDir := flag.Bool("radio-repair-state-dir", false, "print the configured radio history directory without reading GPS or writing files")
 	radioRepairCheck := flag.Bool("radio-repair-check", false, "fail if any GPS associations remain to be applied")
 	radioRepairTrack := flag.String("radio-repair-track", "", "private measured recording-track export to supplement retained SD fixes")
+	updateKey := flag.String("update-key", "", "Ed25519 public key file for updater enrollment")
+	updateURL := flag.String("update-url", "", "internal updater fetch URL")
+	updateLimit := flag.Int64("update-limit", 0, "internal updater fetch byte limit")
+	updateWiFi := flag.Bool("update-wifi", true, "bind internal updater fetch to the NP1 Wi-Fi interface")
 	flag.Parse()
 	if *numberShareManagedConfig == "" {
 		*numberShareManagedConfig = numbershare.ManagedConfigPath(*numberShareStateDir)
 	}
 	switch *mode {
+	case "update-version":
+		fmt.Println(update.Version)
+		return
+	case "update-recorder-contract":
+		identity, ok := adapters.RecorderArtifactIdentity()
+		if !ok {
+			log.Fatal("recorder artifact build contract is missing")
+		}
+		fmt.Println(identity)
+		return
+	case "update-serve", "update-recover", "update-key-check", "update-fetch":
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		var e error
+		switch *mode {
+		case "update-serve":
+			e = update.Serve(ctx)
+		case "update-recover":
+			e = update.Recover(ctx)
+		case "update-key-check":
+			e = update.CheckKey(*updateKey)
+		case "update-fetch":
+			e = update.Fetch(ctx, *updateWiFi, *updateURL, *updateLimit, os.Stdout)
+		}
+		if e != nil {
+			log.Fatal(e)
+		}
+		return
 	case "numbershare-register":
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()

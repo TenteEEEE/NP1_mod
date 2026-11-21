@@ -1,0 +1,20 @@
+[Unit]
+Description=Restore an interrupted NP1 Control Center update before owner workers start
+After=local-fs.target
+Before=np1-control-broker.service np1-control.service np1-control-ap.service np1-control-apn.service np1-control-modem.service np1-control-native.service np1-control-ota-guard.service np1-control-uplink.service np1-control-plate.service np1-control-numbershare.service np1-control-numbershare-register.service
+ConditionPathExists=/overlay/owner-apps/np1-control/bin/ncc-updater
+
+[Service]
+Type=oneshot
+RuntimeDirectory=np1-control-update-recover
+RuntimeDirectoryMode=0700
+ExecStartPre=/bin/cp /overlay/owner-apps/np1-control/bin/ncc-updater /run/np1-control-update-recover/ncc-updater
+ExecStartPre=/bin/chmod 0700 /run/np1-control-update-recover/ncc-updater
+ExecStart=/run/np1-control-update-recover/ncc-updater --mode update-recover
+ExecStartPost=/bin/rm -f /run/np1-control-update-recover/ncc-updater
+RemainAfterExit=yes
+TimeoutStartSec=45
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

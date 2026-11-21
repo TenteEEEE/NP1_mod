@@ -9,6 +9,7 @@ UNIT=/etc/systemd/system/np1-control-native.service
 UPDATE_LOCK=/run/np1-native-control-update.lock
 STAGE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 test "$(id -u)" = 0
+if test -x "$BASE/bin/ncc-updater"; then . "$STAGE/tools/update-lock.sh"; fi
 for path in "$BASE" "$BASE/bin" "$BASE/experimental" "$BASE/recovery" "$RUN"; do test -d "$path" && test ! -L "$path"; done
 for path in "$BASE/bin/ncc" "$UNIT"; do test -f "$path" && test ! -L "$path"; done
 test ! -L "$UPDATE_LOCK"

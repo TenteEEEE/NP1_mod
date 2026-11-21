@@ -2,6 +2,7 @@
 # Restore only the previous NCC binary/units/config. First installation rolls back by uninstalling.
 set -eu
 BASE=/overlay/owner-apps/np1-control
+. "$(dirname "$0")/update-lock.sh"
 BACKUP=$(cat "$BASE/recovery/latest")
 case "$BACKUP" in "$BASE"/recovery/[0-9]*T[0-9]*Z) ;; *) echo 'Invalid recovery path' >&2; exit 1;; esac
 test -d "$BACKUP"
