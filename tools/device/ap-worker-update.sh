@@ -7,6 +7,7 @@ umask 077
 BASE=/overlay/owner-apps/np1-control
 STAGE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 test "$(id -u)" = 0
+if test -x "$BASE/bin/ncc-updater"; then . "$STAGE/tools/update-lock.sh"; fi
 systemctl is-active --quiet np1-control-ap.service
 test -f "$BASE/private/ap/autostart"
 cd "$STAGE"

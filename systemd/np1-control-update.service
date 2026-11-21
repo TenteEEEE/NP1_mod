@@ -1,0 +1,25 @@
+[Unit]
+Description=NP1 Control Center release updater
+Requires=np1-control-update-recover.service
+After=np1-control-update-recover.service np1-control.service np1-control-ota-guard.service
+ConditionPathExists=/overlay/owner-apps/np1-control/updates/public.key
+
+[Service]
+Type=simple
+RuntimeDirectory=np1-control-update
+RuntimeDirectoryMode=0755
+ExecStartPre=/bin/cp /overlay/owner-apps/np1-control/bin/ncc-updater /run/np1-control-update/ncc-updater
+ExecStartPre=/bin/chmod 0755 /run/np1-control-update/ncc-updater
+ExecStart=/run/np1-control-update/ncc-updater --mode update-serve
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/overlay/owner-apps/np1-control/bin /overlay/owner-apps/np1-control/recovery /overlay/owner-apps/np1-control/updates /run/np1-control-update
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

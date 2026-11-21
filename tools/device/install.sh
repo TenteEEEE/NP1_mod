@@ -12,6 +12,7 @@ test "$(cat /proc/sys/kernel/osrelease)" = 4.14.206-perf || { echo 'Unexpected f
 grep -q '^VERSION_ID="202404231204"' /etc/os-release
 test -f /etc/init.post_boot.sh
 test ! -L "$BASE"
+. "$STAGE/tools/update-lock.sh"
 for cmd in sha256sum systemctl useradd python3; do command -v "$cmd" >/dev/null; done
 for required in \
     experimental/libncc-driverec-hook.so \

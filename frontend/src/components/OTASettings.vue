@@ -44,7 +44,7 @@ onUnmounted(()=>{if(timer)clearInterval(timer);document.removeEventListener('key
 </script>
 <template>
  <section class="panel space-top ota-settings" :aria-busy="loading||busy">
-  <div class="panel-head"><h2><ShieldCheck :size="18"/>本体の自動更新</h2><span v-if="data" class="tag" :class="{warn:!data.disabled||alerts.length}">{{data.disabled?(alerts.length?'要確認':'更新を防止中'):'更新を許可'}}</span></div>
+  <div class="panel-head"><h2><ShieldCheck :size="18"/>純正ソフトウェアの更新抑止</h2><span v-if="data" class="tag" :class="{warn:!data.disabled||alerts.length}">{{data.disabled?(alerts.length?'要確認':'更新を防止中'):'更新を許可'}}</span></div>
   <div class="settings-body">
    <p>NP1modは、本体のファームウェア更新で動かなくなる可能性があります。導入時から、次の仕組みを重ねて更新を防いでいます。</p>
    <p v-if="loading&&!data" class="hint" role="status">設定を読み込んでいます…</p>

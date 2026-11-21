@@ -17,6 +17,8 @@ python tools/connect.py --serial SERIAL
 
 ## 更新
 
+更新サービスを導入済みの場合は、管理画面から署名済みの互換版を取得できます。初回導入、更新モード、配布手順は [NP1CCの自動更新](np1cc-auto-update.md) を参照してください。
+
 通常の更新は、最新版のソースをビルドして再配備します。
 
 ```powershell

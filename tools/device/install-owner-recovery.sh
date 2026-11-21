@@ -17,6 +17,8 @@ stock_units() {
 
 rollback() {
     test -f "$BASE/recovery/owner-recovery-install" || return 1
+    . "$STAGE/tools/update-lock.sh"
+    sh "$STAGE/tools/update-remove.sh" || return 1
     for file in "$BASE"/units/*.path "$BASE"/units/*.service; do
         test -f "$file" || continue
         unit=${file##*/}

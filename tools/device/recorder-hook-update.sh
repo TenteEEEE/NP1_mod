@@ -18,6 +18,7 @@ OPERATIONS=$BASE/experimental/ncc-native-operations-helper
 RUNTIME_HOOK=/run/np1-control-recorder-hook/libncc-driverec-hook.so
 
 test "$(id -u)" = 0
+if test -x "$BASE/bin/ncc-updater"; then . "$STAGE/tools/update-lock.sh"; fi
 test -f "$UNIT"
 test ! -L "$BASE" && test ! -L "$HOOK_DIR" && test ! -L "$DROPIN_DIR" && test ! -L "$DROPIN" && test ! -L "$HOOK" && test ! -L "$INJECTOR" && test ! -L "$OPERATIONS" && test ! -L "$NATIVE_UNIT"
 OWNER_LAYOUT=0

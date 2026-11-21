@@ -3,6 +3,8 @@
 set -eu
 BASE=/overlay/owner-apps/np1-control
 test "$(id -u)" = 0
+. "$(dirname "$0")/update-lock.sh"
+sh "$(dirname "$0")/update-remove.sh"
 # The kernel rebuilds the realtime budget on reboot. Stop only future grants.
 python3 "$(dirname "$0")/postboot.py" remove-pics-rt
 rm -f "$BASE/tools/pics-stock-rt.sh"

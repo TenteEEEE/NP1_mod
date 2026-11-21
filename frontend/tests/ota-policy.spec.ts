@@ -16,7 +16,7 @@ async function open(page:Page,handler:(route:Route)=>Promise<void>){
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)})
  })
  await page.goto(`${reviewURL!}/#system/settings`)
- await expect(page.getByRole('heading',{name:'本体の自動更新',exact:true})).toBeVisible()
+ await expect(page.getByRole('heading',{name:'純正ソフトウェアの更新抑止',exact:true})).toBeVisible()
 }
 const layer=(page:Page,name:string)=>page.locator('.ota-layers li').filter({hasText:name})
 test.describe('OTA settings user review (synthetic browser fixtures only)',()=>{

@@ -357,6 +357,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/device/alexa", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/alexa") })
 	s.mux.HandleFunc("PUT /api/v1/device/alexa", func(w http.ResponseWriter, r *http.Request) { s.forwardControl(w, r, "/alexa", "alexa.setting.update") })
 	s.mux.HandleFunc("GET /api/v1/device/ota-policy", func(w http.ResponseWriter, r *http.Request) { s.proxy(w, r, "/device/ota-policy") })
+	s.updateRoutes()
 	s.mux.HandleFunc("PUT /api/v1/device/ota-policy", func(w http.ResponseWriter, r *http.Request) {
 		s.forwardControl(w, r, "/device/ota-policy", "ota.policy.update")
 	})

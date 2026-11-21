@@ -64,6 +64,15 @@ func RecorderArtifactContractReady() bool {
 	return ok
 }
 
+// RecorderArtifactIdentity is the binary's build-local recorder compatibility contract.
+func RecorderArtifactIdentity() (string, bool) {
+	offset, ok := recorderArtifactContract()
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%s %s %x", recorderHookLibrarySHA, recorderHookInjectorSHA, offset), true
+}
+
 type RecorderAdvancedSettings struct {
 	FrontBitrateKbps uint32 `json:"frontBitrateKbps"`
 	CabinBitrateKbps uint32 `json:"cabinBitrateKbps"`

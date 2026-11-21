@@ -18,6 +18,7 @@ FILES = (
     "tools/recorder-hook-prune.sh",
     "tools/web-worker-prune.sh",
     "tools/web-worker-update.sh",
+    "tools/update-lock.sh",
     "tools/run.sh",
     "tools/verify.sh",
     "LICENSE",
