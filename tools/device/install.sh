@@ -61,6 +61,7 @@ done
 if test -f "$BASE/bin/ncc"; then cp -p "$BASE/bin/ncc" "$BACKUP/ncc"; fi
 if test -f "$BASE/config/config.json"; then cp -p "$BASE/config/config.json" "$BACKUP/config.json"; fi
 if test -f "$BASE/tools/firewall.sh"; then cp -p "$BASE/tools/firewall.sh" "$BACKUP/firewall.sh"; fi
+if test -f "$BASE/tools/pics-stock-rt.sh"; then cp -p "$BASE/tools/pics-stock-rt.sh" "$BACKUP/pics-stock-rt.sh"; fi
 RECORDER_DROPIN_DIR=/etc/systemd/system/app-@DriveRec.service.d
 RECORDER_DROPIN="$RECORDER_DROPIN_DIR/90-ncc-recorder-hook.conf"
 RECORDER_LIBRARY="$BASE/recorder-hook/libncc-driverec-hook.so"
@@ -104,6 +105,7 @@ cp systemd/np1-control-modem.service /etc/systemd/system/np1-control-modem.servi
 cp systemd/np1-control-apn.service /etc/systemd/system/np1-control-apn.service
 cp systemd/np1-control-ap.service /etc/systemd/system/np1-control-ap.service
 cp systemd/np1-control-ota-guard.service /etc/systemd/system/np1-control-ota-guard.service
+python3 tools/postboot.py add-pics-rt
 # Wi-Fi/4G switching needs the verified stock STA owner helper.
 if test -f experimental/ncc-native-wifi-sta-helper; then
     mkdir -p "$BASE/experimental"

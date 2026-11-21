@@ -8,6 +8,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/audio"
 	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/model"
+	"github.com/np1-control-center/ncc/internal/pics"
 	"net"
 	"net/http"
 	"os"
@@ -64,6 +65,7 @@ func Serve(socket string, uid uint32) error {
 	defer cancel()
 	modemObserver := adapters.NewModemObserver(ctx)
 	mux := http.NewServeMux()
+	pics.RegisterStockReceiver(mux)
 	adapters.RegisterNASBackupHandlers(mux)
 	go adapters.RunNASBackupScheduler(ctx)
 	defer func() {
@@ -79,6 +81,7 @@ func Serve(socket string, uid uint32) error {
 		return e
 	}
 	adapters.RegisterNotificationLEDHandlers(mux, ctx)
+	adapters.RegisterTrafficLEDHandler(mux)
 	mux.HandleFunc("GET /journey-intervals", adapters.HandleJourneyIntervals)
 	mux.HandleFunc("GET /alexa", adapters.HandleAlexaRemote)
 	mux.HandleFunc("PUT /tailscale/name", func(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +150,9 @@ func Serve(socket string, uid uint32) error {
 	// The dashboard map polls the position alone every couple of seconds.
 	mux.HandleFunc("GET /gps", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(adapters.GNSSSummary(r.Context()))
+	})
+	mux.HandleFunc("GET /pics/gps", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(adapters.PICSGNSS(r.Context()))
 	})
 	mux.HandleFunc("GET /capabilities", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(adapters.Capabilities()) })
 	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {

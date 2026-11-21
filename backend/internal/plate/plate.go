@@ -81,6 +81,7 @@ func DefaultVoice() Voice {
 type Settings struct {
 	Revision      int     `json:"revision"`
 	Enabled       bool    `json:"enabled"`
+	DetectionLED  bool    `json:"detectionLED"`
 	Rules         []Rule  `json:"rules"`
 	RetentionDays int     `json:"retentionDays"`
 	ImageQuotaMB  int     `json:"imageQuotaMB"`

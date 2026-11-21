@@ -151,6 +151,7 @@ onUnmounted(()=>{sequence++;if(statusTimer)clearInterval(statusTimer);destroyMap
   <section v-else-if="tab==='rules'&&draft" class="plate-rules" aria-label="条件と設定">
    <div class="panel plate-settings">
     <label class="plate-switch"><input v-model="draft.enabled" type="checkbox"><span><strong>ナンバーの記録を有効にする</strong><small>オフの間は、認識結果を記録しません。</small></span></label>
+    <label class="plate-switch"><input v-model="draft.detectionLED" type="checkbox" :disabled="!draft.enabled"><span><strong>条件に関係なく、ナンバー検出時にLEDを光らせる</strong><small>新たに記録した車両ごとに白く光ります。条件ごとに設定した点灯が優先されます。</small></span></label>
     <div class="plate-grid">
      <label>記録の保存日数<input v-model.number="draft.retentionDays" type="number" min="1" max="3650" inputmode="numeric"></label>
      <label>画像の保存容量（MB）<input v-model.number="draft.imageQuotaMB" type="number" min="16" max="1024" inputmode="numeric"></label>

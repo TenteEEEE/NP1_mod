@@ -10,7 +10,7 @@ const modeName=computed(()=>state.value?.data?.lastCommand?.mode==='screen'?'画
 const serviceLabel=computed(()=>({active:'動作中',inactive:'停止中',failed:'エラー',activating:'起動中',deactivating:'停止処理中'})[state.value?.data?.serviceState as string]||'未取得')
 const continuous=ref(false),testSeconds=ref(5)
 let refreshTimer:ReturnType<typeof setTimeout>|undefined
-const actualMode=computed(()=>({off:'消灯',solid:'単色',rainbow:'レインボー',screen:'点灯中'})[state.value?.data?.lastCommand?.mode as string]||modeName.value)
+const actualMode=computed(()=>({off:'消灯',solid:'単色',rainbow:'レインボー',screen:'点灯中',traffic:'信号表示'})[state.value?.data?.lastCommand?.mode as string]||modeName.value)
 function valid(value:any):value is LEDSettings{return value&&Number.isInteger(value.revision)&&['off','solid','rainbow'].includes(value.mode)&&Array.isArray(value.rgb)&&value.rgb.length===3&&value.rgb.every((n:any)=>Number.isInteger(n)&&n>=0&&n<=255)&&Number.isFinite(value.brightness)&&Number.isFinite(value.speed)&&Number.isFinite(value.fps)}
 function receive(value:Observation<any>){state.value=value;if(value.status==='available'&&valid(value.data?.settings)){draft.value={...value.data.settings,mode:value.data.settings.mode==='off'?'solid':value.data.settings.mode,rgb:[...value.data.settings.rgb]};color.value='#'+draft.value.rgb.map(n=>n.toString(16).padStart(2,'0')).join('');return true}return false}
 function reason(e:unknown){const value=e instanceof Error?e.message:String(e);if(value.includes('REVISION_CONFLICT'))return '別の操作で設定が変わりました。状態を更新して、もう一度設定してください。';return value}

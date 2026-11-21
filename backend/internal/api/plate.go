@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/np1-control-center/ncc/internal/config"
+	"github.com/np1-control-center/ncc/internal/led"
 	"github.com/np1-control-center/ncc/internal/numbershare"
 	"github.com/np1-control-center/ncc/internal/plate"
 	"github.com/np1-control-center/ncc/internal/platespeech"
@@ -321,6 +322,9 @@ func (p *plateService) speak(ctx context.Context, outcome plate.Outcome) {
 			lightRule = &copy
 		}
 	}
+	if lightRule == nil && outcome.New && p.currentSettings().DetectionLED {
+		lightRule = &plate.Rule{LED: led.Notification{Mode: "solid", Effect: "breathe", RGB: [3]int{255, 255, 255}, Brightness: 112}}
+	}
 	if speechRule == nil {
 		if lightRule != nil {
 			lightRule.Speak = false
@@ -624,6 +628,9 @@ func (s *Server) registerPlateSpeech() {
 			fail(w, 400, "INVALID_VOICEVOX", e.Error())
 			return
 		}
+		s.pics.mu.Lock()
+		s.pics.restartPreparation()
+		s.pics.mu.Unlock()
 		s.audit("voicevox.update", "accepted")
 		endpoint, savedKey := p.voice.APIConfigValue()
 		jsonOut(w, 200, map[string]any{"endpoint": endpoint, "defaultEndpoint": platespeech.DefaultAPIBase, "keyConfigured": savedKey != "", "apiKey": savedKey})

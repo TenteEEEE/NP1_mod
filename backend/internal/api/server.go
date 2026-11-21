@@ -23,6 +23,7 @@ import (
 	"github.com/np1-control-center/ncc/internal/broker"
 	"github.com/np1-control-center/ncc/internal/config"
 	"github.com/np1-control-center/ncc/internal/numbershare"
+	"github.com/np1-control-center/ncc/internal/pics"
 	"github.com/np1-control-center/ncc/internal/radio"
 	"github.com/np1-control-center/ncc/internal/store"
 	"github.com/np1-control-center/ncc/internal/trips"
@@ -76,6 +77,7 @@ type Server struct {
 	journeys    *journeyArchiveCollector
 	tracks      *trips.TrackStore
 	plates      *plateService
+	pics        *picsService
 	numberShare *numbershare.Service
 	tailnet     tailnetHosts
 }
@@ -88,6 +90,10 @@ func New(c config.Config) *Server {
 	s.journeys = newJourneyArchiveCollector(c.StateDir)
 	s.tracks = trips.NewTrackStore(c.StateDir)
 	s.plates = newPlateService(c.StateDir, unixClient(PlateSensorSocketPath()))
+	s.pics = newPICSService(c.StateDir, s.plates.voice)
+	s.pics.scan = pics.Scan(s.client)
+	s.pics.setLED = picsLED(s.client)
+	s.pics.gps = picsGPS(s.client)
 	s.numberShare = numbershare.New(c.StateDir, &http.Client{Timeout: 30 * time.Second})
 	s.plates.share = s.numberShare
 	s.plates.voice.Notifier = plateLEDNotifier{client: s.client}
@@ -363,6 +369,7 @@ func (s *Server) routes() {
 	s.registerScreenLEDRoutes()
 	s.registerLEDTestRoutes()
 	s.registerPlate()
+	s.registerPICS()
 	s.registerNumberShare()
 	s.mux.HandleFunc("PUT /api/v1/device/led", func(w http.ResponseWriter, r *http.Request) { s.forwardControl(w, r, "/led", "led.update") })
 	s.mux.HandleFunc("POST /api/v1/vpn/tailscale/login", func(w http.ResponseWriter, r *http.Request) {

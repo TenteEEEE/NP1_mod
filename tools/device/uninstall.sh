@@ -3,6 +3,9 @@
 set -eu
 BASE=/overlay/owner-apps/np1-control
 test "$(id -u)" = 0
+# The kernel rebuilds the realtime budget on reboot. Stop only future grants.
+python3 "$(dirname "$0")/postboot.py" remove-pics-rt
+rm -f "$BASE/tools/pics-stock-rt.sh"
 # Remove only the NCC-owned DriveRec startup drop-in and hook library.  The
 # running DriveRec mapping remains until its next normal restart.
 rm -f /etc/systemd/system/app-@DriveRec.service.d/90-ncc-recorder-hook.conf

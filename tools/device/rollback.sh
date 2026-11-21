@@ -5,6 +5,14 @@ BASE=/overlay/owner-apps/np1-control
 BACKUP=$(cat "$BASE/recovery/latest")
 case "$BACKUP" in "$BASE"/recovery/[0-9]*T[0-9]*Z) ;; *) echo 'Invalid recovery path' >&2; exit 1;; esac
 test -d "$BACKUP"
+if test -f "$BACKUP/pics-stock-rt.sh"; then
+    cp -p "$BACKUP/pics-stock-rt.sh" "$BASE/tools/pics-stock-rt.sh"
+else
+    rm -f "$BASE/tools/pics-stock-rt.sh"
+fi
+pics_rt_action=remove-pics-rt
+if grep -qxF '# BEGIN NP1_CONTROL_CENTER_PICS_RT_V1' "$BACKUP/init.post_boot.upper.sh"; then pics_rt_action=add-pics-rt; fi
+python3 "$(dirname "$0")/postboot.py" "$pics_rt_action"
 if test ! -f "$BACKUP/np1-control-uplink.service"; then
     systemctl stop np1-control-uplink.service || true
     python3 "$(dirname "$0")/postboot.py" remove-uplink
