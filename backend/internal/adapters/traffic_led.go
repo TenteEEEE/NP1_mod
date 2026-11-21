@@ -15,12 +15,16 @@ func RegisterTrafficLEDHandler(mux *http.ServeMux) {
 		if !ok {
 			return
 		}
-		fields, err := led.DecodeScreenObject(data, "colors", "expiresAtMs")
+		fields, err := led.DecodeScreenObject(data, "colors", "expiresAtMs", "visitUntilMs")
 		value, parseErr := strconv.ParseUint(string(fields["colors"]), 10, 8)
 		unix, expiryErr := strconv.ParseInt(string(fields["expiresAtMs"]), 10, 64)
 		deadline := time.UnixMilli(unix)
+		visitMS, visitErr := strconv.ParseInt(string(fields["visitUntilMs"]), 10, 64)
+		visitUntil := time.UnixMilli(visitMS)
 		colors := led.TrafficColors(value)
-		if err != nil || parseErr != nil || expiryErr != nil || !colors.Valid() || deadline.After(time.Now().Add(2*time.Second)) {
+		now := time.Now()
+		if err != nil || parseErr != nil || expiryErr != nil || visitErr != nil || !colors.Valid() ||
+			deadline.After(now.Add(2*time.Second)) || visitUntil.After(now.Add(10*time.Second)) {
 			screenLEDJSON(w, http.StatusBadRequest, map[string]string{"reason": "信号のLED表示を確認してください"})
 			return
 		}
@@ -29,7 +33,13 @@ func RegisterTrafficLEDHandler(mux *http.ServeMux) {
 			return
 		}
 		defer ledApplyMu.Unlock()
-		if colors != 0 && time.Now().Before(deadline) && time.Since(preparedAt) >= 5*time.Second {
+		// Publish before starting the worker so its first frame can already use
+		// the PICS overlay instead of the configured background animation.
+		if err := led.SetTrafficColors(colors, deadline, visitUntil); err != nil {
+			screenLEDFailure(w, err)
+			return
+		}
+		if now.Before(visitUntil) && time.Since(preparedAt) >= 5*time.Second {
 			if err := prepareScreenLED(); err != nil {
 				screenLEDFailure(w, err)
 				return
@@ -37,10 +47,6 @@ func RegisterTrafficLEDHandler(mux *http.ServeMux) {
 			preparedAt = time.Now()
 		}
 		if r.Context().Err() != nil {
-			return
-		}
-		if err := led.SetTrafficColors(colors, deadline); err != nil {
-			screenLEDFailure(w, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

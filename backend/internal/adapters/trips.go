@@ -96,6 +96,17 @@ func LatestGNSS(ctx context.Context, at time.Time) (*trips.Sample, error) {
 // gnssRecentWindow covers one closed recording clip (about three minutes) with margin.
 const gnssRecentWindow = 10 * time.Minute
 
+// PICSGNSS reads the same stock live inputs without waiting for the SD history index.
+func PICSGNSS(ctx context.Context) model.Observation {
+	now := time.Now()
+	meta, moving := liveMeta.read(now)
+	if meta != nil && moving && meta.At.Sub(now).Abs() <= 5*time.Second {
+		return combineGNSS(now, meta, moving, nil, nil)
+	}
+	fix, _ := liveGNSS.LatestWithin(ctx, now, gnssRecentWindow)
+	return combineGNSS(now, meta, moving, fix, nil)
+}
+
 func GNSSSummary(ctx context.Context) model.Observation {
 	snapshot, e := tripIndex.Read(ctx)
 	if e != nil {

@@ -11,7 +11,7 @@ import (
 func TestTrafficColorsUseDistinctZonesAndExpire(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "traffic.json")
 	now := time.Unix(100, 0)
-	if err := writeTrafficColors(path, TrafficRed|TrafficBlinkGreen|TrafficGreen, now.Add(2*time.Second), now); err != nil {
+	if err := writeTrafficColors(path, TrafficRed|TrafficBlinkGreen|TrafficGreen, now.Add(2*time.Second), now.Add(10*time.Second), now); err != nil {
 		t.Fatal(err)
 	}
 	frame, active, err := readTrafficFrame(path, now)
@@ -61,16 +61,34 @@ func TestTrafficYieldsToScreenOverlayAndResumes(t *testing.T) {
 func TestDelayedTrafficWriteCannotExtendSourceDeadline(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "traffic.json")
 	deadline := time.Unix(100, 0).Add(1250 * time.Millisecond)
-	if err := writeTrafficColors(path, TrafficRed, deadline, deadline.Add(-50*time.Millisecond)); err != nil {
+	if err := writeTrafficColors(path, TrafficRed, deadline, deadline, deadline.Add(-50*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
 	if _, active, err := readTrafficFrame(path, deadline); err != nil || active {
 		t.Fatalf("source expired: active=%v err=%v", active, err)
 	}
-	if err := writeTrafficColors(path, TrafficGreen, deadline, deadline.Add(300*time.Millisecond)); err != nil {
+	if err := writeTrafficColors(path, TrafficGreen, deadline, deadline, deadline.Add(300*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
 	if _, active, err := readTrafficFrame(path, deadline.Add(310*time.Millisecond)); err != nil || active {
 		t.Fatalf("delayed request relit the LED: active=%v err=%v", active, err)
+	}
+}
+
+func TestTrafficWaitsInTheDarkUntilVisitEnds(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	now := time.Unix(100, 0)
+	colorUntil, visitUntil := now.Add(300*time.Millisecond), now.Add(2*time.Second)
+	if err := writeTrafficColors(path, TrafficGreen, colorUntil, visitUntil, now); err != nil {
+		t.Fatal(err)
+	}
+	if frame, active, err := readTrafficFrame(path, colorUntil); err != nil || !active || frame.Zones != [5][3]int{} {
+		t.Fatalf("expired green did not leave the LED dark: %v %v %v", frame.Zones, active, err)
+	}
+	if err := writeTrafficColors(path, 0, time.Time{}, visitUntil, visitUntil.Add(-250*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	if _, active, err := readTrafficFrame(path, visitUntil); err != nil || active {
+		t.Fatalf("base LED did not resume after the visit: %v %v", active, err)
 	}
 }

@@ -29,7 +29,7 @@ for(const width of [1440,390])test(`高度化PICS専用画面と受信記録 (${
     const date=new URL(route.request().url()).searchParams.get('date')
     const entries=date==='2026-11-20'?[]:[
      {id:'00000002',name:'測位なし交差点',slot:1,color:'red',at:'2026-11-21T04:00:00Z',step:8},
-     ...Array.from({length:5},(_,i)=>({id:'00000001',name:'試験交差点',slot:3,color:i===4?'blink-green':'green',at:`2026-11-21T04:0${i}:00Z`,position:{lat:20+i*.0001,lon:100},beacon:{lat:20,lon:100.0002},course:90,previousColor:'red',phaseSeconds:24,cycleSeconds:59+i*.4,step:4,estimatedToGreen:i===3?27:undefined})),
+     ...Array.from({length:5},(_,i)=>({id:'00000001',name:'試験交差点',slot:3,color:i===4?'blink-green':'green',at:`2026-11-21T04:0${i}:00Z`,position:{lat:20+i*.0001,lon:100},positionSource:'recorded',beacon:{lat:20,lon:100.0002},course:90,previousColor:'red',phaseSeconds:24,cycleSeconds:59+i*.4,step:4,estimatedToGreen:i===3?27:undefined})),
     ]
     json={date,entries,incomplete:false}
     break
@@ -62,6 +62,7 @@ for(const width of [1440,390])test(`高度化PICS専用画面と受信記録 (${
  await expect(map).toHaveAttribute('data-features-pics-points','6')
  await expect(list.getByRole('button',{name:/青点滅.*試験交差点/})).toBeVisible()
  await expect(list.getByRole('button',{name:/測位なし交差点.*受信地点なし/})).toBeVisible()
+ await expect(list.getByText('走行履歴から補完')).toHaveCount(5)
  const mapBox=(await map.boundingBox())!,listBox=(await list.boundingBox())!
  if(width===1440)expect(listBox.x).toBeGreaterThanOrEqual(mapBox.x+mapBox.width)
  else expect(listBox.y).toBeGreaterThanOrEqual(mapBox.y+mapBox.height)

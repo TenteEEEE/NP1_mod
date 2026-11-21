@@ -34,6 +34,7 @@ const sites=computed(()=>{
 })
 const hasMapData=computed(()=>points.value.length>0||sites.value.length>0)
 const numberText=(v:number)=>`${v.toLocaleString('ja-JP',{maximumFractionDigits:1})}秒`
+const awaitingFix=(row:PicsReception)=>Date.now()-Date.parse(row.at)<15*60*1000
 
 function median(values:number[]){
  const sorted=[...values].sort((a,b)=>a-b),i=Math.floor(sorted.length/2)
@@ -176,7 +177,8 @@ onUnmounted(()=>{request?.abort();map?.destroy()})
       <span class="plate-meta">
        <strong v-if="row.estimatedToGreen">青まで約{{row.estimatedToGreen}}秒</strong>
        <span v-if="row.step">段階 {{row.step}}</span><span>{{picsCourseText(row.course)}}</span>
-       <span v-if="!row.position" class="plate-nofix">受信地点なし</span>
+       <span v-if="!row.position" class="plate-nofix">{{awaitingFix(row)?'測位待ち':'受信地点なし'}}</span>
+       <span v-else-if="row.positionSource==='recorded'">走行履歴から補完</span>
       </span>
      </span>
     </button>

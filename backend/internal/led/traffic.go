@@ -23,19 +23,20 @@ const (
 func (c TrafficColors) Valid() bool { return c&^(TrafficRed|TrafficBlinkGreen|TrafficGreen) == 0 }
 
 type trafficState struct {
-	Colors    TrafficColors `json:"colors"`
-	ExpiresAt time.Time     `json:"expiresAt"`
+	Colors     TrafficColors `json:"colors"`
+	ColorUntil time.Time     `json:"colorUntil"`
+	ExpiresAt  time.Time     `json:"expiresAt"`
 }
 
-func SetTrafficColors(colors TrafficColors, deadline time.Time) error {
-	return writeTrafficColors(trafficFramePath, colors, deadline, time.Now())
+func SetTrafficColors(colors TrafficColors, deadline, visitUntil time.Time) error {
+	return writeTrafficColors(trafficFramePath, colors, deadline, visitUntil, time.Now())
 }
 
-func writeTrafficColors(path string, colors TrafficColors, deadline, now time.Time) error {
+func writeTrafficColors(path string, colors TrafficColors, deadline, visitUntil, now time.Time) error {
 	if !colors.Valid() {
 		return errors.New("invalid traffic signal colors")
 	}
-	active := colors != 0 && now.Before(deadline)
+	active := now.Before(visitUntil)
 	if err := screenPath(path, active); err != nil {
 		return err
 	}
@@ -45,7 +46,7 @@ func writeTrafficColors(path string, colors TrafficColors, deadline, now time.Ti
 		}
 		return nil
 	}
-	return config.Atomic(path, trafficState{colors, minTime(deadline, now.Add(trafficLease)).UTC()})
+	return config.Atomic(path, trafficState{colors, deadline.UTC(), minTime(visitUntil, now.Add(trafficLease)).UTC()})
 }
 
 func minTime(a, b time.Time) time.Time {
@@ -71,10 +72,13 @@ func readTrafficFrame(path string, now time.Time) (ScreenFrame, bool, error) {
 	if err = json.Unmarshal(data, &state); err != nil {
 		return frame, false, err
 	}
-	if state.Colors == 0 || !state.Colors.Valid() || !now.Before(state.ExpiresAt) || state.ExpiresAt.Sub(now) > trafficLease {
+	if !state.Colors.Valid() || !now.Before(state.ExpiresAt) || state.ExpiresAt.Sub(now) > trafficLease {
 		return frame, false, nil
 	}
 	frame.ExpiresAt = state.ExpiresAt
+	if !now.Before(state.ColorUntil) {
+		return frame, true, nil
+	}
 	frame.Sequence = uint64(state.Colors) << 1
 	green := [3]int{0, 112, 84}
 	if state.Colors&TrafficRed != 0 {

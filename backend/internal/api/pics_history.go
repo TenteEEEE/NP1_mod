@@ -20,8 +20,10 @@ const picsDayLimit = 2 << 20
 
 type picsReception struct {
 	pics.Reception
-	Position *pics.Coordinates `json:"position,omitempty"`
-	Course   *float64          `json:"course,omitempty"`
+	Position       *pics.Coordinates `json:"position,omitempty"`
+	PositionSource string            `json:"positionSource,omitempty"`
+	PositionAt     *time.Time        `json:"positionAt,omitempty"`
+	Course         *float64          `json:"course,omitempty"`
 }
 
 func (p *picsService) recordPICS(records []pics.Reception, now time.Time) {
@@ -29,13 +31,16 @@ func (p *picsService) recordPICS(records []pics.Reception, now time.Time) {
 		return
 	}
 	var position *pics.Coordinates
+	var positionAt *time.Time
+	var source string
 	if n := len(p.positions); n > 0 && p.positions[n-1].At.Sub(now).Abs() <= 3*time.Second {
 		latest := p.positions[n-1]
 		position = &pics.Coordinates{Lat: latest.Lat, Lon: latest.Lon}
+		positionAt, source = &latest.At, "live"
 	}
 	batch := make([]picsReception, 0, len(records))
 	for _, record := range records {
-		batch = append(batch, picsReception{Reception: record, Position: position, Course: p.currentPICSCourse(now)})
+		batch = append(batch, picsReception{Reception: record, Position: position, PositionAt: positionAt, PositionSource: source, Course: p.currentPICSCourse(now)})
 	}
 	select {
 	case p.receptions <- batch:
@@ -50,7 +55,10 @@ func (p *picsService) collectPICSHistory(ctx context.Context) {
 	days := map[string][]picsReception{}
 	flush := func() {
 		for day, records := range days {
-			if err := appendPICSHistory(p.historyDir, day, records); err != nil {
+			p.historyMu.Lock()
+			err := appendPICSHistory(p.historyDir, day, records)
+			p.historyMu.Unlock()
+			if err != nil {
 				p.mu.Lock()
 				p.historyIncomplete = true
 				p.mu.Unlock()
@@ -83,6 +91,32 @@ func (p *picsService) collectPICSHistory(ctx context.Context) {
 			add(batch)
 		}
 	}
+}
+
+// Only the retained-track collector calls this. The same lock used by appends
+// covers read and atomic replacement so a new detection cannot be lost.
+func (p *picsService) backfillPICSHistory(day string, track trips.TrackReport) error {
+	if len(track.Points) == 0 {
+		return nil
+	}
+	p.historyMu.Lock()
+	defer p.historyMu.Unlock()
+	path := filepath.Join(p.historyDir, day+".jsonl")
+	entries, partial, err := readPICSHistory(path)
+	if err != nil || partial || !fillPICSPositions(entries, track) {
+		return err
+	}
+	var data bytes.Buffer
+	encoder := json.NewEncoder(&data)
+	for _, record := range entries {
+		if err := encoder.Encode(record); err != nil {
+			return err
+		}
+	}
+	if data.Len() > picsDayLimit {
+		return errors.New("PICS backfill exceeds daily history limit")
+	}
+	return writeStateFile(path, data.Bytes())
 }
 
 func appendPICSHistory(directory, day string, records []picsReception) error {
@@ -188,7 +222,7 @@ func (s *Server) picsHistory(w http.ResponseWriter, r *http.Request) {
 	jsonOut(w, 200, map[string]any{"date": date, "entries": entries, "incomplete": incomplete})
 }
 
-func fillPICSPositions(entries []picsReception, track trips.TrackReport) {
+func fillPICSPositions(entries []picsReception, track trips.TrackReport) bool {
 	lookups := []time.Time{}
 	indices := []int{}
 	for i, record := range entries {
@@ -198,15 +232,20 @@ func fillPICSPositions(entries []picsReception, track trips.TrackReport) {
 		}
 	}
 	if len(lookups) == 0 {
-		return
+		return false
 	}
+	changed := false
 	for i, sample := range trips.NearestSamples(trips.TrackSamples(track), lookups, 3*time.Second) {
 		record := &entries[indices[i]]
 		if record.Position == nil && sample != nil {
 			record.Position = &pics.Coordinates{Lat: sample.Lat, Lon: sample.Lon}
+			record.PositionAt, record.PositionSource = &sample.At, "recorded"
+			changed = true
 		}
 		if record.Course == nil {
 			record.Course = trips.CourseBefore(track.Points, record.At)
+			changed = changed || record.Course != nil
 		}
 	}
+	return changed
 }

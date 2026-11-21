@@ -62,18 +62,18 @@ func TestFirstVisitUsesEverySlotAndIgnoresStaleChanges(t *testing.T) {
 	now := time.Now()
 	m.Receive("west", frame(1, 0x84, 0x81, 0x81), now)
 	m.Receive("east", frame(2, 0x81), now)
-	m.Receive("east", frame(2, 0x83), now.Add(2*time.Second))
-	if _, ok := m.NextCue(now.Add(2 * time.Second)); ok {
+	m.Receive("east", frame(2, 0x83), now.Add(4*time.Second))
+	if _, ok := m.NextCue(now.Add(4 * time.Second)); ok {
 		t.Fatal("a transition inferred across a gap")
 	}
-	m.Receive("west", frame(1, 0x84, 0x81, 0x81), now.Add(2*time.Second))
-	m.Receive("west", frame(1, 0x84, 0x81, 0x83), now.Add(2500*time.Millisecond))
-	cue, ok := m.NextCue(now.Add(2500 * time.Millisecond))
+	m.Receive("west", frame(1, 0x84, 0x81, 0x81), now.Add(4*time.Second))
+	m.Receive("west", frame(1, 0x84, 0x81, 0x83), now.Add(4500*time.Millisecond))
+	cue, ok := m.NextCue(now.Add(4500 * time.Millisecond))
 	if !ok || cue.Kind != "green" || cue.slot != 2 {
 		t.Fatalf("slot 3 green cue missing: %#v", cue)
 	}
-	m.Receive("second sender", frame(1, 0x84, 0x81, 0x81), now.Add(2600*time.Millisecond))
-	if m.StillValid(cue, now.Add(2600*time.Millisecond)) {
+	m.Receive("second sender", frame(1, 0x84, 0x81, 0x81), now.Add(4600*time.Millisecond))
+	if m.StillValid(cue, now.Add(4600*time.Millisecond)) {
 		t.Fatal("conflicting packet did not invalidate cue")
 	}
 }
@@ -111,7 +111,7 @@ func TestOtherDirectionChangesWhenSecondsAreUnknown(t *testing.T) {
 		}
 	}
 	advance("", 0x81, 0x81)
-	now = now.Add(2 * time.Second)
+	now = now.Add(3 * time.Second)
 	advance("", 0x81, 0x83, 0x83)
 	advance("", 0x81, 0x82, 0x83) // A third lamp makes the pairing ambiguous.
 	advance("", 0x81, 0x83)
@@ -120,10 +120,33 @@ func TestOtherDirectionChangesWhenSecondsAreUnknown(t *testing.T) {
 	advance(soonCue, 0x81, 0x81)
 	advance("", 0x81, 0x81)
 	advance("green", 0x83, 0x81)
-	now = now.Add(2 * time.Second)
+	now = now.Add(3 * time.Second)
 	advance("", 0x81, 0x83)
-	now = now.Add(2 * time.Second)
+	now = now.Add(3 * time.Second)
 	advance("", 0x81, 0x81) // A reception gap is not an observed transition.
+}
+
+func TestRoadGapAllowsObservedGreenWithoutExtendingTheDisplay(t *testing.T) {
+	var m Monitor
+	now := time.Now()
+	m.Receive("sender", frame(1, 0x81), now)
+	after := now.Add(2467 * time.Millisecond)
+	if len(m.Signals(after)) != 0 || !m.VisitUntil(after, func(string, int) bool { return true }).After(after) {
+		t.Fatal("signal should expire while the LED visit remains active")
+	}
+	records := m.Receive("sender", frame(1, 0x83), after)
+	cue, ok := m.NextCue(after)
+	if !ok || cue.Kind != "green" || !m.CanStart(cue, after, 2200*time.Millisecond) {
+		t.Fatal("same-source red to green across a road gap did not qualify")
+	}
+	if records[0].PhaseSeconds != 0 || !m.StillValid(cue, after.Add(2200*time.Millisecond)) ||
+		m.Valid(cue, after.Add(2200*time.Millisecond)) || len(m.Signals(after.Add(2200*time.Millisecond))) != 0 {
+		t.Fatal("the observed cue, timing history and stale display are not independent")
+	}
+	m.Receive("sender", frame(1, 0x81), after.Add(2200*time.Millisecond))
+	if m.StillValid(cue, after.Add(2200*time.Millisecond)) {
+		t.Fatal("green cue survived receiving red")
+	}
 }
 
 func TestInProgressBlinkHintContinuesWhileItsSignalIsFresh(t *testing.T) {
@@ -135,8 +158,8 @@ func TestInProgressBlinkHintContinuesWhileItsSignalIsFresh(t *testing.T) {
 	if !ok || cue.Kind != otherBlinkCue || !m.CanStart(cue, now, 3700*time.Millisecond) {
 		t.Fatalf("unexpected cue: %#v", cue)
 	}
-	for i := 1; i <= 4; i++ {
-		m.Receive("device", frame(1, 0x81, 0x82), now.Add(time.Duration(i)*time.Second))
+	for _, gap := range []time.Duration{2300 * time.Millisecond, 4 * time.Second} {
+		m.Receive("device", frame(1, 0x81, 0x82), now.Add(gap))
 	}
 	late := now.Add(4 * time.Second)
 	if _, ok := m.NextCue(late); ok || m.Valid(cue, late) || !m.StillValid(cue, late) {

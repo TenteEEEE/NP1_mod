@@ -27,12 +27,23 @@ type Monitor struct {
 	lastBlue      time.Time
 	focus         Cue
 	seenSignal    bool
+	diagnostics   ReceptionDiagnostics
+}
+
+type ReceptionDiagnostics struct {
+	FramesByType   [3]uint64 `json:"framesByType"`
+	GapByTypeMS    [3]int64  `json:"gapByTypeMs"`
+	SignalGapMS    int64     `json:"signalGapMs"`
+	MaxSignalGapMS int64     `json:"maxSignalGapMs"`
+	GapsOverLimit  uint64    `json:"gapsOverTransitionLimit"`
+	SkippedChanges uint64    `json:"skippedChanges"`
 }
 
 type intersection struct {
 	name, source                            string
 	lastSeen, lastType2, conflict, sourceAt time.Time
 	position                                *Coordinates
+	typeAt                                  [3]time.Time
 	lamps                                   [6]timing
 	blue                                    [6]time.Time
 }
@@ -44,6 +55,7 @@ func (m *Monitor) Interrupt() {
 	for _, crossing := range m.intersections {
 		crossing.lastType2 = time.Time{}
 		crossing.sourceAt = time.Time{}
+		crossing.typeAt = [3]time.Time{}
 		crossing.blue = [6]time.Time{}
 		for i, t := range crossing.lamps {
 			crossing.lamps[i] = timing{samples: t.samples, calibrated: t.calibrated}
@@ -56,6 +68,7 @@ func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Recept
 	if !ok {
 		return nil
 	}
+	m.diagnostics.FramesByType[p.kind]++
 	if m.intersections == nil {
 		m.intersections = make(map[string]*intersection)
 	}
@@ -74,6 +87,10 @@ func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Recept
 		m.intersections[p.id] = crossing
 	}
 	crossing.lastSeen = now
+	if prior := crossing.typeAt[p.kind]; !prior.IsZero() && now.After(prior) {
+		m.diagnostics.GapByTypeMS[p.kind] = now.Sub(prior).Milliseconds()
+	}
+	crossing.typeAt[p.kind] = now
 	if p.kind == 0 {
 		crossing.name = p.name
 		return nil
@@ -109,8 +126,16 @@ func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Recept
 	if now.Before(crossing.conflict) {
 		return nil
 	}
-	if crossing.source == source && now.Sub(crossing.sourceAt) <= freshFor {
-		crossing.observeOtherDirection(p.lamps, now)
+	sameSource := crossing.source == source && !crossing.sourceAt.IsZero()
+	gap := now.Sub(crossing.sourceAt)
+	var prior [6]Lamp
+	if sameSource {
+		d := &m.diagnostics
+		d.SignalGapMS = gap.Milliseconds()
+		d.MaxSignalGapMS = max(d.MaxSignalGapMS, d.SignalGapMS)
+		if gap > transitionFor {
+			d.GapsOverLimit++
+		}
 	}
 	crossing.source, crossing.lastType2, crossing.sourceAt = source, now, now
 	m.sequence++
@@ -121,6 +146,10 @@ func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Recept
 		}
 		t := &crossing.lamps[i]
 		previous, gap := t.lamp, now.Sub(t.at)
+		prior[i] = previous
+		if sameSource && now.Sub(t.at) > transitionFor && previous.Color != "" && lamp.Color != "" && previous.Color != lamp.Color {
+			m.diagnostics.SkippedChanges++
+		}
 		blue := t.observe(lamp, now, m.sequence)
 		if blue {
 			crossing.blue[i] = now
@@ -130,6 +159,9 @@ func (m *Monitor) Receive(source string, payload []byte, now time.Time) []Recept
 			record.ID, record.Name, record.Slot, record.Beacon = p.id, crossing.name, i+1, crossing.position
 			records = append(records, record)
 		}
+	}
+	if sameSource && gap <= transitionFor {
+		crossing.observeOtherDirection(prior, p.lamps, now)
 	}
 	return records
 }
@@ -146,10 +178,10 @@ type signalHint struct {
 	at                      time.Time
 }
 
-func (crossing *intersection) observeOtherDirection(lamps [6]Lamp, now time.Time) {
+func (crossing *intersection) observeOtherDirection(prior, lamps [6]Lamp, now time.Time) {
 	hint := signalHint{at: now}
 	for i, next := range lamps {
-		previous := crossing.lamps[i].lamp.Color
+		previous := prior[i].Color
 		slot := uint8(1 << i)
 		var change string
 		switch {
@@ -184,7 +216,7 @@ func (crossing *intersection) observeOtherDirection(lamps [6]Lamp, now time.Time
 
 func (crossing *intersection) validHint(slot int, now time.Time) bool {
 	t := &crossing.lamps[slot]
-	if t.hint.kind == "" || now.Sub(crossing.sourceAt) > freshFor || t.lamp.Color != Red || t.seconds(now) > 0 {
+	if t.hint.kind == "" || t.lamp.Color != Red || t.seconds(now) > 0 {
 		return false
 	}
 	otherColor := BlinkGreen
@@ -217,6 +249,27 @@ func (m *Monitor) FreshSignals(now time.Time) []Signal {
 }
 
 func (m *Monitor) HasSeenSignal() bool { return m.seenSignal }
+
+func (m *Monitor) Diagnostics() ReceptionDiagnostics { return m.diagnostics }
+
+// VisitUntil retains only the LED's dark waiting state between valid signal frames.
+func (m *Monitor) VisitUntil(now time.Time, admit func(string, int) bool) time.Time {
+	const idleAfter = 10 * time.Second
+	var until time.Time
+	for id, crossing := range m.intersections {
+		deadline := crossing.lastType2.Add(idleAfter)
+		if !deadline.After(now) || !deadline.After(until) {
+			continue
+		}
+		for i, lamp := range crossing.lamps {
+			if lamp.lamp.Color != "" && admit(id, i+1) {
+				until = deadline
+				break
+			}
+		}
+	}
+	return until
+}
 
 func (m *Monitor) signals(now time.Time, maxAge time.Duration) []Signal {
 	result := []Signal{}
@@ -292,7 +345,8 @@ func (m *Monitor) NextCueFor(now time.Time, admit func(string, int) bool) (Cue, 
 		for _, signal := range signals {
 			crossing, slot := m.intersections[signal.ID], signal.Slot-1
 			t := &crossing.lamps[slot]
-			if t.hint.kind != t.hintAnnounced && now.Sub(t.hint.at) < hintLifetime && crossing.validHint(slot, now) {
+			if t.hint.kind != t.hintAnnounced && now.Sub(t.hint.at) < hintLifetime &&
+				now.Sub(crossing.sourceAt) <= freshFor && crossing.validHint(slot, now) {
 				return Cue{Kind: t.hint.kind, id: signal.ID, slot: slot, phase: t.phase, eventAt: t.hint.at}, true
 			}
 		}
@@ -325,7 +379,7 @@ func (m *Monitor) Valid(cue Cue, now time.Time) bool {
 	case "green":
 		return now.Sub(cue.eventAt) <= freshFor
 	case otherBlinkCue, soonCue:
-		return now.Sub(cue.eventAt) < hintLifetime
+		return now.Sub(cue.eventAt) < hintLifetime && now.Sub(m.intersections[cue.id].sourceAt) <= freshFor
 	default:
 		return m.intersections[cue.id].lamps[cue.slot].seconds(now) == cue.Seconds
 	}
@@ -344,11 +398,12 @@ func (m *Monitor) StillValid(cue Cue, now time.Time) bool {
 	t := &crossing.lamps[cue.slot]
 	switch cue.Kind {
 	case "green":
-		return cue.eventAt == crossing.blue[cue.slot] && t.lamp.Color == Green && now.Sub(t.at) <= freshFor
+		return cue.eventAt == crossing.blue[cue.slot] && t.lamp.Color == Green
 	case otherBlinkCue, soonCue:
-		return t.phase == cue.phase && t.hint.kind == cue.Kind && t.hint.at == cue.eventAt && crossing.validHint(cue.slot, now)
+		return t.phase == cue.phase && t.hint.kind == cue.Kind &&
+			t.hint.at == cue.eventAt && crossing.validHint(cue.slot, now)
 	}
-	return t.phase == cue.phase && t.seconds(now) > 0
+	return t.phase == cue.phase && t.lamp.Color == Red && t.deadline.After(now)
 }
 
 func (m *Monitor) Claim(cue Cue, now time.Time) {

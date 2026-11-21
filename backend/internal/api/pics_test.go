@@ -79,11 +79,11 @@ func TestPICSLightsFreshDirectionsOnly(t *testing.T) {
 	now := time.Now()
 	p.scanState = "scanning"
 	p.monitor.Receive("beacon", []byte{0, 0, 2, 0, 0, 0, 0, 0, 0, 1, 0x81, 0x82, 0x83}, now)
-	if got, _ := p.trafficColors(now); got != 0 {
+	if got, _, _ := p.trafficColors(now); got != 0 {
 		t.Fatalf("disabled LED showed %v", got)
 	}
 	p.settings.LED = true
-	if got, _ := p.trafficColors(now); got != led.TrafficRed|led.TrafficBlinkGreen|led.TrafficGreen {
+	if got, _, _ := p.trafficColors(now); got != led.TrafficRed|led.TrafficBlinkGreen|led.TrafficGreen {
 		t.Fatalf("LED did not show all visible colors: %v", got)
 	}
 	axis, course := 90.0, 270.0
@@ -91,14 +91,14 @@ func TestPICSLightsFreshDirectionsOnly(t *testing.T) {
 	p.directions["00000001"] = picsAxes{nil, nil, &axis}
 	p.positions = []trips.TrackPoint{{At: now}}
 	p.course = &course
-	if got, _ := p.trafficColors(now); got != led.TrafficGreen {
+	if got, _, _ := p.trafficColors(now); got != led.TrafficGreen {
 		t.Fatalf("LED ignored the selected directions: %v", got)
 	}
-	if got, _ := p.trafficColors(now.Add(2 * time.Second)); got != 0 {
-		t.Fatalf("expired signal still shown: %v", got)
+	if got, _, visit := p.trafficColors(now.Add(2 * time.Second)); got != 0 || visit != now.Add(10*time.Second) {
+		t.Fatalf("expired signal should leave a dark visit: %v %v", got, visit)
 	}
 	p.scanState = "unavailable"
-	if got, _ := p.trafficColors(now); got != 0 {
+	if got, _, visit := p.trafficColors(now); got != 0 || !visit.IsZero() {
 		t.Fatalf("interrupted scanner still shown: %v", got)
 	}
 }
@@ -148,9 +148,19 @@ func TestPICSHistoryRetainsUnplacedRecordsAndJoinsTheRightFix(t *testing.T) {
 	if err != nil || partial || len(entries) != 2 {
 		t.Fatalf("history did not round trip: %v, %v, %d", err, partial, len(entries))
 	}
-	fillPICSPositions(entries, trips.TrackReport{Points: []trips.TrackPoint{{At: now, Lat: 10, Lon: 20}}})
-	if entries[0].Position == nil || entries[0].Position.Lat != 10 || entries[1].Position != nil {
+	p := newPICSService(t.TempDir(), nil)
+	p.historyDir = dir
+	track := trips.TrackReport{Points: []trips.TrackPoint{{At: now, Lat: 10, Lon: 20}}}
+	if err := p.backfillPICSHistory(date, track); err != nil {
+		t.Fatal(err)
+	}
+	entries, partial, err = readPICSHistory(filepath.Join(dir, date+".jsonl"))
+	if err != nil || partial || len(entries) != 2 || entries[0].Position == nil || entries[0].Position.Lat != 10 ||
+		entries[0].PositionSource != "recorded" || !now.Equal(*entries[0].PositionAt) || entries[1].Position != nil {
 		t.Fatal("a matching position was lost or was assigned to the wrong record")
+	}
+	if fillPICSPositions(entries, track) {
+		t.Fatal("backfill changed a second read of the same data")
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 const (
 	freshFor       = 1650 * time.Millisecond
 	showFor        = 1850 * time.Millisecond
+	transitionFor  = 3 * time.Second
 	timingLifetime = 20 * time.Minute
 	timingSamples  = 5
 	maxSeconds     = 99
@@ -29,19 +30,20 @@ type timing struct {
 
 func (t *timing) observe(lamp Lamp, at time.Time, phase uint64) (blue bool) {
 	previous := t.lamp
-	continuous := !t.at.IsZero() && at.Sub(t.at) <= freshFor
+	gap := at.Sub(t.at)
+	continuous := !t.at.IsZero() && gap <= freshFor
+	blue = !t.at.IsZero() && gap <= transitionFor && previous.Color == Red && lamp.Color == Green
 	t.lamp, t.at = lamp, at
 	if !t.calibrated.IsZero() && at.Sub(t.calibrated) > timingLifetime {
 		t.samples = [9][]time.Duration{}
 	}
 	if !continuous || previous.Color != Red || lamp.Color != Red {
-		blue = continuous && previous.Color == Red && lamp.Color == Green
-		if blue {
+		if continuous && blue {
 			t.learn(at)
 		}
 		t.edges = [9]time.Time{}
 		t.deadline = time.Time{}
-		if lamp.Color == Red {
+		if lamp.Color == Red && (previous.Color != Red || gap > transitionFor) {
 			t.phase, t.announced, t.ten, t.lastNumber = phase, false, false, 6
 			t.hint, t.hintAnnounced = signalHint{}, ""
 		}

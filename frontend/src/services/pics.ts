@@ -4,7 +4,7 @@ export type PicsSignal={id:string;name?:string;slot:number;color:PicsColor;secon
 export type PicsStatus={settings:PicsSettings;state:'off'|'starting'|'scanning'|'unavailable';reason?:string;course?:number;signals:PicsSignal[];stale?:boolean}
 export type PicsSpeech={ready:boolean;prepared?:boolean;reason?:string;credit?:string;styles:{id:number;speaker:string;name:string}[]}
 export type PicsPoint={lat:number;lon:number}
-export type PicsReception={id:string;name?:string;slot:number;at:string;color:PicsColor;step?:number;position?:PicsPoint;beacon?:PicsPoint;course?:number;previousColor?:PicsColor;phaseSeconds?:number;cycleSeconds?:number;estimatedToGreen?:number}
+export type PicsReception={id:string;name?:string;slot:number;at:string;color:PicsColor;step?:number;position?:PicsPoint;positionSource?:'live'|'recorded';positionAt?:string;beacon?:PicsPoint;course?:number;previousColor?:PicsColor;phaseSeconds?:number;cycleSeconds?:number;estimatedToGreen?:number}
 export type PicsHistory={date:string;entries:PicsReception[];incomplete:boolean}
 export type PicsAxes=(number|null)[]
 

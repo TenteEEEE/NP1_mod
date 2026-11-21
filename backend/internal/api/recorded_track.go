@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -21,7 +22,8 @@ func (s *Server) collectTracks(ctx context.Context) {
 		retentionError := ""
 		for offset := 6; offset >= 0; offset-- {
 			at := now.AddDate(0, 0, -offset)
-			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://broker/recordings/track?date="+at.In(trips.Japan).Format("2006-01-02"), nil)
+			day := at.In(trips.Japan).Format("2006-01-02")
+			request, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://broker/recordings/track?date="+day, nil)
 			response, err := s.client.Do(request)
 			if err == nil {
 				var value struct {
@@ -36,6 +38,15 @@ func (s *Server) collectTracks(ctx context.Context) {
 			}
 			if err != nil {
 				retentionError = "track-source-unavailable"
+			}
+			if s.pics != nil {
+				track, e := s.tracks.Read(day)
+				if e == nil {
+					e = s.pics.backfillPICSHistory(day, track)
+				}
+				if e != nil {
+					slog.Warn("PICS history position backfill failed", "day", day)
+				}
 			}
 		}
 		s.loggerMu.Lock()

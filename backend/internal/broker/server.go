@@ -151,6 +151,9 @@ func Serve(socket string, uid uint32) error {
 	mux.HandleFunc("GET /gps", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(adapters.GNSSSummary(r.Context()))
 	})
+	mux.HandleFunc("GET /pics/gps", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(adapters.PICSGNSS(r.Context()))
+	})
 	mux.HandleFunc("GET /capabilities", func(w http.ResponseWriter, r *http.Request) { json.NewEncoder(w).Encode(adapters.Capabilities()) })
 	mux.HandleFunc("GET /files", func(w http.ResponseWriter, r *http.Request) {
 		v, e := adapters.ListFiles(r.URL.Query().Get("path"))

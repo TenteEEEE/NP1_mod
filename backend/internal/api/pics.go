@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,7 +43,7 @@ type picsService struct {
 	path   string
 	voice  *platespeech.Manager
 	scan   func(context.Context, func(), func(string, []byte, time.Time)) error
-	setLED func(context.Context, led.TrafficColors, time.Time) error
+	setLED func(context.Context, led.TrafficColors, time.Time, time.Time) error
 
 	mu                                  sync.Mutex
 	settings                            picsSettings
@@ -52,12 +53,14 @@ type picsService struct {
 	scanCancel, prepCancel, playCancel  context.CancelFunc
 	playing                             *pics.Cue
 	speechPrepared                      bool
+	speechDecision                      string
 	gps                                 func(context.Context) *trips.TrackPoint
 	positions                           []trips.TrackPoint
 	course                              *float64
 	directions                          map[string]picsAxes
 	directionsPath                      string
 	historyDir                          string
+	historyMu                           sync.Mutex
 	receptions                          chan []picsReception
 	historyIncomplete                   bool
 }
@@ -187,7 +190,11 @@ func (p *picsService) runScan(ctx context.Context) {
 			defer p.mu.Unlock()
 			if scanCtx.Err() == nil {
 				now := time.Now()
+				skipped := p.monitor.Diagnostics().SkippedChanges
 				p.recordPICS(p.monitor.Receive(source, data, received), received)
+				if p.monitor.Diagnostics().SkippedChanges > skipped {
+					p.notePICSSpeech("observation-gap")
+				}
 				p.cancelInvalidCue(now)
 			}
 		})
@@ -263,19 +270,37 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 	now := time.Now()
 	p.cancelInvalidCue(now)
 	cfg := p.settings
-	if !cfg.Enabled || !cfg.Speech || cfg.Volume == 0 || !p.speechPrepared || p.playing != nil {
+	if !cfg.Enabled || p.playing != nil {
 		return
 	}
 	cue, ok := p.monitor.NextCueFor(now, func(id string, slot int) bool { return p.directionAllows(id, slot, now) })
 	if !ok {
+		if cfg.Directional {
+			if _, filtered := p.monitor.NextCue(now); filtered {
+				p.notePICSSpeech("direction-filter")
+			}
+		}
+		return
+	}
+	switch {
+	case !cfg.Speech:
+		p.notePICSSpeech("disabled")
+		return
+	case cfg.Volume == 0:
+		p.notePICSSpeech("zero-volume")
+		return
+	case !p.speechPrepared:
+		p.notePICSSpeech("cache-not-ready")
 		return
 	}
 	if p.voice.HardwareAvailable() != nil {
+		p.notePICSSpeech("audio-unavailable")
 		return
 	}
 	texts := pics.SpeechParts(cue)
 	for _, text := range texts {
 		if !p.voice.Prepared(cfg.Style, text) {
+			p.notePICSSpeech("clip-unavailable")
 			return
 		}
 	}
@@ -283,21 +308,41 @@ func (p *picsService) tickSpeech(ctx context.Context) {
 	p.playing, p.playCancel = &cue, cancel
 	go func() {
 		defer cancel()
-		_ = p.voice.PlayPrepared(play, cfg.Style, cfg.Volume, texts, func(length time.Duration) bool {
+		rejected := false
+		err := p.voice.PlayPrepared(play, cfg.Style, cfg.Volume, texts, func(length time.Duration) bool {
 			p.mu.Lock()
 			defer p.mu.Unlock()
 			now := time.Now()
 			id, slot := cue.SignalKey()
 			if !p.monitor.CanStart(cue, now, length) || !p.directionAllows(id, slot, now) || play.Err() != nil {
+				rejected = true
 				return false
 			}
 			p.monitor.Claim(cue, now)
 			return true
 		})
 		p.mu.Lock()
+		switch {
+		case play.Err() != nil:
+			p.notePICSSpeech("cancelled")
+		case rejected:
+			p.notePICSSpeech("no-longer-valid")
+		case err != nil:
+			p.notePICSSpeech("playback-unavailable")
+		default:
+			p.notePICSSpeech("played-" + cue.Kind)
+		}
 		p.playing, p.playCancel = nil, nil
 		p.mu.Unlock()
 	}()
+}
+
+// Called under p.mu. No location, device address, or crossing identifier enters the journal.
+func (p *picsService) notePICSSpeech(decision string) {
+	if decision != p.speechDecision {
+		p.speechDecision = decision
+		slog.Info("PICS speech", "decision", decision)
+	}
 }
 
 func (s *Server) registerPICS() {
@@ -316,13 +361,14 @@ func (s *Server) registerPICS() {
 			}
 		}
 		out := struct {
-			Settings picsSettings  `json:"settings"`
-			State    string        `json:"state"`
-			Reason   string        `json:"reason,omitempty"`
-			Course   *float64      `json:"course,omitempty"`
-			Signals  []pics.Signal `json:"signals"`
-			Stale    bool          `json:"stale,omitempty"`
-		}{p.settings, p.scanState, p.scanReason, p.currentPICSCourse(now), signals, p.scanState == "scanning" && len(signals) == 0 && p.monitor.HasSeenSignal()}
+			Settings    picsSettings              `json:"settings"`
+			State       string                    `json:"state"`
+			Reason      string                    `json:"reason,omitempty"`
+			Course      *float64                  `json:"course,omitempty"`
+			Signals     []pics.Signal             `json:"signals"`
+			Stale       bool                      `json:"stale,omitempty"`
+			Diagnostics pics.ReceptionDiagnostics `json:"diagnostics"`
+		}{p.settings, p.scanState, p.scanReason, p.currentPICSCourse(now), signals, p.scanState == "scanning" && len(signals) == 0 && p.monitor.HasSeenSignal(), p.monitor.Diagnostics()}
 		p.mu.Unlock()
 		if !out.Settings.Enabled {
 			out.State, out.Reason = "off", ""
@@ -331,7 +377,7 @@ func (s *Server) registerPICS() {
 	})
 	s.mux.HandleFunc("GET /api/v1/pics/speech", func(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
-		cfg, reason, prepared := p.settings, p.speechReason, p.speechPrepared
+		cfg, reason, prepared, decision := p.settings, p.speechReason, p.speechPrepared, p.speechDecision
 		p.mu.Unlock()
 		ready := p.voice.Prepared(cfg.Style, pics.PreviewText)
 		if err := p.voice.HardwareAvailable(); err != nil {
@@ -348,7 +394,7 @@ func (s *Server) registerPICS() {
 				break
 			}
 		}
-		jsonOut(w, http.StatusOK, map[string]any{"ready": ready, "prepared": prepared, "reason": reason, "styles": styles, "credit": credit})
+		jsonOut(w, http.StatusOK, map[string]any{"ready": ready, "prepared": prepared, "reason": reason, "styles": styles, "credit": credit, "lastDecision": decision})
 	})
 	s.mux.HandleFunc("PUT /api/v1/pics", func(w http.ResponseWriter, r *http.Request) {
 		var body *picsSettings

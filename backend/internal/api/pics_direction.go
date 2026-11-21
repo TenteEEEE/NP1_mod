@@ -121,7 +121,7 @@ func picsGPS(client *http.Client) func(context.Context) *trips.TrackPoint {
 	return func(ctx context.Context) *trips.TrackPoint {
 		ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://broker/gps", nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://broker/pics/gps", nil)
 		if err != nil {
 			return nil
 		}
