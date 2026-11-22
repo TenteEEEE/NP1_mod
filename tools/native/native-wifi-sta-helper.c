@@ -49,14 +49,29 @@ static int exchange(common_send_fn send,queue_check_fn check,queue_receive_fn re
  }
  fail("correlated Communication STA response timed out; status unknown",78);return 0;
 }
-static int coherent_get(common_send_fn send,queue_check_fn check,queue_receive_fn receive,void*name,void*receiver,int wanted){
- struct ncc_time until=sta_deadline();while(sta_before(&until)){int state=exchange(send,check,receive,name,receiver,1,0,&until);if((!wanted||state==wanted)&&stock_snapshot()&&stock_value(40)==(state==1?0:1))return state;usleep(10000);}fail("STA owner/native40 read-back is not coherent; status unknown",78);return 0;
+static int coherent_get(common_send_fn send,queue_check_fn check,queue_receive_fn receive,void*name,void*receiver,int wanted,int permit_reconcile){
+ int reported=0,contradictions=0;struct ncc_time until=sta_deadline();
+ while(sta_before(&until)){
+  int state=exchange(send,check,receive,name,receiver,1,0,&until);
+  int native=stock_snapshot()?stock_value(40):-1;
+  if((!wanted||state==wanted)&&native==(state==1?0:1))return state;
+  if(state==2&&native==0){
+   if(++contradictions==3&&permit_reconcile)return 0;
+  }else contradictions=0;
+  if(!reported){
+   diagnostic_text("STA read-back stage=");diagnostic_text(stage);diagnostic_text(" owner=");diagnostic_number((unsigned)state);
+   diagnostic_text(" native40=");if(native==0||native==1)diagnostic_number((unsigned)native);else diagnostic_text("unavailable");diagnostic_text("\n");
+   reported=1;
+  }
+  usleep(permit_reconcile?150000:10000);
+ }
+ fail("STA owner/native40 read-back is not coherent; status unknown",78);return 0;
 }
 int main(int argc,char**argv){
- int apply=argc==5&&same(argv[1],"--apply");int get=argc==3&&same(argv[1],"--get");int restore=argc==3&&same(argv[1],"--restore-on");int only=argc==2&&same(argv[1],"--preflight");if(!apply&&!get&&!restore&&!only)fail("usage: --preflight | --get communication-pid | --apply communication-pid expected-1or2 next-1or2 | --restore-on communication-pid",64);
+ int apply=argc==5&&same(argv[1],"--apply");int get=argc==3&&same(argv[1],"--get");int restore=argc==3&&same(argv[1],"--restore-on");int reconcile=argc==4&&same(argv[1],"--reconcile");int only=argc==2&&same(argv[1],"--preflight");if(!apply&&!get&&!restore&&!reconcile&&!only)fail("usage: --preflight | --get PID | --apply PID expected-1or2 next-1or2 | --restore-on PID | --reconcile PID next-1or2",64);
  preflight();if(!digest_file("/usr/local/bin/Communication","aaa0d09d406a2b762e24b303bc138665d3da97523a07dcc338ce0ec4bec49c8b")||stock_value(40)<0||stock_value(40)>1)fail("Communication firmware/settings unsupported",78);
  if(only){output("wifi-sta-preflight=ok; vendor-not-loaded\n");print_value(50,stock_value(50));print_value(51,stock_value(51));print_value(40,stock_value(40));print_value(85,stock_value(85));for(int i=0;i<4;i++){char key[6]={'s','e','m',(char)('0'+i),'=',0};output(key);long count=syscall(191,global_semaphores[i],0,12,0);if(count<0)fail("semaphore read-back unavailable",78);char digits[24];size_t n=0;do{digits[n++]=(char)('0'+count%10);count/=10;}while(count);while(n)syscall(64,1,digits+--n,1);output("\n");}return 0;}
- owner_pid=parse_pid(argv[2]);int expected=apply?small_number(argv[3],2):0,next=apply?small_number(argv[4],2):0;if(!owner_pid||(apply&&(expected<1||expected>2||next<1||next>2)))fail("known Communication PID and exact STA ON1/OFF2 enums required",64);
+ owner_pid=parse_pid(argv[2]);int expected=apply?small_number(argv[3],2):0,next=apply?small_number(argv[4],2):reconcile?small_number(argv[3],2):0;if(!owner_pid||(apply&&(expected<1||expected>2))||((apply||reconcile)&&(next<1||next>2)))fail("known Communication PID and exact STA ON1/OFF2 enums required",64);
  owner_live();
  const char*trial=getenv("NCC_NATIVE_WIFI_STA_TRIAL");if(!trial||!same(trial,"1"))fail("STA vendor trial requires explicit launcher environment",78);prepare_private_name();
  stage="pthread-bootstrap";prepare_vendor_phase();stage="NStandard-constructors";void*std=dlopen("/usr/local/lib/libNStandardLib.so",0x102);if(!std)loader_fail("NStandard load failed");
@@ -70,9 +85,17 @@ int main(int argc,char**argv){
  struct{unsigned long object[512];unsigned long canary;}external;external.canary=0x4e43435753544131UL;unsigned long destination[4]={0};const unsigned short owner_name[]={'C','o','m','m','u','n','i','c','a','t','i','o','n',0};
  stage="external-interface-constructor";ext_ctor(external.object,8192,8192);name_ctor(destination);name_set(destination,owner_name);stage="Communication-proxy-connect";void*proxy=instance(destination);if(!proxy||connect(proxy,100)!=0)fail("existing Communication IPC unavailable",78);
  stage="own-receiver-initialize";private_enabled=1;initialize(external.object);private_enabled=0;if(!private_created||external.canary!=0x4e43435753544131UL)fail("own receiver creation unconfirmed",78);
- struct ncc_time now;if(clock_gettime(1,&now))fail("monotonic clock unavailable",78);request_nonce=(unsigned)now.nanoseconds^(unsigned)getpid();stage="STA-get";int state=coherent_get(send,check,receive,destination,(u8*)external.object+0x98,0);
+ struct ncc_time now;if(clock_gettime(1,&now))fail("monotonic clock unavailable",78);request_nonce=(unsigned)now.nanoseconds^(unsigned)getpid();void*receiver=(u8*)external.object+0x98;stage="STA-get";int state=coherent_get(send,check,receive,destination,receiver,0,reconcile);
+ if(reconcile){
+  if(state!=0&&state!=next)fail("STA reconciliation precondition changed; no mutation attempted",75);
+  if(state==0){
+   stage="STA-rearm";struct ncc_time until=sta_deadline();exchange(send,check,receive,destination,receiver,2,1,&until);
+   stage="STA-readback";state=coherent_get(send,check,receive,destination,receiver,1,0);
+   if(next==2){expected=1;apply=1;}
+  }
+ }
  if(restore){if(state==1)output("restore-on=preserved\n");else {expected=2;next=1;apply=1;}}
- if(apply){if(state!=expected)fail("STA expected value conflict; no mutation attempted",75);if(state!=next){stage="STA-change";struct ncc_time until=sta_deadline();exchange(send,check,receive,destination,(u8*)external.object+0x98,2,next,&until);}stage="STA-readback";state=coherent_get(send,check,receive,destination,(u8*)external.object+0x98,next);}
+ if(apply){if(state!=expected)fail("STA expected value conflict; no mutation attempted",75);if(state!=next){stage="STA-change";struct ncc_time until=sta_deadline();exchange(send,check,receive,destination,receiver,2,next,&until);}stage="STA-readback";state=coherent_get(send,check,receive,destination,receiver,next,0);}
 
  stage="own-receiver-peer-release";sole_receiver_reference();stage="own-receiver-destruction";name_dtor(destination);ext_dtor(external.object);release_owned_memories();if(ncc_owned_count||ncc_memory_count||!memory_refs_match())fail("STA cleanup reference mismatch",78);private_cleanup();if(private_created||external.canary!=0x4e43435753544131UL)fail("own receiver cleanup unconfirmed",78);owner_live();output("wifi-sta-wire=");char number=(char)('0'+state);syscall(64,1,&number,1);output("\nnative-");print_value(40,stock_value(40));output("cleanup=matched; own-receiver-removed\n");syscall(94,0);for(;;){}
 }

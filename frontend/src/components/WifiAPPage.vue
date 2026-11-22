@@ -20,7 +20,7 @@ const props=defineProps<{summary:Summary}>(),emit=defineEmits<{refresh:[]}>()
 const uplinkMode=ref(''),stationOn=ref<boolean|null>(null)
 const wifi=ref<WiFiView>(),ap=ref<Observation<AP>>(),networks=ref<Scan[]>([]),busy=ref(false),scanning=ref(false),error=ref(''),message=ref(''),loadError=ref(''),apError=ref(''),apMessage=ref(''),apBusy=ref(false),ssid=ref(''),security=ref('wpa2'),password=ref(''),showWifiSecrets=ref(false),apSSID=ref(''),apPassword=ref(''),showAPSecret=ref(false),apEnabled=ref(false),now=ref(Date.now())
 let active=true,poll:ReturnType<typeof setInterval>|undefined,tick:ReturnType<typeof setInterval>|undefined,inFlight=false,apInstalled=false
-let scanAt='',scanInterrupted=false
+let scanAt='',scanInterrupted=false,connectInterrupted=false
 const pending=computed(()=>wifi.value?.transaction?.state==='pending'?wifi.value.transaction:undefined)
 const remaining=computed(()=>pending.value?Math.max(0,Math.ceil((Date.parse(pending.value.expiresAt)-now.value)/1000)):0)
 const connected=computed(()=>wifi.value?.status.state==='COMPLETED')
@@ -57,6 +57,7 @@ async function load(){
   if(!active)return
   if(results[0].status==='fulfilled'){
    wifi.value=results[0].value;loadError.value=''
+   if(connectInterrupted&&wifi.value.transaction?.state==='pending'){error.value='';connectInterrupted=false}
    const recent=wifi.value.lastScan
    if(recent&&!scanning.value&&recent.scannedAt!==scanAt)installScan(recent)
   }else loadError.value=reason(results[0].reason)
@@ -77,7 +78,7 @@ async function scan(){
  }finally{if(active)scanning.value=false}
 }
 function choose(network:Scan){ssid.value=network.ssid;security.value=network.security==='open'?'open':'wpa2';password.value='';message.value=''}
-async function connect(body:Record<string,unknown>,saved=false){if(controlsDisabled.value)return;busy.value=true;error.value='';message.value='';try{const value=await api<Transaction>('/network/wifi/'+(saved?'connect-saved':'connect-new'),'POST',body);if(active){if(value.state!=='pending')throw new Error('接続確認の開始を確認できません。');if(wifi.value)wifi.value.transaction=value;password.value='';await load()}}catch(e){if(active)error.value=reason(e)}finally{if(active)busy.value=false}}
+async function connect(body:Record<string,unknown>,saved=false){if(controlsDisabled.value)return;busy.value=true;error.value='';message.value='';connectInterrupted=false;try{const value=await api<Transaction>('/network/wifi/'+(saved?'connect-saved':'connect-new'),'POST',body);if(active){if(value.state!=='pending')throw new Error('接続確認の開始を確認できません。');if(wifi.value)wifi.value.transaction=value;password.value='';await load()}}catch(e){if(active){connectInterrupted=e instanceof TypeError;if(connectInterrupted)password.value='';error.value=connectInterrupted?'切替中に応答が途切れました。再送せず、NP1のホットスポットから接続の確認画面を開いてください。':reason(e);if(connectInterrupted)await load()}}finally{if(active)busy.value=false}}
 async function finish(confirm:boolean){if(!pending.value||busy.value)return;busy.value=true;error.value='';message.value='';try{const value=await api<Transaction>('/network/wifi/'+(confirm?'confirm':'rollback'),'POST',{transactionID:pending.value.id});if(active){if(value.state!==(confirm?'confirmed':'rolled-back'))throw new Error('操作の完了を確認できません。');message.value=confirm?'Wi-Fi接続を確定しました。':'元のWi-Fi接続へ戻しました。';if(wifi.value)wifi.value.transaction=value;await load();emit('refresh')}}catch(e){if(active)error.value=reason(e)}finally{if(active)busy.value=false}}
 async function saveAP(){if(!apData.value?.settings||apBusy.value||pending.value)return;apBusy.value=true;apError.value='';apMessage.value='';const expectedEnabled=apEnabled.value,expectedSSID=apSSID.value,savedPassphrase=apData.value.settings.passphrase;try{const value=await api<Observation<AP>>('/network/hotspot','PUT',{expectedRevision:apData.value.settings.revision,settings:{enabled:expectedEnabled,ssid:expectedSSID,...(apPassword.value!==savedPassphrase?{passphrase:apPassword.value}:{})}});if(active){if(value.data?.enabled!==expectedEnabled||value.data?.settings?.ssid!==expectedSSID||expectedEnabled&&value.data?.dhcpReady!==true)throw new Error('ホットスポットの反映を確認できません。');installAP(value,true);apMessage.value='ホットスポットの反映を確認しました。';emit('refresh')}}catch(e){if(active)apError.value=reason(e)}finally{if(active)apBusy.value=false}}
 onMounted(()=>{load();poll=setInterval(load,2000);tick=setInterval(()=>{now.value=Date.now()},1000)})

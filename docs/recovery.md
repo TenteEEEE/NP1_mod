@@ -36,6 +36,12 @@ Web更新中は開いている画面やライブ配信が一時切断します�
 
 所有者用復旧サービス経由の導入には `web-worker-update` を使用できます。初回導入全体を取り消す場合は `python tools/deploy.py --serial SERIAL --action rollback-owner-recovery` を実行します。専用unitsと起動時の依存登録を取り除き、設定・状態と検証記録を `/overlay/owner-apps/np1-control.removed-<UTC時刻>` に保存します。
 
+### NP1CC 0.5.1 の回線修正
+
+標準導入済みの本体では、通常ビルド後に `python tools/deploy-uplink-update.py --serial SERIAL --version 0.5.1` でWebと回線切替の専用部品だけを更新できます。TCP経由の場合は、以前USBで `tools/connect.py` が取得した証明書指紋の記録を `--tailnet-certificate-file` で指定します。処理は本体側で続くため、回線が一時切断されても再実行せず、表示された処理の終了を待ってください。
+
+検証で失敗すると、保存した旧バイナリ・旧ユニット・旧ヘルパーに自動で戻します。正常終了後に明示的に戻す場合は、同じビルドを使い、同じコマンドに `--rollback BACKUP_NAME`（配備時に表示されたバックアップのディレクトリ名）を追加します。別バージョンが適用済みなら上書きしません。
+
 ## ロールバック
 
 ```powershell

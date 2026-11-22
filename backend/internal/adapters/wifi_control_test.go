@@ -211,8 +211,37 @@ func TestWiFiRequiresDHCPAndRestoresSavedProfileAfterSupplicantRestart(t *testin
 			t.Fatalf("saved profile restore failed: %v", err)
 		}
 	}
-	if len(fresh.fields) != 3 || fresh.disabled[12] || fresh.fields[12]["ssid"] != "Private home" {
+	if len(fresh.fields) != 3 || fresh.disabled[12] || fresh.fields[12]["ssid"] != "Private home" || fresh.fields[12]["scan_ssid"] != "1" || fresh.fields[12]["priority"] != "100" {
 		t.Fatal("private profile was not enabled exactly once")
+	}
+}
+
+func TestWiFiRestorationPrefersNewestCredentialsAndLeavesStockProfilesUntouched(t *testing.T) {
+	controller, station := wifiTestController(t)
+	ctx := context.Background()
+	old := wifiProfile{ID: "ncc-12345678-1234-4234-8234-123456789abc", SSID: "Hidden lab", Security: "wpa2", Password: "old-test-secret"}
+	latest := wifiProfile{ID: "ncc-12345678-1234-4234-8234-123456789def", SSID: "Hidden lab", Security: "wpa2", Password: "new-test-secret"}
+	if err := controller.storeProfile(old); err != nil {
+		t.Fatal(err)
+	}
+	oldNetwork, err := controller.addProfileNetwork(ctx, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	station.disabled[oldNetwork] = false
+	if err := controller.storeProfile(latest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := controller.restoreProfiles(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !station.disabled[oldNetwork] || station.disabled[oldNetwork+1] || station.fields[oldNetwork+1]["priority"] != "101" || station.current != 4 || station.disabled[7] {
+		t.Fatal("restore did not prefer the newest NCC profile without changing stock association")
+	}
+	for _, command := range station.history() {
+		if strings.HasPrefix(command, "SET_NETWORK 4 ") || strings.HasPrefix(command, "SET_NETWORK 7 ") || command == "SAVE_CONFIG" {
+			t.Fatal("restore modified a stock network or persistent stock configuration")
+		}
 	}
 }
 

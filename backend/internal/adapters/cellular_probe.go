@@ -52,15 +52,19 @@ func ProbeCellularInternet(ctx context.Context) (CellularInternetProbeResult, er
 }
 
 func runCellularInternetProbe(parent context.Context, d cellularProbeDependencies) (CellularInternetProbeResult, error) {
+	return runBoundInternetProbe(parent, d, "np1-origin-bound-cellular", validCellularProbeIdentity)
+}
+
+func runBoundInternetProbe(parent context.Context, d cellularProbeDependencies, source string, valid func(apDNSIdentity) bool) (CellularInternetProbeResult, error) {
 	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
 	defer cancel()
-	result := CellularInternetProbeResult{Status: "failed", Source: "np1-origin-bound-cellular", StartedAt: d.now()}
+	result := CellularInternetProbeResult{Status: "failed", Source: source, StartedAt: d.now()}
 	fail := func(code string) (CellularInternetProbeResult, error) {
 		result.ObservedAt = d.now()
 		return result, errors.New(code)
 	}
 	before, err := d.snapshot(ctx)
-	if err != nil || !validCellularProbeIdentity(before) {
+	if err != nil || !valid(before) {
 		return fail("CELLULAR_PROBE_IDENTITY_UNAVAILABLE")
 	}
 	result.Interface = before.iface
