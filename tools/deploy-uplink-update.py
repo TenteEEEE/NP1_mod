@@ -1,4 +1,5 @@
 import argparse
+import gzip
 import hashlib
 import ipaddress
 import json
@@ -82,9 +83,18 @@ def main():
                 raise RuntimeError('Bundle checksum mismatch: ' + filename)
             local = subset / filename
             local.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, local)
+            if filename == 'bin/ncc':
+                with source.open('rb') as original, local.with_suffix('.gz').open('wb') as compressed:
+                    with gzip.GzipFile(filename='', mode='wb', fileobj=compressed, compresslevel=6, mtime=0) as archive:
+                        shutil.copyfileobj(original, archive)
+            else:
+                shutil.copyfile(source, local)
         (subset / 'SHA256SUMS').write_bytes(''.join(f'{manifest[filename]}  {filename}\n' for filename in FILES).encode('ascii'))
-        run('push', str(subset) + '/.', stage, seconds=150)
+        run('push', str(subset) + '/.', stage, seconds=480)
+        prepared = run('shell', f'/bin/gunzip -c {stage}/bin/ncc.gz >{stage}/bin/ncc && '
+                       f'rm -- {stage}/bin/ncc.gz && echo NCC_UPLINK_STAGED')
+        if prepared != 'NCC_UPLINK_STAGED':
+            raise RuntimeError('Compressed transfer could not be unpacked on the device')
 
     action = 'rollback ' + args.rollback if args.rollback else 'apply ' + args.version
     unit = 'ncc-uplink-update-' + stage.split('.')[-1].lower()
