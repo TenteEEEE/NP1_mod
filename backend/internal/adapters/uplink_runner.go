@@ -31,16 +31,17 @@ const (
 )
 
 type UplinkStatusView struct {
-	At         time.Time   `json:"at"`
-	Mode       string      `json:"mode"`
-	STAOn      *bool       `json:"staOn"`
-	WPAState   string      `json:"wpaState,omitempty"`
-	Uplink     string      `json:"uplink"` // wifi | cellular | none
-	State      UplinkState `json:"state"`
-	ScanKnown  bool        `json:"scanKnown"`
-	SavedSeen  bool        `json:"savedSeen"`
-	Error      string      `json:"error,omitempty"`
-	HelperSeen bool        `json:"helperAvailable"`
+	At           time.Time   `json:"at"`
+	Mode         string      `json:"mode"`
+	STAOn        *bool       `json:"staOn"`
+	WPAState     string      `json:"wpaState,omitempty"`
+	WiFiInternet string      `json:"wifiInternet,omitempty"`
+	Uplink       string      `json:"uplink"` // wifi | cellular | none
+	State        UplinkState `json:"state"`
+	ScanKnown    bool        `json:"scanKnown"`
+	SavedSeen    bool        `json:"savedSeen"`
+	Error        string      `json:"error,omitempty"`
+	HelperSeen   bool        `json:"helperAvailable"`
 }
 
 // stockSTAOn reads stock setting 40 (0 = STA mode on, 1 = off) from the shared settings
@@ -87,6 +88,38 @@ func communicationPID() (string, error) {
 }
 
 var helperWire = regexp.MustCompile(`(?m)^wifi-sta-wire=([12])$`)
+var staOwnerOffMismatch = regexp.MustCompile(`(?m)^STA read-back stage=STA-get owner=2 native40=0$`)
+
+func runSTAHelper(ctx context.Context, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, uplinkHelper, args...)
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LD_LIBRARY_PATH=/usr/local/lib", "NCC_NATIVE_WIFI_STA_TRIAL=1"}
+	return cmd.CombinedOutput()
+}
+
+func applySTA(ctx context.Context, pid, expected, next string, carries func() bool, invoke func(context.Context, ...string) ([]byte, error)) ([]byte, error) {
+	out, err := invoke(ctx, "--apply", pid, expected, next)
+	if next == "2" && err != nil && ctx.Err() == nil && staOwnerOffMismatch.Match(out) && !carries() {
+		return invoke(ctx, "--reconcile", pid, next)
+	}
+	return out, err
+}
+
+func reconcileSTAOn(ctx context.Context) error {
+	if wifiCarries() {
+		return errors.New("UPLINK_STA_LINK_PRESENT")
+	}
+	pid, err := communicationPID()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	out, err := runSTAHelper(ctx, "--reconcile", pid, "1")
+	if wire := helperWire.FindSubmatch(out); err != nil || wire == nil || string(wire[1]) != "1" {
+		return errors.New("UPLINK_REARM_UNCONFIRMED")
+	}
+	return nil
+}
 
 // requestSTA sends the verified owner request (1 = ON, 2 = OFF) and then confirms the
 // result from setting 40, which is the state Communication itself acts on. The helper's
@@ -104,9 +137,7 @@ func requestSTA(ctx context.Context, on bool) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, uplinkHelper, "--apply", pid, expected, next)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LD_LIBRARY_PATH=/usr/local/lib", "NCC_NATIVE_WIFI_STA_TRIAL=1"}
-	out, runErr := cmd.Output()
+	out, runErr := applySTA(ctx, pid, expected, next, wifiCarries, runSTAHelper)
 	if m := helperWire.FindSubmatch(out); runErr != nil && m == nil {
 		log.Printf("uplink helper: %v", runErr)
 	}
@@ -221,11 +252,16 @@ func RunUplinkSupervisor(ctx context.Context) error {
 	}
 	state := readUplinkState()
 	var saved []string
+	savedKnown := false
 	if raw, e := os.ReadFile(filepath.Join(uplinkPrivate, "saved.json")); e == nil {
-		_ = json.Unmarshal(raw, &saved)
+		savedKnown = json.Unmarshal(raw, &saved) == nil && saved != nil
 	}
 	previousMode := ""
 	var manualRetry time.Time
+	var nextProfileRefresh time.Time
+	var health uplinkWiFiHealth
+	var lease wifiDHCPManager
+	defer func() { lease.release(context.Background()) }()
 	for {
 		mode := uplinkMode()
 		status := UplinkStatusView{At: time.Now().UTC(), Mode: mode}
@@ -258,21 +294,27 @@ func RunUplinkSupervisor(ctx context.Context) error {
 				}
 				if on {
 					status.WPAState = wpaState()
+				} else {
+					nextProfileRefresh = time.Time{}
+					health = uplinkWiFiHealth{}
 				}
 				if use.Confirmed {
 					state.AutoOffAt, state.RetryAfter, state.NextProbeAt, state.ProbeUntil, state.UnconnectedSince = nil, nil, nil, nil, nil
+					nextProfileRefresh = time.Time{}
 				}
 				setupActive := now.Before(use.Until)
 				restoreOff := !setupActive && use.RestoreOff && !use.Confirmed && mode == UplinkModeAuto
-				if on && !setupActive && !restoreOff {
+				if on && !setupActive && !restoreOff && (nextProfileRefresh.IsZero() || !now.Before(nextProfileRefresh)) {
 					restore, stop := context.WithTimeout(ctx, 6*time.Second)
 					list, err := wifiController.restoreProfiles(restore)
 					stop()
 					if err == nil {
-						saved = list
+						saved, savedKnown = list, true
 						_ = config.Atomic(filepath.Join(uplinkPrivate, "saved.json"), saved)
+						nextProfileRefresh = now.Add(45 * time.Second)
 					}
 				}
+				lease.tick(ctx, on && !restoreOff, wifiController)
 				action, reason, next := UplinkNone, "", state
 				switch {
 				case setupActive:
@@ -298,15 +340,27 @@ func RunUplinkSupervisor(ctx context.Context) error {
 						}
 					}
 				default:
-					in := UplinkInputs{Now: now, STAOn: on, Working: on && wifiDefaultRouteWorking(), Enabled: status.HelperSeen}
+					link := on && wifiDefaultRouteWorking()
+					working := health.working(now, link, func() bool { return probeWiFiInternet(ctx) })
+					if link {
+						status.WiFiInternet = "unverified"
+						if working && health.misses == 0 {
+							status.WiFiInternet = "verified"
+						}
+					}
+					in := UplinkInputs{Now: now, STAOn: on, Working: working, Enabled: status.HelperSeen}
 					if fix, e := liveGNSS.LatestWithin(ctx, now, uplinkFixMaxAge); e == nil && fix != nil {
 						in.Position = &UplinkPosition{At: fix.At, Lat: fix.Lat, Lon: fix.Lon}
 					}
 					if !on && state.AutoOffAt != nil && (state.RetryAfter == nil || !now.Before(*state.RetryAfter)) {
+						if savedKnown && len(saved) == 0 {
+							profiles, e := wifiController.loadProfiles()
+							in.NoTargets = e == nil && len(profiles) == 0
+						}
 						in.ScanKnown, in.SavedSeen = scanForSaved(ctx, saved)
 						status.ScanKnown, status.SavedSeen = in.ScanKnown, in.SavedSeen
 					}
-					if now.After(manualRetry) {
+					if status.HelperSeen && now.After(manualRetry) {
 						action, reason, next = DecideUplink(in, state)
 					}
 				}
@@ -315,9 +369,13 @@ func RunUplinkSupervisor(ctx context.Context) error {
 						status.Error = e.Error()
 						// Keep the previous state so the decision is retried later.
 						next = state
-						manualRetry = now.Add(time.Minute)
+						manualRetry = time.Now().Add(15 * time.Second)
 					} else {
 						on = action == UplinkOn
+						if !on {
+							lease.release(ctx)
+							status.WiFiInternet = ""
+						}
 						if on && next.ProbeUntil != nil {
 							// The probe begins after the stock request has applied.
 							until := time.Now().Add(uplinkProbeWindow)
@@ -345,6 +403,7 @@ func RunUplinkSupervisor(ctx context.Context) error {
 				status.STAOn = &on
 			}
 		}
+		status.At = time.Now().UTC()
 		status.State = state
 		status.Uplink = currentUplink()
 		_ = config.Atomic(UplinkStatus, status)

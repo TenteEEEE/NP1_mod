@@ -58,6 +58,8 @@ func startUplinkWiFiUse(ctx context.Context) (uplinkWiFiUse, error) {
 		if err := requestSTA(ctx, true); err != nil {
 			return use, errors.New("WIFI_STATION_UNAVAILABLE")
 		}
+	} else if _, err := os.Stat(stockWPASocket); os.IsNotExist(err) && !wifiCarries() {
+		_ = reconcileSTAOn(ctx)
 	}
 	ready, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()

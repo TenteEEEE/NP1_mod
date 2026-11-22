@@ -23,6 +23,7 @@ type UplinkInputs struct {
 	Enabled   bool // owner setting
 	SavedSeen bool // a saved SSID was seen by a scan (only meaningful while OFF)
 	ScanKnown bool // a scan result is available while OFF
+	NoTargets bool // a successful inventory established there is nothing to probe for
 	Position  *UplinkPosition
 }
 type UplinkPosition struct {
@@ -55,12 +56,13 @@ type UplinkState struct {
 const (
 	// Restarts of the stock Wi-Fi service and stale supplicant reads can leave the state
 	// "not completed" while Wi-Fi is fine, so an outage must last long enough to be real.
-	uplinkOffAfter     = 3 * time.Minute // without a connection before switching to 4G
+	uplinkOffAfter     = 35 * time.Second
+	uplinkCellularHold = 30 * time.Second
 	uplinkRetryBackoff = 5 * time.Minute // after an ON that did not connect
-	uplinkProbeEvery   = 3 * time.Minute // blind ON attempts while the mode is off
+	uplinkProbeEvery   = 2 * time.Minute
 	// A blind probe that does not associate must give the radio back quickly: the
 	// stock service stops LTE while the station is on.
-	uplinkProbeWindow = 40 * time.Second
+	uplinkProbeWindow = 55 * time.Second
 	uplinkHomeRadiusM = 200.0
 	uplinkFixMaxAge   = 4 * time.Minute
 )
@@ -86,6 +88,20 @@ func distanceM(a, b UplinkPosition) float64 {
 func DecideUplink(in UplinkInputs, s UplinkState) (UplinkAction, string, UplinkState) {
 	now := in.Now
 	at := func() *time.Time { t := now; return &t }
+	if s.UnconnectedSince != nil && s.UnconnectedSince.After(now) {
+		s.UnconnectedSince = at()
+	}
+	if s.AutoOffAt != nil && s.AutoOffAt.After(now) {
+		s.AutoOffAt = at()
+	}
+	for _, bound := range []struct {
+		stamp **time.Time
+		max   time.Duration
+	}{{&s.ProbeUntil, uplinkProbeWindow}, {&s.NextProbeAt, uplinkProbeEvery}, {&s.RetryAfter, uplinkRetryBackoff}} {
+		if *bound.stamp != nil && (*bound.stamp).After(now.Add(bound.max)) {
+			*bound.stamp = at()
+		}
+	}
 	if in.STAOn {
 		if s.AutoOffAt != nil {
 			// The mode is on again (by us, or by the owner): our marker no longer applies.
@@ -123,12 +139,25 @@ func DecideUplink(in UplinkInputs, s UplinkState) (UplinkAction, string, UplinkS
 	}
 	// The mode is off.
 	s.UnconnectedSince = nil
+	if s.AutoOffAt == nil && s.ProbeUntil != nil && in.Enabled {
+		s.AutoOffAt, s.ProbeUntil = at(), nil
+		if s.NextProbeAt == nil {
+			probe := now.Add(uplinkProbeEvery)
+			s.NextProbeAt = &probe
+		}
+	}
 	if s.AutoOffAt == nil {
 		return UplinkNone, "", s // the owner's choice
 	}
 	if !in.Enabled {
 		s.AutoOffAt = nil
 		return UplinkOn, "auto-disabled", s
+	}
+	if in.NoTargets {
+		return UplinkNone, "", s
+	}
+	if now.Before(s.AutoOffAt.Add(uplinkCellularHold)) && (s.NextProbeAt == nil || now.Before(*s.NextProbeAt)) {
+		return UplinkNone, "", s
 	}
 	if s.RetryAfter != nil && now.Before(*s.RetryAfter) {
 		return UplinkNone, "", s

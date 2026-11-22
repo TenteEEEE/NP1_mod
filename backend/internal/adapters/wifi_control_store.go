@@ -15,6 +15,9 @@ import (
 	"github.com/np1-control-center/ncc/internal/config"
 )
 
+const wifiProfilePriority = 100
+const wifiTrialPriority = 200
+
 func (c *WiFiController) readPrivate(name string, out any) error {
 	directory, e := os.Lstat(c.directory)
 	if e != nil {
@@ -103,6 +106,18 @@ func (c *WiFiController) profileNetwork(ctx context.Context, networks []WiFiNetw
 	return WiFiNetwork{}, false, nil
 }
 
+func (c *WiFiController) setProfileOption(ctx context.Context, id int, name, expected string) error {
+	key := strconv.Itoa(id) + " " + name
+	current, err := c.request(ctx, "GET_NETWORK "+key)
+	if err == nil && current == expected {
+		return nil
+	}
+	if err != nil && err.Error() != "WIFI_COMMAND_REJECTED" {
+		return err
+	}
+	return c.ok(ctx, "SET_NETWORK "+key+" "+expected)
+}
+
 // The stock supplicant may be restarted when moving to 4G. Repopulate only
 // NCC profiles from our private store, without saving the stock configuration.
 // The caller holds the shared uplink lock and has checked for a pending change.
@@ -123,17 +138,38 @@ func (c *WiFiController) restoreProfiles(ctx context.Context) ([]string, error) 
 			ssids = append(ssids, network.SSID)
 		}
 	}
-	for _, profile := range profiles {
+	preferred := map[string]bool{}
+	for index := len(profiles) - 1; index >= 0; index-- {
+		profile := profiles[index]
+		key := profile.SSID + "\x00" + profile.Security
 		network, exists, err := c.profileNetwork(ctx, networks, profile)
 		if err != nil {
 			return nil, err
 		}
+		if preferred[key] {
+			if exists && !network.Current && !network.Disabled {
+				if err := c.ok(ctx, "DISABLE_NETWORK "+strconv.Itoa(network.ID)); err != nil {
+					return nil, err
+				}
+			}
+			continue
+		}
+		preferred[key] = true
 		if !exists {
 			id, err := c.addProfileNetwork(ctx, profile)
 			if err != nil {
 				return nil, err
 			}
 			network = WiFiNetwork{ID: id, Disabled: true}
+		}
+		if err := c.setProfileOption(ctx, network.ID, "priority", strconv.Itoa(wifiProfilePriority+index)); err != nil {
+			if !exists {
+				c.removeProfileNetwork(network.ID, profile.ID)
+			}
+			return nil, err
+		}
+		if err := c.setProfileOption(ctx, network.ID, "scan_ssid", "1"); err != nil {
+			return nil, err
 		}
 		if network.Disabled {
 			if err := c.ok(ctx, "ENABLE_NETWORK "+strconv.Itoa(network.ID)); err != nil {
@@ -152,9 +188,10 @@ func (c *WiFiController) storeProfile(profile wifiProfile) error {
 	if e != nil {
 		return e
 	}
-	for i, p := range profiles {
+	for index, p := range profiles {
 		if p.ID == profile.ID {
-			profiles[i] = profile
+			profiles = append(profiles[:index], profiles[index+1:]...)
+			profiles = append(profiles, profile)
 			return c.writePrivate("profiles.json", profiles)
 		}
 	}

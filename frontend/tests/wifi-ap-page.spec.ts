@@ -1,7 +1,7 @@
 import {test,expect,type Locator,type Page} from '@playwright/test'
 const url=process.env.NCC_UI_REVIEW_URL
 const obs=(data:unknown)=>({status:'available',data,source:'synthetic-wifi-ui-fixture',observedAt:new Date().toISOString(),verified:false,refreshSeconds:2})
-async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellular';waiting?:boolean;clients?:any[];stationOff?:'auto'|'cellular';dropScanResponse?:boolean}={}){
+async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellular';waiting?:boolean;clients?:any[];stationOff?:'auto'|'cellular';dropScanResponse?:boolean;dropConnectResponse?:boolean}={}){
  const requests:{path:string;body:any}[]=[]
  let transaction:any=null,current='Fixture LAN',apSettings={revision:1,enabled:true,ssid:'NP1 test AP',passphraseConfigured:true,passphrase:'fixture-ap-passphrase'}
  const scanResult={scanRequested:true,scannedAt:new Date().toISOString(),resultsAreCached:false,results:[{ssid:'Nearby LAN',bssid:'00:11:22:33:44:55',frequency:2412,signalDBm:-61,security:'wpa2'}]}
@@ -25,7 +25,7 @@ async function open(page:Page,options:{badAP?:boolean;sharingKind?:'wifi'|'cellu
    if(options.dropScanResponse)return route.abort()
    value=scanResult
   }
-  if(path.endsWith('/network/wifi/connect-new')||path.endsWith('/network/wifi/connect-saved')){const body=route.request().postDataJSON();current=body.ssid||'Saved NCC LAN';transaction={id:'fixture-transaction',state:'pending',expiresAt:new Date(Date.now()+90000).toISOString(),targetSSID:current,canConfirm:true};value=transaction}
+  if(path.endsWith('/network/wifi/connect-new')||path.endsWith('/network/wifi/connect-saved')){const body=route.request().postDataJSON();current=body.ssid||'Saved NCC LAN';transaction={id:'fixture-transaction',state:'pending',expiresAt:new Date(Date.now()+90000).toISOString(),targetSSID:current,canConfirm:true};if(options.dropConnectResponse)return route.abort();value=transaction}
   if(path.endsWith('/network/wifi/confirm')){transaction={...transaction,state:'confirmed'};value=transaction}
   if(path.endsWith('/network/wifi/rollback')){current='Fixture LAN';transaction={...transaction,state:'rolled-back'};value=transaction}
   if(path.endsWith('/network/hotspot')){if(route.request().method()==='PUT'&&!options.badAP){const body=route.request().postDataJSON();apSettings={...apSettings,...body.settings,passphraseConfigured:true,revision:2}}value=obs({settings:apSettings,enabled:apSettings.enabled,dhcpReady:apSettings.enabled,address:'192.0.2.1/24',channel:6,clientCount:options.clients?.length||0,clients:options.clients||[],sharing:{enabled:true,state:options.waiting?'waiting-upstream':'ready',ready:!options.waiting,dnsReady:true,...(!options.waiting?{upstream:{kind:options.sharingKind||'wifi',interface:options.sharingKind==='cellular'?'usb0.1':'wlan0'}}:{})}})}
@@ -60,6 +60,17 @@ test.describe('Wi-Fi/AP typed control UI (synthetic fixture)',()=>{
  })
  test('NCC private saved profile uses its own ID; cancellation restores previous link',async({page})=>{
   const requests=await open(page);await page.getByRole('button',{name:/Saved NCC LAN/}).click();await expect(page.getByRole('heading',{name:'このWi-Fi接続を使いますか？'})).toBeVisible();await page.getByRole('button',{name:'元に戻す',exact:true}).click();await expect(page.getByRole('status')).toContainText('元のWi-Fi接続へ戻しました');expect(requests.find(r=>r.path.endsWith('connect-saved'))?.body).toEqual({profileID:'ncc-fixture-id'});await expect(page.locator('.wifi-current h3')).toHaveText('Fixture LAN')
+ })
+ test('an interrupted connect response is recovered without resending credentials',async({page})=>{
+  const writes=await open(page,{stationOff:'auto',dropConnectResponse:true})
+  await page.getByRole('textbox',{name:'接続先SSID',exact:true}).fill('Hidden fixture')
+  const password=page.getByRole('textbox',{name:'Wi-Fi接続パスワード',exact:true})
+  await password.fill('fixture-secret')
+  await page.getByRole('button',{name:'このWi-Fiへ接続',exact:true}).click()
+  await expect(page.getByRole('button',{name:'この接続を使う',exact:true})).toBeEnabled()
+  await expect(password).toHaveValue('')
+  await expect(page.getByText(/切替中に応答が途切れました/)).toHaveCount(0)
+  expect(writes.filter(write=>write.path.endsWith('connect-new'))).toHaveLength(1)
  })
  test('automatic 4G leaves search, manual registration and saved profiles available',async({page})=>{
   const requests=await open(page,{stationOff:'auto'})

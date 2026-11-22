@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const stockWPASocket = "/run/wifi/wpa_supplicant/wlan0"
+
 // VendorStatus issues only STATUS to the vendor-owned supplicant; no scan/configuration or second daemon.
 // Bind the reply socket in our writable runtime directory, not the read-only /tmp sandbox.
 func VendorStatus() (string, error) {
@@ -40,7 +42,7 @@ func openWPASocket() (*net.UnixConn, func(), error) {
 		return nil, nil, e
 	}
 	local := "/run/np1-control/wpa-" + hex.EncodeToString(b)
-	c, e := net.DialUnix("unixgram", &net.UnixAddr{Name: local, Net: "unixgram"}, &net.UnixAddr{Name: "/run/wifi/wpa_supplicant/wlan0", Net: "unixgram"})
+	c, e := net.DialUnix("unixgram", &net.UnixAddr{Name: local, Net: "unixgram"}, &net.UnixAddr{Name: stockWPASocket, Net: "unixgram"})
 	if e != nil {
 		return nil, nil, e
 	}

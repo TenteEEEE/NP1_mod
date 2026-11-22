@@ -7,20 +7,20 @@ import {api} from '../services/api'
 // or held on Wi-Fi or on 4G. The switch itself is the stock Wi-Fi STA mode, so stock apps,
 // NCC and hotspot clients all follow it.
 type Mode='auto'|'wifi'|'cellular'
-type Status={at:string;mode:Mode;staOn:boolean|null;wpaState?:string;uplink:'wifi'|'cellular'|'none'|'other';helperAvailable:boolean;error?:string;state:{autoOffAt?:string;switches:number;lastAction?:string;lastReason?:string}}
+type Status={at:string;mode:Mode;staOn:boolean|null;wpaState?:string;wifiInternet?:'verified'|'unverified';uplink:'wifi'|'cellular'|'none'|'other';helperAvailable:boolean;error?:string;state:{autoOffAt?:string;switches:number;lastAction?:string;lastReason?:string}}
 type View={mode:Mode;status:Status|null}
 const view=ref<View>(),loading=ref(true),busy=ref(false),error=ref(''),draft=ref<Mode>('auto')
 // The Wi-Fi controls on the same page need to know whether the station is off by choice.
 const emit=defineEmits<{state:[{mode:string;staOn:boolean|null}]}>()
 let timer:ReturnType<typeof setInterval>|undefined
 const options:{value:Mode;label:string;detail:string;icon:any}[]=[
- {value:'auto',label:'自動',detail:'Wi-Fiが圏外になったら4Gへ。保存済みWi-Fiの近くに戻ったらWi-Fiへ。',icon:Zap},
+ {value:'auto',label:'自動',detail:'Wi-Fiで通信できないときは4Gへ。保存済みWi-Fiに戻れるか定期的に確認します。',icon:Zap},
  {value:'wifi',label:'Wi-Fi',detail:'常にWi-Fiを使います。圏外の間はインターネットにつながりません。',icon:Wifi},
  {value:'cellular',label:'4G',detail:'常に4Gを使います。Wi-Fi接続は止まります。',icon:Globe2},
 ]
 const status=computed(()=>view.value?.status||undefined)
 const uplinkLabel=computed(()=>({wifi:'Wi-Fi',cellular:'4G',none:'未接続',other:'その他'} as Record<string,string>)[status.value?.uplink||'']||'—')
-const reasonText:Record<string,string>={'wifi-unavailable':'Wi-Fiが圏外になったため4Gへ','saved-network-seen':'保存済みWi-Fiが見えたためWi-Fiへ','near-last-connected-place':'Wi-Fiの近くに戻ったためWi-Fiへ','owner-manual':'手動の設定に合わせて','auto-disabled':'自動切替を止めたためWi-Fiへ','periodic-recheck':'保存済みWi-Fiへの再接続を試すため','probe-timeout':'Wi-Fi回線を確認できなかったため4Gへ','wifi-setup-ended':'周辺検索・接続確認を終えたため4Gへ'}
+const reasonText:Record<string,string>={'wifi-unavailable':'Wi-Fiで通信できなかったため4Gへ','saved-network-seen':'保存済みWi-Fiが見えたためWi-Fiへ','near-last-connected-place':'Wi-Fiの近くに戻ったためWi-Fiへ','owner-manual':'手動の設定に合わせて','auto-disabled':'自動切替を止めたためWi-Fiへ','periodic-recheck':'保存済みWi-Fiへの再接続を試すため','probe-timeout':'Wi-Fi回線を確認できなかったため4Gへ','wifi-setup-ended':'周辺検索・接続確認を終えたため4Gへ'}
 const lastSwitch=computed(()=>{const s=status.value?.state;if(!s?.lastReason)return '';return reasonText[s.lastReason]||s.lastReason})
 const pendingMode=computed(()=>!!view.value&&!!status.value&&status.value.mode!==view.value.mode)
 async function load(){try{view.value=await api<View>('/network/uplink');if(!busy.value)draft.value=view.value.mode;emit('state',{mode:view.value.mode,staOn:view.value.status?.staOn??null});error.value=''}catch{error.value='回線の設定を取得できません。'}finally{loading.value=false}}
@@ -39,9 +39,10 @@ onUnmounted(()=>{if(timer)clearInterval(timer)})
    <dl class="uplink-state">
     <div><dt>使用中の回線</dt><dd :class="'uplink-'+(status?.uplink||'unknown')">{{status?uplinkLabel:'確認中'}}</dd></div>
     <div><dt>Wi-Fi接続（純正のSTA）</dt><dd>{{status?.staOn==null?'—':status.staOn?'オン':'オフ（4G）'}}</dd></div>
+    <div v-if="status?.wifiInternet&&status.uplink==='wifi'"><dt>Wi-Fiのインターネット疎通</dt><dd>{{status.wifiInternet==='verified'?'確認済み':'未確認'}}</dd></div>
     <div v-if="lastSwitch"><dt>直近の切替</dt><dd>{{lastSwitch}}</dd></div>
    </dl>
-   <p v-if="pendingMode" class="uplink-note" role="status">設定を反映しています…（10秒ほどかかります）</p>
+   <p v-if="pendingMode" class="uplink-note" role="status">設定を反映しています。切替中に管理画面が途切れたら、NP1のホットスポットから開き直してください。</p>
    <p v-if="status&&!status.helperAvailable" class="uplink-note error">切替に必要な部品が本体にないため、回線を切り替えられません。</p>
    <p v-else-if="status?.error" class="uplink-note error">直前の切替を確認できませんでした。しばらくすると再試行します。</p>
    <p v-if="!status&&!loading" class="uplink-note">切替の状態を確認できません（自動切替サービスの応答待ち）。</p>
