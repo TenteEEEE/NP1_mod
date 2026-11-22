@@ -68,6 +68,8 @@ Pythonのテスト（`tests/test_plate_labels.py`）は、OpenCV・NumPy・Pillo
 | `gpu` | `padWidths` が必要です。`models` に `width`、モデルディレクトリからの相対 `file`、`sha256` を指定し、任意の `precisionLossAllowed` で精度低下を許可します（既定 `false`）。GPU対応ビルドでは各幅のTFLiteモデルをOpenCLで実行し、未指定幅やdelegate初期化失敗時はONNX CPU、delegate実行失敗時はTFLite CPUを使用します。番号モデルにも独立して `padWidths` と `gpu` を指定できます |
 | `numberCheck` | `false` でPP-OCRによる一連番号の確認を省き、9ヘッド読取り器の番号と信頼度を使用します（既定 `true`） |
 | `numberScore` | 一連番号を確認する2領域それぞれのOCRスコア下限（既定0.98） |
+| `numberOverrideConfidence` | PP-OCRで番号を置換したときの信頼度の上限（0〜1、既定1で従来どおり）。instant閾値より小さくすると置換だけでは即時記録されません |
+| `numberVetoScore` | `numberScore` 未満でも、同じ桁数のPP-OCR番号が元番号と異なる場合に信頼度を0にするスコア下限（0〜`numberScore`、既定は `numberScore`）。2領域による確認・置換の閾値は変更しません |
 | `numberOverride` | `false` で低信頼の一連番号をOCR結果で置き換える処理を無効にします。高信頼の番号の確認・置換は維持します（既定 `true`） |
 | `sampling` | `"bilinear"` でRGBの双線形補間を使用し、矩形が検出枠を越える場合も画像端で制限します。省略または `"nearest"` は従来の最近傍です |
 | `kanaRects` | かなのOCR領域の矩形配列。省略時は従来の3領域を使用します |

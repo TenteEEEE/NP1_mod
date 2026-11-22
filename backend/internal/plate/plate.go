@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/np1-control-center/ncc/internal/led"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -95,6 +96,8 @@ type Settings struct {
 	// passing quickly) is not lost. 1 turns it off; 0 (settings saved before
 	// this field existed) means DefaultInstantConfidence.
 	InstantConfidence float64 `json:"instantConfidence"`
+	FieldMinWidth     int     `json:"fieldMinWidth"`
+	FieldMinShare     float64 `json:"fieldMinShare"`
 	Voice             Voice   `json:"voice"`
 }
 
@@ -115,7 +118,8 @@ const (
 	// high confidence too often to trust a single frame.
 	InstantMinWidth = 45
 	// FieldMinWidth suppresses unreliable small top-row and kana reads.
-	FieldMinWidth = 70
+	FieldMinWidth        = 70
+	DefaultFieldMinShare = 2.0 / 3.0
 )
 
 var (
@@ -127,7 +131,7 @@ var (
 )
 
 func DefaultSettings() Settings {
-	return Settings{Revision: 1, Rules: []Rule{}, RetentionDays: 365, ImageQuotaMB: 256, MergeSeconds: 30, MinConfidence: 0.6, MinSightings: 2, InstantConfidence: DefaultInstantConfidence, Voice: DefaultVoice()}
+	return Settings{Revision: 1, Rules: []Rule{}, RetentionDays: 365, ImageQuotaMB: 256, MergeSeconds: 30, MinConfidence: 0.6, MinSightings: 2, InstantConfidence: DefaultInstantConfidence, FieldMinWidth: FieldMinWidth, FieldMinShare: DefaultFieldMinShare, Voice: DefaultVoice()}
 }
 
 // halfWidth folds full-width ASCII (Ｂ, ３) to half-width and removes the
@@ -246,6 +250,18 @@ func ValidateSettings(s Settings) (Settings, error) {
 	}
 	if s.InstantConfidence < 0.6 || s.InstantConfidence > 1 {
 		return s, errors.New("1回で記録する信頼度は0.6〜1で指定してください（1で無効）")
+	}
+	if s.FieldMinWidth == 0 {
+		s.FieldMinWidth = FieldMinWidth
+	}
+	if s.FieldMinWidth < 1 || s.FieldMinWidth > 1920 {
+		return s, errors.New("項目の写り幅は1〜1920で指定してください")
+	}
+	if s.FieldMinShare == 0 {
+		s.FieldMinShare = DefaultFieldMinShare
+	}
+	if math.IsNaN(s.FieldMinShare) || s.FieldMinShare < 0.5 || s.FieldMinShare > 1 {
+		return s, errors.New("項目の一致割合は0.5〜1で指定してください")
 	}
 	if s.Voice.Volume == 0 {
 		s.Voice = DefaultVoice() // settings saved before announcements existed

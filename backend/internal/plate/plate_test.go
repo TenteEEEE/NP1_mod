@@ -258,7 +258,7 @@ func TestPartialReadingsMergeAndLateRuleMatch(t *testing.T) {
 	}
 	// A conflicting read blanks the field.
 	other, _ := s.Ingest(Detection{At: now.Add(9 * time.Second), Reading: Reading{Region: "横浜", Number: "5501", Confidence: 0.9}, Box: [4]int{0, 0, 70, 35}}, settings, frame)
-	if other.New || other.Record.Reading.Region != "" || other.Record.Sightings != 4 {
+	if other.New || other.Record.Reading.Region != "千葉" || other.Record.Sightings != 4 {
 		t.Fatalf("conflicting read = %+v", other.Record)
 	}
 }
@@ -355,7 +355,49 @@ func TestFieldsRequireDistinctWideAgreeingFrames(t *testing.T) {
 	d.At = now.Add(2 * time.Second)
 	d.Reading.Region = "千葉"
 	o, _ = s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "相模" {
+		t.Fatalf("minority: %+v", o)
+	}
+	d.Frame = "four"
+	d.At = now.Add(3 * time.Second)
+	o, _ = s.Ingest(d, settings, nil)
 	if o.Record.Reading.Region != "" {
-		t.Fatalf("disagreement: %+v", o)
+		t.Fatalf("tie: %+v", o)
+	}
+}
+
+func TestFieldGuardSettings(t *testing.T) {
+	old := validSettings()
+	old.FieldMinWidth, old.FieldMinShare = 0, 0
+	normalized, err := ValidateSettings(old)
+	if err != nil || normalized.FieldMinWidth != FieldMinWidth || normalized.FieldMinShare != DefaultFieldMinShare {
+		t.Fatalf("defaults: %+v %v", normalized, err)
+	}
+	for _, bad := range []Settings{func() Settings { s := old; s.FieldMinWidth = -1; return s }(), func() Settings { s := old; s.FieldMinShare = .49; return s }(), func() Settings { s := old; s.FieldMinShare = 1.01; return s }()} {
+		if _, err := ValidateSettings(bad); err == nil {
+			t.Fatalf("accepted invalid settings: %+v", bad)
+		}
+	}
+	now := time.Date(2026, 11, 12, 3, 0, 0, 0, time.UTC)
+	store := newTestStore(t, &now)
+	normalized.FieldMinWidth, normalized.FieldMinShare = 80, .75
+	d := Detection{At: now, Frame: "one", Box: [4]int{0, 0, 79, 35}, Reading: Reading{Region: "相模", Number: "1234", Confidence: .9}}
+	store.Ingest(d, normalized, nil)
+	d.Box[2] = 80
+	d.Frame = "two"
+	d.At = now.Add(time.Second)
+	store.Ingest(d, normalized, nil)
+	d.Frame = "three"
+	d.At = now.Add(2 * time.Second)
+	o, _ := store.Ingest(d, normalized, nil)
+	if o.Record.Reading.Region != "相模" {
+		t.Fatalf("configured width: %+v", o)
+	}
+	d.Frame = "four"
+	d.At = now.Add(3 * time.Second)
+	d.Reading.Region = "千葉"
+	o, _ = store.Ingest(d, normalized, nil)
+	if o.Record.Reading.Region != "" {
+		t.Fatalf("configured share: %+v", o)
 	}
 }
