@@ -114,6 +114,8 @@ const (
 	// that may be recorded from one reading: smaller plates are misread with
 	// high confidence too often to trust a single frame.
 	InstantMinWidth = 45
+	// FieldMinWidth suppresses unreliable small top-row and kana reads.
+	FieldMinWidth = 70
 )
 
 var (

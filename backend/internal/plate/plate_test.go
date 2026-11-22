@@ -191,7 +191,7 @@ func TestListFiltersAndTornLines(t *testing.T) {
 	if e != nil || len(matched) != 1 || matched[0].Reading.Number != "77" {
 		t.Fatalf("matched = %+v %v", matched, e)
 	}
-	text, _, _ := s.List(Query{From: "2026-11-12", To: "2026-11-12", Text: "ワ１２"})
+	text, _, _ := s.List(Query{From: "2026-11-12", To: "2026-11-12", Text: "１２"})
 	if len(text) != 1 || text[0].Reading.Number != "1234" {
 		t.Fatalf("text = %+v", text)
 	}
@@ -245,20 +245,20 @@ func TestPartialReadingsMergeAndLateRuleMatch(t *testing.T) {
 	if !first.New || len(first.NewMatches) != 0 {
 		t.Fatalf("first = %+v", first)
 	}
-	later, _ := s.Ingest(Detection{At: now.Add(5 * time.Second), Reading: Reading{Region: "千葉", Kana: "か", Number: "5501", Confidence: 0.9}, Frame: "f2"}, settings, frame)
-	if later.New || later.Record.ID != first.Record.ID || later.Record.Reading.Region != "千葉" || later.Record.Display != "千葉 か 55-01" {
+	later, _ := s.Ingest(Detection{At: now.Add(5 * time.Second), Reading: Reading{Region: "千葉", Kana: "か", Number: "5501", Confidence: 0.9}, Box: [4]int{0, 0, 70, 35}, Frame: "f2"}, settings, frame)
+	if later.New || later.Record.ID != first.Record.ID || later.Record.Reading.Region != "" {
 		t.Fatalf("partial readings not merged: %+v", later.Record)
 	}
-	if len(later.NewMatches) != 1 || later.Record.ImageID == "" || frames != 1 {
+	if len(later.NewMatches) != 0 || frames != 0 {
 		t.Fatalf("late match = %+v frames=%d", later, frames)
 	}
-	again, _ := s.Ingest(Detection{At: now.Add(8 * time.Second), Reading: Reading{Region: "千葉", Number: "5501", Confidence: 0.9}, Frame: "f3"}, settings, frame)
-	if len(again.NewMatches) != 0 || frames != 1 || again.Record.Sightings != 3 {
+	again, _ := s.Ingest(Detection{At: now.Add(8 * time.Second), Reading: Reading{Region: "千葉", Number: "5501", Confidence: 0.9}, Box: [4]int{0, 0, 70, 35}, Frame: "f3"}, settings, frame)
+	if len(again.NewMatches) != 1 || again.Record.ImageID == "" || frames != 1 || again.Record.Sightings != 3 {
 		t.Fatalf("repeated match = %+v frames=%d", again, frames)
 	}
-	// A single conflicting read joins the same vehicle and is outvoted.
-	other, _ := s.Ingest(Detection{At: now.Add(9 * time.Second), Reading: Reading{Region: "横浜", Number: "5501", Confidence: 0.9}}, settings, frame)
-	if other.New || other.Record.Reading.Region != "千葉" || other.Record.Sightings != 4 {
+	// A conflicting read blanks the field.
+	other, _ := s.Ingest(Detection{At: now.Add(9 * time.Second), Reading: Reading{Region: "横浜", Number: "5501", Confidence: 0.9}, Box: [4]int{0, 0, 70, 35}}, settings, frame)
+	if other.New || other.Record.Reading.Region != "" || other.Record.Sightings != 4 {
 		t.Fatalf("conflicting read = %+v", other.Record)
 	}
 }
@@ -279,7 +279,7 @@ func TestMinSightingsDropsSingleFrameReads(t *testing.T) {
 	// A one-off misread expires without ever becoming a record.
 	s.Ingest(Detection{At: now.Add(time.Second), Reading: Reading{Number: "9999", Confidence: 0.9}}, settings, frame)
 	o, _ := s.Ingest(Detection{At: now.Add(2 * time.Second), Reading: Reading{Kana: "わ", Number: "1234", Confidence: 0.8}, Frame: "f2"}, settings, frame)
-	if !o.New || o.Record.Sightings != 2 || o.Record.FirstSeen != now || len(o.NewMatches) != 1 || o.Record.ImageID == "" || o.Record.Reading.Kana != "わ" {
+	if !o.New || o.Record.Sightings != 2 || o.Record.FirstSeen != now || len(o.NewMatches) != 1 || o.Record.ImageID == "" || o.Record.Reading.Kana != "" {
 		t.Fatalf("confirmed = %+v", o)
 	}
 	now = now.Add(time.Minute)
@@ -322,5 +322,40 @@ func TestInstantConfidenceRecordsOneConfidentRead(t *testing.T) {
 	off.InstantConfidence = 1
 	if _, e := ValidateSettings(off); e != nil {
 		t.Fatalf("1 (off) rejected: %v", e)
+	}
+}
+
+func TestFieldsRequireDistinctWideAgreeingFrames(t *testing.T) {
+	now := time.Date(2026, 11, 12, 3, 0, 0, 0, time.UTC)
+	s := newTestStore(t, &now)
+	settings, _ := ValidateSettings(validSettings(Rule{ID: "r", Name: "地域", Enabled: true, Region: "相模"}))
+	d := Detection{At: now, Frame: "one", Box: [4]int{0, 0, 70, 35}, Reading: Reading{Region: "相模", Class: "300", Kana: "あ", Number: "1234", Confidence: .9}}
+	o, _ := s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "" || len(o.NewMatches) != 0 {
+		t.Fatalf("single frame: %+v", o)
+	}
+	o, _ = s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "" {
+		t.Fatalf("duplicate frame: %+v", o)
+	}
+	d.Frame = "narrow"
+	d.Box[2] = 69
+	o, _ = s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "" {
+		t.Fatalf("narrow frame: %+v", o)
+	}
+	d.Frame = "two"
+	d.Box[2] = 70
+	d.At = now.Add(time.Second)
+	o, _ = s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "相模" || o.Record.Reading.Class != "300" || o.Record.Reading.Kana != "あ" || len(o.NewMatches) != 1 {
+		t.Fatalf("agreement: %+v", o)
+	}
+	d.Frame = "three"
+	d.At = now.Add(2 * time.Second)
+	d.Reading.Region = "千葉"
+	o, _ = s.Ingest(d, settings, nil)
+	if o.Record.Reading.Region != "" {
+		t.Fatalf("disagreement: %+v", o)
 	}
 }

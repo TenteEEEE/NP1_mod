@@ -49,10 +49,8 @@ type Record struct {
 	ImageID   string    `json:"imageId,omitempty"`
 	ImageNote string    `json:"imageNote,omitempty"`
 	Speech    string    `json:"speech,omitempty"`
-	// votes holds confidence-weighted readings per field while the record is
-	// open; the displayed field is the majority (single frames misread
-	// regions and kana, especially at night).
-	votes map[string]map[string]float64
+	// votes records distinct frames per field value while the record is open.
+	votes map[string]map[string]map[string]bool
 }
 
 type Query struct {
@@ -182,7 +180,7 @@ func (s *Store) Ingest(d Detection, settings Settings, frameImage func(string) (
 	}
 	r := findCompatible(s.cand, reading, d.At, window)
 	if r == nil {
-		r = &Record{ID: newID(d.At), FirstSeen: d.At, LastSeen: d.At, Sightings: 0, Reading: reading, Location: d.Location, Box: d.Box, Matches: []Match{}}
+		r = &Record{ID: newID(d.At), FirstSeen: d.At, LastSeen: d.At, Sightings: 0, Reading: Reading{Number: reading.Number, Confidence: reading.Confidence}, Location: d.Location, Box: d.Box, Matches: []Match{}}
 		s.cand[r.ID] = r
 	}
 	r.Sightings++
@@ -227,28 +225,35 @@ func absorb(r *Record, reading Reading, d Detection) bool {
 		r.Box = d.Box
 	}
 	if r.votes == nil {
-		r.votes = map[string]map[string]float64{}
+		r.votes = map[string]map[string]map[string]bool{}
 	}
 	before := r.Reading
+	frame := d.Frame
+	if frame == "" {
+		frame = d.At.UTC().Format(time.RFC3339Nano)
+	}
 	for _, f := range []struct {
 		name string
 		dst  *string
 		src  string
 	}{{"region", &r.Reading.Region, reading.Region}, {"class", &r.Reading.Class, reading.Class}, {"kana", &r.Reading.Kana, reading.Kana}} {
-		if f.src == "" {
-			continue
+		if d.Box[2] >= FieldMinWidth && f.src != "" {
+			if r.votes[f.name] == nil {
+				r.votes[f.name] = map[string]map[string]bool{}
+			}
+			if r.votes[f.name][f.src] == nil {
+				r.votes[f.name][f.src] = map[string]bool{}
+			}
+			r.votes[f.name][f.src][frame] = true
 		}
-		if r.votes[f.name] == nil {
-			r.votes[f.name] = map[string]float64{}
-		}
-		r.votes[f.name][f.src] += max(reading.Confidence, 0.01)
-		best, bestVote := *f.dst, -1.0
-		for value, vote := range r.votes[f.name] {
-			if vote > bestVote || (vote == bestVote && value < best) {
-				best, bestVote = value, vote
+		*f.dst = ""
+		if len(r.votes[f.name]) == 1 {
+			for value, frames := range r.votes[f.name] {
+				if len(frames) >= 2 {
+					*f.dst = value
+				}
 			}
 		}
-		*f.dst = best
 	}
 	r.Display = r.Reading.Display()
 	return r.Reading.Region != before.Region || r.Reading.Class != before.Class || r.Reading.Kana != before.Kana
