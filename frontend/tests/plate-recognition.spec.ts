@@ -206,6 +206,10 @@ test.describe('plate recognition isolated review (synthetic only)',()=>{
   await expect(page.getByRole('note').getByRole('link',{name:'システム › LED / 音声 で設定する'})).toHaveAttribute('href','#system/led')
   await expect(page.getByText('認識モデルが未導入です',{exact:false})).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  const shortSerial=page.locator('[data-record="pfix-0002"] .plate-serial')
+  await expect(shortSerial).toHaveText('・・ ・8')
+  await expect(shortSerial).toHaveClass(/compact/)
+  expect(await shortSerial.evaluate(node=>node.scrollWidth<=node.clientWidth)).toBe(true)
   expect(errors).toEqual([])
   await page.screenshot({path:info.outputPath(`plate-${width}-${theme}.png`),fullPage:true})
  })}

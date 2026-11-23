@@ -28,8 +28,11 @@ import {mapThemes,mapViews,mapPreferences,type MapTheme,type MapView} from './se
 
 const nav=[{id:'dashboard',label:'ダッシュボード',icon:LayoutDashboard,hint:'走行・通信・本体の状態'},{id:'internet',label:'4G',icon:Globe2,group:'NETWORK',hint:'回線・APN・通信量'},{id:'wifi',label:'Wi-Fi / AP',icon:Wifi,hint:'Wi-Fi接続とホットスポット'},{id:'vpn',label:'Tailscale',icon:ShieldCheck,hint:'遠隔アクセス'},{id:'camera',label:'ライブ',icon:Camera,group:'DRIVE RECORDER',hint:'カメラのライブ映像'},{id:'recordings',label:'ドラレコ再生',icon:Video,hint:'録画を日時から再生'},{id:'trips',label:'走行履歴',icon:Map,hint:'距離・経路・電波マップ'},{id:'plates',label:'ナンバー',icon:ScanLine,hint:'ナンバー認識の記録と条件'},{id:'native',label:'純正設定',icon:Settings2,group:'MANAGE',hint:'NP1本体の設定とAlexa'},{id:'system',label:'システム',icon:Monitor,hint:'本体・LED・バックアップなど'}]
 const entry=(id:string)=>nav.find(n=>n.id===id)!
-// The grouped forms of the menu: four groups on a phone; the menu bar folds a group only when the entries no longer fit.
+// The grouped form used by the PC menu bar. It folds a group only when the entries no longer fit.
 const groups=[{id:'home',label:'ダッシュボード',icon:LayoutDashboard,items:[entry('dashboard')]},{id:'network',label:'ネットワーク',icon:Network,items:['internet','wifi','vpn'].map(entry)},{id:'drive',label:'ドラレコ',icon:Video,items:['camera','recordings','trips','plates'].map(entry)},{id:'manage',label:'設定',icon:Settings2,items:['native','system'].map(entry)}]
+// A driver must not have to discover plate recognition in a second-level menu.
+// Keep it as a permanent phone tab while the remaining recorder pages stay grouped.
+const mobileGroups=[{id:'home',label:'ホーム',icon:LayoutDashboard,items:[entry('dashboard')]},{id:'network',label:'ネットワーク',icon:Network,items:['internet','wifi','vpn'].map(entry)},{id:'drive',label:'ドラレコ',icon:Video,items:['camera','recordings','trips'].map(entry)},{id:'plate',label:'ナンバー',icon:ScanLine,items:[entry('plates')]},{id:'manage',label:'設定',icon:Settings2,items:['native','system'].map(entry)}]
 type NavEntry=(typeof nav)[number]
 // Menu bar fitting. 0: everything; 1: brand and status as marks only; 2–4: fold 設定, ネットワーク, ドラレコ in turn; 5: labels without icons.
 const fold=ref(0),foldAt:Record<string,number>={manage:2,network:3,drive:4}
@@ -41,7 +44,7 @@ const topItems=computed(()=>groups.flatMap(group=>{
 const systemSection=ref('overview')
 const narrowQuery=matchMedia('(max-width:860px)'),narrow=ref(narrowQuery.matches),menu=ref('')
 const shell=computed(()=>narrow.value?'mobile':navLayout.value)
-const sheet=computed(()=>shell.value==='mobile'?groups.find(g=>g.id===menu.value):undefined)
+const sheet=computed(()=>shell.value==='mobile'?mobileGroups.find(g=>g.id===menu.value):undefined)
 // The overview dashboard uses the whole window on every shell, with the map behind the floating bar.
 const stage=computed(()=>page.value==='dashboard'&&dashboardMode.value==='overview')
 const dashboardSwitch=computed(()=>dashboardMode.value==='overview'?'ダッシュボードを詳細表示にする':'ダッシュボードを概要表示にする')
@@ -171,7 +174,7 @@ onUnmounted(()=>{window.removeEventListener('hashchange',hashChange);narrowQuery
  <template v-if="shell==='mobile'">
   <div v-if="sheet" class="sheet-backdrop" @click="menu=''"></div>
   <div v-if="sheet" class="tab-sheet" role="dialog" :aria-label="sheet.label+'のメニュー'"><div class="tab-sheet-head"><span>{{sheet.label}}</span><button class="icon-button" @click="menu=''" aria-label="メニューを閉じる"><X :size="20"/></button></div><a v-for="item in sheet.items" :key="item.id" :href="'#'+item.id" :class="{active:page===item.id}" :aria-current="page===item.id?'page':undefined" @click.prevent="go(item.id)"><span class="tab-sheet-icon"><component :is="item.icon" :size="21"/></span><span class="nav-text"><strong>{{item.label}}</strong><small>{{item.hint}}</small></span><ChevronRight :size="18"/></a></div>
-  <nav class="tabbar" aria-label="メインメニュー"><template v-for="group in groups" :key="group.id"><a v-if="group.items.length===1" :href="'#'+group.items[0]!.id" :class="{active:page===group.items[0]!.id&&!menu}" :aria-current="page===group.items[0]!.id?'page':undefined" @click.prevent="go(group.items[0]!.id)"><i><component :is="group.icon" :size="21"/></i><span>{{group.label}}</span></a><button v-else type="button" :class="{active:group.items.some(item=>item.id===page)&&!menu,open:menu===group.id}" :aria-expanded="menu===group.id" aria-haspopup="true" @click="menu=menu===group.id?'':group.id"><i><component :is="group.icon" :size="21"/></i><span>{{group.label}}</span></button></template></nav>
+  <nav class="tabbar" aria-label="メインメニュー"><template v-for="group in mobileGroups" :key="group.id"><a v-if="group.items.length===1" :href="'#'+group.items[0]!.id" :class="{active:page===group.items[0]!.id&&!menu}" :aria-current="page===group.items[0]!.id?'page':undefined" @click.prevent="go(group.items[0]!.id)"><i><component :is="group.icon" :size="21"/></i><span>{{group.label}}</span></a><button v-else type="button" :class="{active:group.items.some(item=>item.id===page)&&!menu,open:menu===group.id}" :aria-expanded="menu===group.id" aria-haspopup="true" @click="menu=menu===group.id?'':group.id"><i><component :is="group.icon" :size="21"/></i><span>{{group.label}}</span></button></template></nav>
  </template>
  <div v-if="dialog==='settings'" class="modal-backdrop" @click.self="dialog=''"><section class="modal" role="dialog" aria-modal="true" aria-label="表示設定の変更"><div class="modal-title"><h2>表示設定を変更</h2><button class="icon-button" @click="dialog=''" aria-label="閉じる"><X :size="20"/></button></div><dl class="details"><div><dt>テーマ</dt><dd>{{settings.theme}} → {{themeDraft}}</dd></div><div v-for="view in mapViews" :key="view.id"><dt>{{view.name}}の地図</dt><dd>{{mapThemes.find(t=>t.id===(settings.mapThemes?.[view.id]||'auto'))?.name}} → {{mapThemes.find(t=>t.id===mapThemeDraft[view.id])?.name}}</dd></div></dl><button class="primary" @click="saveSettings" :disabled="loading">変更を適用</button></section></div>
 </div>
