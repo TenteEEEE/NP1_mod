@@ -31,6 +31,11 @@ async function open(page:Page,route='dashboard',fix=false){
   if(path.endsWith('/radio/history'))data={unit:'dBm',points:[],cells:[],total:0,unplaced:0,accuracyExcluded:0,missing:0,outOfService:0,carriers:[],bands:[],truncated:false}
   if(path.endsWith('/radio/heatmap/legend'))data={unit:'dBm',note:'',thresholds:[]}
   if(path.endsWith('/device/native-settings'))data=obs({items:[]})
+  if(path.endsWith('/device/owner-controls'))data={data:{cloud_egress_blocked:false,time_topic_enabled:false,wifi_power_save:false,interior_recording_disabled:true,voice_id:'default',voice_choices:[]}}
+  if(path.endsWith('/plate/status'))data={enabled:true,revision:1,sensor:{state:'running',engine:'synthetic',backend:'cpu',fps:4,lastFrameAt:stamp},collector:{lastPollAt:stamp,error:''},speech:{available:true,reason:''},usage:{recordBytes:0,recordDays:0,imageBytes:0,imageCount:0,openRecords:0},imageQuotaBytes:268435456}
+  if(path.endsWith('/plate/settings'))data={revision:1,enabled:true,rules:[],retentionDays:365,imageQuotaMB:256,mergeSeconds:30,minConfidence:.6,minSightings:2,instantConfidence:.95,voice:{style:1,volume:70,phrase:'番号を検知しました。'}}
+  if(path.endsWith('/plate/speech'))data={available:true,reason:'',styles:[{id:1,speaker:'ずんだもん',name:'あまあま'}],status:{keyConfigured:true,job:{state:'ready',total:0,ready:0},rules:{},credit:'synthetic'}}
+  if(path.endsWith('/plate/records'))data={records:[],truncated:false,reason:''}
   await request.fulfill({json:data})
  })
  await page.goto(url+'/#'+route);await expect(page.locator('main')).toBeVisible()
@@ -168,11 +173,11 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   await page.locator('.topnav').getByRole('link',{name:'ダッシュボード',exact:true}).click();await expect(page.locator('.dash-home')).toBeVisible()
   expect(state.errors).toEqual([]);expect(state.writes).toBe(0)
  })
- for(const width of [390,320])test(`${width}px uses four grouped tabs that open a second menu`,async({page})=>{
+ for(const width of [390,320])test(`${width}px keeps plate recognition in the five-tab phone menu`,async({page})=>{
   await page.setViewportSize({width,height:780});const state=await open(page)
   const tabs=page.locator('.tabbar');await expect(tabs).toBeVisible();await expect(page.locator('.sidebar,.topnav')).toHaveCount(0)
-  await expect(tabs.locator('>*')).toHaveText(['ダッシュボード','ネットワーク','ドラレコ','設定'])
-  await expect(page.locator('.mobile-title')).toHaveText('ダッシュボード');await expect(tabs.getByRole('link',{name:'ダッシュボード',exact:true})).toHaveClass(/active/)
+  await expect(tabs.locator('>*')).toHaveText(['ホーム','ネットワーク','ドラレコ','ナンバー','設定'])
+  await expect(page.locator('.mobile-title')).toHaveText('ダッシュボード');await expect(tabs.getByRole('link',{name:'ホーム',exact:true})).toHaveClass(/active/)
   for(const tab of await tabs.locator('>*').all())expect((await tab.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await expect(page.locator('.dash-home .dh-tile')).toHaveCount(4);expect(await fits(page)).toBe(true)
   // The title bar floats like the PC menu bar, and the map fills the screen behind it down to the bottom menu.
@@ -204,8 +209,11 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   await expect(switches).toHaveAccessibleName('ダッシュボードを概要表示にする');await switches.click();await expect(page.locator('.dash-home')).toBeVisible()
   await tabs.getByRole('button',{name:'ドラレコ',exact:true}).click()
   const sheet=page.getByRole('dialog',{name:'ドラレコのメニュー'})
-  await expect(sheet.getByRole('link')).toHaveText([/ライブ/,/ドラレコ再生/,/走行履歴/,/ナンバー/])
+  await expect(sheet.getByRole('link')).toHaveText([/ライブ/,/ドラレコ再生/,/走行履歴/])
   for(const item of await sheet.getByRole('link').all())expect((await item.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+  await tabs.getByRole('link',{name:'ナンバー',exact:true}).click()
+  await expect(page.getByRole('heading',{name:'ナンバー',exact:true})).toBeVisible()
+  await expect(tabs.getByRole('link',{name:'ナンバー',exact:true})).toHaveClass(/active/)
   // Another group can be chosen without closing the first.
   await tabs.getByRole('button',{name:'ネットワーク',exact:true}).click()
   await expect(page.getByRole('dialog',{name:'ネットワークのメニュー'}).getByRole('link')).toHaveText([/4G/,/Wi-Fi \/ AP/,/Tailscale/])
@@ -219,7 +227,7 @@ test.describe('menu layouts and the overview dashboard (synthetic fixtures)',()=
   expect((await sections.boundingBox())!.height).toBeLessThan(70)
   await sections.getByRole('button',{name:'設定・バックアップ',exact:true}).click();await expect(page.getByRole('heading',{name:'表示設定',exact:true})).toBeVisible()
   expect(await fits(page)).toBe(true)
-  await tabs.getByRole('link',{name:'ダッシュボード',exact:true}).click();await expect(page.locator('.dash-home')).toBeVisible()
+  await tabs.getByRole('link',{name:'ホーム',exact:true}).click();await expect(page.locator('.dash-home')).toBeVisible()
   expect(state.errors).toEqual([]);expect(state.writes).toBe(0)
  })
 })

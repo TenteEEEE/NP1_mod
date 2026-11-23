@@ -1,4 +1,20 @@
 import {test,expect} from '@playwright/test'
+test('phone dashboard exposes plate recognition as a direct bottom tab',async({page},info)=>{
+ test.skip(process.env.NCC_PLATE_HARDWARE!=='1','Explicit read-only device UI verification')
+ await page.setViewportSize({width:390,height:844})
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))
+ const response=await page.goto('/')
+ expect(response?.ok()).toBe(true)
+ const plate=page.locator('.tabbar').getByRole('link',{name:'ナンバー',exact:true})
+ await expect(plate).toBeVisible()
+ await plate.click()
+ await expect(page.locator('.plate-summary').getByRole('heading',{name:'ナンバー',exact:true})).toBeVisible()
+ await expect(plate).toHaveAttribute('aria-current','page')
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ expect(errors).toEqual([])
+ await page.screenshot({path:info.outputPath('phone-direct-plate-tab.png'),fullPage:true})
+})
+
 test('device plate tabs remain visible with no configured conditions',async({page},info)=>{
  test.skip(process.env.NCC_PLATE_HARDWARE!=='1','Explicit read-only device UI verification')
  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message))

@@ -102,7 +102,10 @@
 .plate-badge::after { right: 13%; }
 .plate-top { grid-column: 1 / -1; justify-self: center; align-self: end; font-size: calc(var(--plate-w) * .1); letter-spacing: .06em; }
 .plate-kana { align-self: center; font-size: calc(var(--plate-w) * .11); padding-right: calc(var(--plate-w) * .02); }
-.plate-serial { justify-self: center; font-family: Bahnschrift, "DIN Alternate", "Arial Narrow", "Yu Gothic UI", sans-serif; font-size: calc(var(--plate-w) * .26); font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.plate-serial { justify-self: center; min-width: 0; max-width: 100%; font-family: Bahnschrift, "DIN Alternate", "Arial Narrow", "Yu Gothic UI", sans-serif; font-size: calc(var(--plate-w) * .26); font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+/* Full-width leading dots are wider than digits in Japanese fallback fonts. Keep 1-3 digit
+   serials inside the badge instead of clipping the last digit on narrow mobile screens. */
+.plate-serial.compact { font-size: calc(var(--plate-w) * .22); letter-spacing: -.025em; }
 .plate-badge.hit { border-color: var(--plate-hit-line); box-shadow: 0 0 0 3px var(--plate-hit); }
 /* Unread region / class / kana: a pale placeholder, so a read field never looks missing and vice versa. */
 .plate-badge .missing { color: color-mix(in srgb, var(--plate-badge-text) 28%, var(--plate-badge-bg)); font-weight: 500; }

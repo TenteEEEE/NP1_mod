@@ -90,7 +90,7 @@ html.sheet-open{overflow:hidden}
 .mobile-toolbar .connection{margin-left:auto;white-space:nowrap}
 .mobile-toolbar .icon-button{width:44px;height:44px;border-radius:50%;color:var(--muted);flex-shrink:0}
 .mobile-toolbar .icon-button+.icon-button{margin-left:-10px}
-@media(max-width:360px){.mobile-toolbar .connection{font-size:0;gap:0}.tabbar{padding-inline:2px}}
+@media(max-width:360px){.mobile-toolbar .connection{font-size:0;gap:0}.tabbar{padding-inline:2px}.tabbar>*{font-size:10px}.tabbar>*>i{width:48px}}
 .tabbar{position:fixed;inset:auto 0 0 0;z-index:720;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;height:calc(var(--tabbar-h) + env(safe-area-inset-bottom));padding:4px 6px env(safe-area-inset-bottom);background:color-mix(in srgb,var(--paper) 90%,transparent);backdrop-filter:saturate(1.6) blur(16px);-webkit-backdrop-filter:saturate(1.6) blur(16px);border-top:1px solid var(--line)}
 .tabbar>*{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:0;padding:0;background:transparent;color:var(--muted);font-size:11px;font-weight:600;white-space:nowrap}
 .tabbar>*>i{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:999px;transition:background-color .15s}
