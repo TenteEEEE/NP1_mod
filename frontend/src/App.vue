@@ -21,6 +21,7 @@ import CellularPage from './components/CellularPage.vue'
 import WifiAPPage from './components/WifiAPPage.vue'
 import TailscaleSettings from './components/TailscaleSettings.vue'
 import StockServices from './components/StockServices.vue'
+import GPSDetails from './components/GPSDetails.vue'
 import {nativePages} from './services/native'
 import {navLayout,dashboardMode} from './services/preferences'
 import { api, bytes, date, setCSRF, type FileEntry, type Settings, type Summary } from './services/api'
@@ -76,7 +77,7 @@ const traffic=computed(()=>summary.value.traffic?.data as {interface:string;rxBy
 const temp=computed(()=>{const a=summary.value.temperatures?.data as {name:string;celsius:number;source:string}[]|undefined;return a?.filter(t=>t.name.toLowerCase().includes('cpu')).slice(0,4)||a?.slice(0,4)||[]})
 const fileList=computed(()=>files.value.filter(f=>f.name.toLowerCase().includes(fileSearch.value.toLowerCase())))
 
-const systemTabs=[{id:'overview',label:'本体'},{id:'routing',label:'ルーティング'},{id:'storage',label:'SDカード'},{id:'recorder',label:'録画設定'},{id:'pics',label:'高度化PICS'},{id:'led',label:'LED / 音声'},{id:'usb',label:'USB'},{id:'logs',label:'ログ'},{id:'nas',label:'録画バックアップ'},{id:'settings',label:'設定・バックアップ'}]
+const systemTabs=[{id:'overview',label:'本体'},{id:'gps',label:'GPS'},{id:'routing',label:'ルーティング'},{id:'storage',label:'SDカード'},{id:'recorder',label:'録画設定'},{id:'pics',label:'高度化PICS'},{id:'led',label:'LED / 音声'},{id:'usb',label:'USB'},{id:'logs',label:'ログ'},{id:'nas',label:'録画バックアップ'},{id:'settings',label:'設定・バックアップ'}]
 const view=computed(()=>page.value==='system'&&systemSection.value!=='overview'?systemSection.value:page.value)
 function selectRoute(id:string){const [requested,tab]=id.split('?')[0].split('/');const base=requested==='clients'?'wifi':requested==='traffic'?'internet':requested==='alexa'?'native':nativePages.some(p=>p.id===requested)?'native':requested;if(systemTabs.some(t=>t.id===base)&&base!=='overview'){page.value='system';systemSection.value=base}else if(base==='system'){page.value='system';systemSection.value=systemTabs.some(t=>t.id===tab)?tab!:'overview'}else{page.value=nav.some(n=>n.id===base)?base:'dashboard';systemSection.value='overview'}}
 function go(id:string){selectRoute(id);location.hash=page.value==='system'&&systemSection.value!=='overview'?'system/'+systemSection.value:page.value;menu.value=''}
@@ -143,6 +144,7 @@ onUnmounted(()=>{window.removeEventListener('hashchange',hashChange);narrowQuery
  <template v-else-if="page==='internet'"><CellularPage :summary="summary" @refresh="refresh"/></template>
  <template v-else-if="page==='wifi'"><WifiAPPage :summary="summary" @refresh="refresh"/></template>
  <template v-else-if="page==='vpn'"><TailscaleSettings :observation="summary.tailscale" @refresh="refresh"/></template>
+ <template v-else-if="view==='gps'"><GPSDetails/></template>
  <template v-else-if="view==='routing'"><section class="panel space-top"><div class="panel-head"><h2>ルーティング</h2><span class="tag">READ ONLY</span></div><pre>{{summary.routes?.data||'未取得'}}</pre></section></template>
 
 
