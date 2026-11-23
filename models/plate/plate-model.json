@@ -351,7 +351,7 @@
         ]
       }
     ],
-    "sha256": "7addf80708a946b80b303028361f50cc850057490974e37f5e4d94cb8468dbd4",
+    "sha256": "19798fe401df176bf92288590f54e24df94bcf9fcb4a1d4931e35b34477f3262",
     "fieldReaders": {
       "kana": {
         "file": "ocr-kana.tflite",
