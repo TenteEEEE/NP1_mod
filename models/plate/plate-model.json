@@ -351,7 +351,7 @@
         ]
       }
     ],
-    "sha256": "7addf80708a946b80b303028361f50cc850057490974e37f5e4d94cb8468dbd4",
+    "sha256": "19798fe401df176bf92288590f54e24df94bcf9fcb4a1d4931e35b34477f3262",
     "fieldReaders": {
       "kana": {
         "file": "ocr-kana.tflite",
@@ -383,8 +383,8 @@
       }
     },
     "textOcr": {
-      "file": "ppocrv5_r2_rec.onnx",
-      "sha256": "610cb9f73192a031fe2b06f0604795f784e3238b76fb4188977cc3a7ece39cfc",
+      "file": "ppocrv6s_r4_rec.onnx",
+      "sha256": "88479856b8ceb71f60c5e24470337c38773798736281c8af26c83428b9a5d4c0",
       "dictionary": "ppocrv5_r2-dictionary.json",
       "dictionarySha256": "44a29474b35f02772248f5395a8402d542f206bf30918e96070a663a58edc970",
       "regionThreshold": 0.6,
@@ -457,13 +457,13 @@
         "models": [
           {
             "width": 128,
-            "file": "ppocrv5_r2_w128.tflite",
-            "sha256": "1c4ce408d310300c708554abbfe569c0686fe48a42151028742bf72989906129"
+            "file": "ppocrv6s_r4_w128.tflite",
+            "sha256": "a72134b0b2fd7fe70a6195c258c2f452243fffa2d8044ac4476f33866bec5630"
           },
           {
             "width": 256,
-            "file": "ppocrv5_r2_w256.tflite",
-            "sha256": "abea4da27159916a88e8201ed747521ba6fdd8ba2e0d44b50d5c80e0ec80bf2c"
+            "file": "ppocrv6s_r4_w256.tflite",
+            "sha256": "2b3ba5378e1e38517d9bfeaa48607fb430cea9e5f559d5156a951ad2c5835184"
           }
         ],
         "precisionLossAllowed": true

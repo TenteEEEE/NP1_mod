@@ -1,8 +1,8 @@
-# NumberShare v5 / low-resolution + GPU（numbershare-reader-v5-lowres-gpu）
+# NumberShare v7 / low-resolution v6s（numbershare-reader-v7-lowres-v6s）
 
-v4（下記）からの変更点：文字認識に、小さく写ったナンバー向けに追加学習した PP-OCRv5 mobile（`ppocrv5_r2_rec.onnx`、273文字）を使う。
-上段全体の照合（地名・分類番号）と固定幅パディングを有効にし、幅128・256の文字認識は OpenCL GPU で実行する（`ppocrv5_r2_w128.tflite` / `ppocrv5_r2_w256.tflite`、同じ重み）。一連番号の確認には PP-OCRv6 の INT8 版（`ppocrv6_rec_np1_int8.onnx`、失敗時は `ppocrv6_rec.onnx`）を使う。
-実機（QCS610、CPU 150%・メモリ384MB制限）の開発分割で現在の構成（INT8 PP-OCRv6 + MNN GPU）と比べると、完全一致が 120px で .25→.73、70px で .06→.56 に上がった。一連番号は同等で、処理時間は約530〜600ms から約390〜400ms になった。詳細は [docs/plate-lowres-evaluation.md](../../docs/plate-lowres-evaluation.md)。
+PP-OCRv6 small を追加学習した `ppocrv6s_r4_rec.onnx` と、同じ重みのGPU用 `ppocrv6s_r4_w128.tflite` / `ppocrv6s_r4_w256.tflite` を使います。273文字のCTC出力と辞書 `ppocrv5_r2-dictionary.json` は従来と共通です。一連番号の読取り器は plate-v2 で、PP-OCRv6 INT8で照合します。
+
+学習には、車両グループ・地名・かなで重みを調整した実写の切り出し、描画した合成画像、架空の文字で生成した写実的な合成画像とその撮影条件違いの編集画像を使いました。生成・編集画像は、VLMで全項目を読み戻せたものだけを使っています。約34px未満では読取りを控える学習を行いました。QCS610実機を含む評価条件と結果は [評価まとめ](../../docs/plate-lowres-evaluation.md) を参照してください。
 
 # NumberShare 0.8.1 / night context
 

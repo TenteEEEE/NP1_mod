@@ -49,10 +49,8 @@ type Record struct {
 	ImageID   string    `json:"imageId,omitempty"`
 	ImageNote string    `json:"imageNote,omitempty"`
 	Speech    string    `json:"speech,omitempty"`
-	// votes holds confidence-weighted readings per field while the record is
-	// open; the displayed field is the majority (single frames misread
-	// regions and kana, especially at night).
-	votes map[string]map[string]float64
+	// votes records distinct frames per field value while the record is open.
+	votes map[string]map[string]string
 }
 
 type Query struct {
@@ -168,7 +166,7 @@ func (s *Store) Ingest(d Detection, settings Settings, frameImage func(string) (
 	closeErr := s.closeExpired(d.At, window)
 	if r := findCompatible(s.open, reading, d.At, window); r != nil {
 		r.Sightings++
-		if !absorb(r, reading, d) {
+		if !absorb(r, reading, d, settings) {
 			return Outcome{Record: *r}, closeErr
 		}
 		// The majority reading changed (e.g. the region became readable):
@@ -182,11 +180,11 @@ func (s *Store) Ingest(d Detection, settings Settings, frameImage func(string) (
 	}
 	r := findCompatible(s.cand, reading, d.At, window)
 	if r == nil {
-		r = &Record{ID: newID(d.At), FirstSeen: d.At, LastSeen: d.At, Sightings: 0, Reading: reading, Location: d.Location, Box: d.Box, Matches: []Match{}}
+		r = &Record{ID: newID(d.At), FirstSeen: d.At, LastSeen: d.At, Sightings: 0, Reading: Reading{Number: reading.Number, Confidence: reading.Confidence}, Location: d.Location, Box: d.Box, Matches: []Match{}}
 		s.cand[r.ID] = r
 	}
 	r.Sightings++
-	absorb(r, reading, d)
+	absorb(r, reading, d, settings)
 	instant := settings.InstantConfidence > 0 && settings.InstantConfidence < 1 && reading.Confidence >= settings.InstantConfidence && d.Box[2] >= InstantMinWidth
 	if r.Sightings < max(1, settings.MinSightings) && !instant {
 		return Outcome{Skipped: "provisional"}, closeErr
@@ -213,7 +211,7 @@ func compatible(a, b Reading) bool {
 
 // absorb folds a sighting into a record and reports whether the displayed
 // reading changed.
-func absorb(r *Record, reading Reading, d Detection) bool {
+func absorb(r *Record, reading Reading, d Detection, settings Settings) bool {
 	if d.At.After(r.LastSeen) {
 		r.LastSeen = d.At
 	}
@@ -227,28 +225,50 @@ func absorb(r *Record, reading Reading, d Detection) bool {
 		r.Box = d.Box
 	}
 	if r.votes == nil {
-		r.votes = map[string]map[string]float64{}
+		r.votes = map[string]map[string]string{}
 	}
 	before := r.Reading
+	frame := d.Frame
+	if frame == "" {
+		frame = d.At.UTC().Format(time.RFC3339Nano)
+	}
 	for _, f := range []struct {
 		name string
 		dst  *string
 		src  string
 	}{{"region", &r.Reading.Region, reading.Region}, {"class", &r.Reading.Class, reading.Class}, {"kana", &r.Reading.Kana, reading.Kana}} {
-		if f.src == "" {
-			continue
+		minWidth, minShare := settings.FieldMinWidth, settings.FieldMinShare
+		if minWidth == 0 {
+			minWidth = FieldMinWidth
 		}
-		if r.votes[f.name] == nil {
-			r.votes[f.name] = map[string]float64{}
+		if minShare == 0 {
+			minShare = DefaultFieldMinShare
 		}
-		r.votes[f.name][f.src] += max(reading.Confidence, 0.01)
-		best, bestVote := *f.dst, -1.0
-		for value, vote := range r.votes[f.name] {
-			if vote > bestVote || (vote == bestVote && value < best) {
-				best, bestVote = value, vote
+		if d.Box[2] >= minWidth && f.src != "" {
+			if r.votes[f.name] == nil {
+				r.votes[f.name] = map[string]string{}
+			}
+			// A repeated delivery from the same frame cannot create another vote.
+			if _, exists := r.votes[f.name][frame]; !exists {
+				r.votes[f.name][frame] = f.src
 			}
 		}
-		*f.dst = best
+		counts := map[string]int{}
+		for _, value := range r.votes[f.name] {
+			counts[value]++
+		}
+		best, n, tied := "", 0, false
+		for value, count := range counts {
+			if count > n {
+				best, n, tied = value, count, false
+			} else if count == n {
+				tied = true
+			}
+		}
+		*f.dst = ""
+		if !tied && n >= 2 && float64(n)/float64(len(r.votes[f.name])) >= minShare {
+			*f.dst = best
+		}
 	}
 	r.Display = r.Reading.Display()
 	return r.Reading.Region != before.Region || r.Reading.Class != before.Class || r.Reading.Kana != before.Kana

@@ -978,6 +978,12 @@ class TextOCR {
     number_check_ = config.value("numberCheck", true);
     number_score_ = config.value("numberScore", static_cast<double>(.98f));
     number_override_ = config.value("numberOverride", true);
+    number_override_confidence_enabled_ = config.contains("numberOverrideConfidence");
+    number_override_confidence_ = config.value("numberOverrideConfidence", 1.0);
+    number_veto_score_ = config.value("numberVetoScore", number_score_);
+    if ((number_override_confidence_enabled_ && !(number_override_confidence_ >= 0.0 && number_override_confidence_ <= 1.0)) ||
+        (config.contains("numberVetoScore") && !(number_veto_score_ >= 0.0 && number_veto_score_ <= number_score_)))
+      throw std::runtime_error("invalid numberOverrideConfidence or numberVetoScore");
     main_.bilinear = config.value("sampling", std::string("nearest")) == "bilinear";
     kana_rects_ = config.contains("kanaRects") ? parse_rects(config.at("kanaRects"))
                                                : std::vector<Rect>{{{.02, .52, .195, .84}}, {{.015, .47, .215, .88}}, {{.04, .42, .18, .95}}};
@@ -1425,14 +1431,18 @@ class TextOCR {
       if (number.score >= number_score_) {
         if (number_override_ && serial_confidence < .6f && number.text.size() == base_serial.text.size()) {
           serial = number.text;
-          serial_confidence = number.score;
+          serial_confidence = number_override_confidence_enabled_ ? std::min(number.score, static_cast<float>(number_override_confidence_)) : number.score;
         } else if (serial_confidence >= .6f && number.text != serial) {
           Candidate second = number_candidate(frame, W, H, box, {.215, .38, 1, .98});
           if (second.score >= number_score_ && second.text == number.text && number.text.size() == base_serial.text.size()) {
             serial = number.text;
             serial_confidence = std::min(number.score, second.score);
+            if (number_override_confidence_enabled_) serial_confidence = std::min(serial_confidence, static_cast<float>(number_override_confidence_));
           } else serial_confidence = 0;
         }
+      } else if (number.score >= number_veto_score_ && number.text != serial &&
+                 number.text.size() == base_serial.text.size()) {
+        serial_confidence = 0;
       }
     };
 
@@ -1709,8 +1719,9 @@ class TextOCR {
   std::unique_ptr<MnnGpuBatch> gpu_batch_;
   std::mutex prof_mu_;
 #endif
-  bool number_check_ = true, number_override_ = true;
-  double number_score_ = static_cast<double>(.98f);
+  bool number_check_ = true, number_override_ = true, number_override_confidence_enabled_ = false;
+  double number_score_ = static_cast<double>(.98f), number_veto_score_ = static_cast<double>(.98f);
+  double number_override_confidence_ = 1.0;
   std::vector<Rect> kana_rects_, top_rects_;
   double top_posterior_ = .9, top_gap_ = 4., top_max_cost_ = 4., top_class_minimum_ = .6, top_class_share_ = .8;
   bool top_class_fill_ = true;
