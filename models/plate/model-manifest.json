@@ -1,5 +1,5 @@
 {
-  "version": "numbershare-reader-v5-lowres-gpu",
+  "version": "numbershare-reader-v7-lowres-v6s",
   "files": {
     "detector.tflite": "f3a24c66b9979f719e571d6240b3c4062665f10187010ba9bbf2e7f1aca4e211",
     "ocr.tflite": "19798fe401df176bf92288590f54e24df94bcf9fcb4a1d4931e35b34477f3262",
@@ -9,11 +9,11 @@
     "ppocrv6_rec_np1_int8.onnx": "a5e36a46c48ce2d6edf3995e8118d689b35eacb71afaf4754ea491c19af9eceb",
     "ppocrv6_rec_np1_w8.mnn": "78456d902baf46e0358c51b515e420544af3a95aa8ef0b8a5a1909a60757b5db",
     "ppocr-dictionary.json": "b50d01361bea9087ccb896a6381c1a8334e2af14ae0f1036571bd06cdc3832bf",
-    "plate-model.json": "556fde922ddf2a9931ae97a71d2bfd859ede245b300df88bd7b11fe4258c9847",
-    "ppocrv5_r2_rec.onnx": "610cb9f73192a031fe2b06f0604795f784e3238b76fb4188977cc3a7ece39cfc",
+    "plate-model.json": "bd6a56ebb499e30b76eef7c071c4a50e84093f2978f7442d4560148f22b4adfd",
     "ppocrv5_r2-dictionary.json": "44a29474b35f02772248f5395a8402d542f206bf30918e96070a663a58edc970",
-    "ppocrv5_r2_w128.tflite": "1c4ce408d310300c708554abbfe569c0686fe48a42151028742bf72989906129",
-    "ppocrv5_r2_w256.tflite": "abea4da27159916a88e8201ed747521ba6fdd8ba2e0d44b50d5c80e0ec80bf2c"
+    "ppocrv6s_r4_rec.onnx": "88479856b8ceb71f60c5e24470337c38773798736281c8af26c83428b9a5d4c0",
+    "ppocrv6s_r4_w128.tflite": "a72134b0b2fd7fe70a6195c258c2f452243fffa2d8044ac4476f33866bec5630",
+    "ppocrv6s_r4_w256.tflite": "2b3ba5378e1e38517d9bfeaa48607fb430cea9e5f559d5156a951ad2c5835184"
   },
   "japanese_ocr_source": "https://huggingface.co/bukuroo/Lipla-jp/tree/947afab7678ff50d7101e5cf802de25e9d4d0fe1",
   "runtime": "plate-engine (TFLite 2.16.1 + XNNPACK 2 threads with the OpenCL GPU delegate for the detector/readers and the 128/256-wide text crops, ONNX Runtime 1.30.0 CPU)",
@@ -86,12 +86,12 @@
     "reason": "XNNPACK candidate crashes on first width-95 input; CPU3 is faster and numerically close to CPU2"
   },
   "text_ocr_model": {
-    "file": "ppocrv5_r2_rec.onnx",
-    "base": "PaddlePaddle/PP-OCRv5_mobile_rec_onnx (Hugging Face, Apache-2.0)",
+    "file": "ppocrv6s_r4_rec.onnx",
+    "base": "PaddlePaddle/PP-OCRv6_small_rec (Apache-2.0)",
     "head": "pruned to the 273 characters used on Japanese plates (ppocrv5_r2-dictionary.json)",
-    "fine_tune": "low-resolution-aware: real plate crops degraded to 45-130 px plate width with engine-style axis-aligned crops, CTC + KL distillation from the full-resolution crop, BN frozen, 3000 steps; confidence sharpened p^2/sum p^2 in the graph",
-    "training_data": "owner photos and dash-camera crops (not shipped, not published) plus synthetic renders",
-    "gpu_models": "ppocrv5_r2_w128.tflite / ppocrv5_r2_w256.tflite: the same weights as fixed-width float32 TFLite for the OpenCL GPU delegate (tools/plate/gpu/convert_rec_tflite.sh --attention)"
+    "fine_tune": "group, region and kana balanced real sampling with rendered and generated synthetic plates; blank (abstain) targets for plates narrower than 34 px, ramping to full weight at 46 px; 3000 steps, CTC + KL distillation, BN frozen, p^2 confidence sharpening",
+    "training_data": "owner photos and dash-camera crops (not shipped, not published), rendered synthetic plates, and photoreal synthetic plates generated from fictional plate text with image-edited condition variants (night glare, rain, dusk, tunnel lighting), kept only when a VLM read back every field",
+    "gpu_models": "ppocrv6s_r4_w128.tflite / ppocrv6s_r4_w256.tflite: the same weights as fixed-width float32 TFLite for the OpenCL GPU delegate (tools/plate/gpu/convert_rec_tflite.sh --attention)"
   },
   "serial_check_model": "ppocrv6_rec_np1_int8.onnx (upstream INT8 PP-OCRv6, fastMaxInputWidth 128) with ppocrv6_rec.onnx as fall-back, used only for the serial-number check (textOcr.numberModel); ppocrv6_rec_np1_w8.mnn is not used by this configuration",
   "evaluation": "docs/plate-lowres-evaluation.md (device end-to-end, field-eval-web-v1 dev/test, plate widths 55-120 px)"

@@ -14,7 +14,8 @@ RECOVERY = "/overlay/owner-apps/np1-control/recovery"
 MODEL_FILES = (
     "detector.tflite", "ocr.tflite", "ocr-kana.tflite", "ocr-classification.tflite",
     "ppocrv6_rec.onnx", "ppocrv6_rec_np1_int8.onnx", "ppocrv6_rec_np1_w8.mnn",
-    "plate-model.json", "ppocr-dictionary.json", "model-manifest.json",
+    "ppocrv6s_r4_rec.onnx", "ppocrv6s_r4_w128.tflite", "ppocrv6s_r4_w256.tflite",
+    "ppocrv5_r2-dictionary.json", "plate-model.json", "ppocr-dictionary.json", "model-manifest.json",
     "README.md", "LICENSING.md", "ONNX_RUNTIME_LICENSE.txt", "PPOCR_MODEL_CARD.md",
 )
 
