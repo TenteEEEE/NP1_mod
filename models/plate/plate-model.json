@@ -383,8 +383,8 @@
       }
     },
     "textOcr": {
-      "file": "ppocrv6s_r4_rec.onnx",
-      "sha256": "88479856b8ceb71f60c5e24470337c38773798736281c8af26c83428b9a5d4c0",
+      "file": "ppocrv6s_r5_rec.onnx",
+      "sha256": "48f59de4767312ef3116545948a45a9f1ecb403fb0c8d3e423f741da05c62cf4",
       "dictionary": "ppocrv5_r2-dictionary.json",
       "dictionarySha256": "44a29474b35f02772248f5395a8402d542f206bf30918e96070a663a58edc970",
       "regionThreshold": 0.6,
@@ -457,16 +457,33 @@
         "models": [
           {
             "width": 128,
-            "file": "ppocrv6s_r4_w128.tflite",
-            "sha256": "a72134b0b2fd7fe70a6195c258c2f452243fffa2d8044ac4476f33866bec5630"
+            "file": "ppocrv6s_r5_w128.tflite",
+            "sha256": "8f82799010b1afbfb25993aee634ea7775296716552d12cc71235819a1701fc9"
           },
           {
             "width": 256,
-            "file": "ppocrv6s_r4_w256.tflite",
-            "sha256": "2b3ba5378e1e38517d9bfeaa48607fb430cea9e5f559d5156a951ad2c5835184"
+            "file": "ppocrv6s_r5_w256.tflite",
+            "sha256": "312418fc85a2dc6391cfbc3eedebb44d9d2b47f9abbeb9b5c52232a20ce68d64"
           }
         ],
         "precisionLossAllowed": true
+      },
+      "fieldHeads": {
+        "labelsFile": "ppocrv6s_r5_heads.json",
+        "labelsSha256": "2722b759a5f2c304bb716ea556fb4aea0d522b4556294fea73407fa86f2b8c9c",
+        "classThreshold": 0.7,
+        "kanaThreshold": 0.7,
+        "sharedInput": true,
+        "classDecoder": {
+          "file": "ppocrv6s_r5_class_decoder.onnx",
+          "sha256": "d6d2d21ca1275adfe027ffe117e37f43f8d9a68779f4e26190bf4b9ad290cba7"
+        },
+        "kanaDecoder": {
+          "file": "ppocrv6s_r5_kana_decoder.onnx",
+          "sha256": "ce48c0c7dc4ea4c8968b25f6063c65266865c18769b246995ef26eab34a9fb93"
+        },
+        "classFallback": true,
+        "kanaFallback": true
       }
     }
   }

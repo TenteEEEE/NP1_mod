@@ -2,6 +2,7 @@
 
 - detector.tflite: NP1_mod由来。上流の重みと学習材料の権利表示はUPSTREAM_LICENSING.mdをそのまま保持する。
 - ocr.tflite / ocr-kana.tflite / ocr-classification.tflite: NP1_mod readerを追加学習。MITコード・公開画像dyama/alpr_jpのMIT原文を保持。
+- ppocrv6s_r5_rec.onnx / ppocrv6s_r5_w128.tflite / ppocrv6s_r5_w256.tflite / ppocrv6s_r5_class_decoder.onnx / ppocrv6s_r5_kana_decoder.onnx / ppocrv6s_r5_heads.json: PP-OCRv6 small を改変・追加学習したもの。Apache-2.0。
 - ppocrv6s_r4_rec.onnx / ppocrv6s_r4_w128.tflite / ppocrv6s_r4_w256.tflite: PaddlePaddle/PP-OCRv6_small_rec を改変・追加学習したもの。Apache-2.0。[上流モデルカードとライセンス](https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec)、Apache-2.0原文 notices/PP-OCRv5-Apache-2.0.txt。出力を273文字に限定し、実写切り出しと合成画像で学習。TFLite版は同じ重みを固定幅に変換したもの。
 - ppocrv5_r2-dictionary.json: 従来のPP-OCRv5由来の辞書。PaddlePaddle/PP-OCRv5_mobile_rec_onnx（Hugging Face、Apache-2.0、原文 notices/PP-OCRv5-Apache-2.0.txt）に基づく。
 - ppocrv6_rec.onnx / ppocr-dictionary.json: bukuroo/Lipla-jp、固定revision 947afab7678ff50d7101e5cf802de25e9d4d0fe1。モデルカードはMIT表記、原文PPOCR_MODEL_CARD.mdとLIPLA_MIT_LICENSE.txtを保持。

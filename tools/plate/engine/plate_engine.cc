@@ -740,12 +740,14 @@ double elapsed_ms(ProfileClock::time_point start) {
 }
 
 struct FrameProfile {
-  double detection = 0, lite = 0, text = 0, input = 0, onnx = 0;
-  int calls = 0, candidates = 0;
+  double detection = 0, lite = 0, text = 0, input = 0, onnx = 0, field_heads = 0;
+  int calls = 0, candidates = 0, field_head_calls = 0, field_head_shared = 0;
   json to_json() const {
-    return {{"detectorMs", detection}, {"tfliteReaderMs", lite}, {"textReaderMs", text},
+    json result = {{"detectorMs", detection}, {"tfliteReaderMs", lite}, {"textReaderMs", text},
             {"onnxInputMs", input}, {"onnxRunMs", onnx}, {"onnxCalls", calls},
             {"plateCandidates", candidates}};
+    if (field_head_calls) { result["fieldHeadsMs"] = field_heads; result["fieldHeadsShared"] = field_head_shared; }
+    return result;
   }
 };
 
@@ -928,6 +930,237 @@ void verify_sha256(const std::string& path, const std::string& expected) {
   if (normalized != digest) throw std::runtime_error("SHA-256 mismatch: " + path);
 }
 
+class FieldHeads {
+ public:
+  FieldHeads(Ort::Env& env, int threads, const std::string& dir, const json& cfg)
+      : class_threshold_(cfg.value("classThreshold", .7)), kana_threshold_(cfg.value("kanaThreshold", .7)),
+        class_fallback_(cfg.value("classFallback", false)), kana_fallback_(cfg.value("kanaFallback", false)),
+        min_width_(cfg.value("minWidth", 0)), max_width_(cfg.value("maxWidth", std::numeric_limits<int>::max())),
+        shared_(cfg.value("sharedInput", false)) {
+    if (class_threshold_ < 0 || class_threshold_ > 1 || kana_threshold_ < 0 || kana_threshold_ > 1 || min_width_ < 0 || max_width_ < min_width_)
+      throw std::runtime_error("invalid fieldHeads thresholds or width range");
+    auto labels_path = (std::filesystem::path(dir) / cfg.at("labelsFile").get<std::string>()).string();
+    verify_sha256(labels_path, cfg.at("labelsSha256").get<std::string>());
+    std::ifstream labels_file(labels_path);
+    auto labels = json::parse(labels_file).at("labels");
+    class_labels_ = labels.at(1).get<std::vector<std::string>>();
+    kana_labels_ = labels.at(4).get<std::vector<std::string>>();
+    // With sharedInput the heads come from the text reader's own w256 / w128 pass; the separate head models are an
+    // optional fallback for plates where that pass did not run.
+    if (cfg.contains("classDecoder")) load_decoder(env, dir, cfg.at("classDecoder"), class_decoder_, 3);
+    if (cfg.contains("kanaDecoder")) load_decoder(env, dir, cfg.at("kanaDecoder"), kana_decoder_, 1);
+    if (cfg.contains("class")) load(env, threads, dir, cfg.at("class"), top_, 3, 256, class_labels_.size());
+    if (cfg.contains("kana")) load(env, threads, dir, cfg.at("kana"), kana_, 1, 128, kana_labels_.size());
+    if (!shared_ && (!top_.session || !kana_.session)) throw std::runtime_error("fieldHeads needs class and kana models unless sharedInput is set");
+  }
+  bool shared() const { return shared_; }
+  size_t class_size() const { return class_labels_.size(); }
+  size_t kana_size() const { return kana_labels_.size(); }
+  bool has_models() const { return top_.session && kana_.session; }
+  bool has_decoder(bool kana) const { return static_cast<bool>((kana ? kana_decoder_ : class_decoder_).session); }
+  // Field-head probabilities from the text reader's backbone sequence feature [1, steps, channels] (CPU decoder).
+  std::vector<std::vector<float>> decode(bool kana, const float* feature, int steps, int channels) {
+    auto& model = kana ? kana_decoder_ : class_decoder_;
+    const size_t classes = kana ? kana_labels_.size() : class_labels_.size();
+    std::vector<float> values(feature, feature + static_cast<size_t>(steps) * channels);
+    std::array<int64_t, 3> shape{1, steps, channels};
+    auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    auto tensor = Ort::Value::CreateTensor<float>(memory, values.data(), values.size(), shape.data(), shape.size());
+    const char* input_name = model.input.c_str(); std::vector<const char*> names;
+    for (const auto& name : model.outputs) names.push_back(name.c_str());
+    auto output = model.session->Run(Ort::RunOptions{nullptr}, &input_name, &tensor, 1, names.data(), names.size());
+    std::vector<std::vector<float>> result;
+    for (auto& value : output) {
+      if (value.GetTensorTypeAndShapeInfo().GetElementCount() != classes) throw std::runtime_error("fieldHeads decoder output shape mismatch");
+      const float* q = value.GetTensorData<float>(); result.emplace_back(q, q + classes);
+    }
+    return result;
+  }
+  // Field decision from head probabilities; a null pointer leaves that field to the text reader.
+  void decide(const std::vector<std::vector<float>>* slots, const std::vector<float>* kana_probs, json& result) const {
+    json debug = json::object();
+    if (slots && slots->size() == 3) {
+      std::string classification;
+      float confidence = 1;
+      for (const auto& probs : *slots) {
+        auto it = std::max_element(probs.begin(), probs.end());
+        confidence = std::min(confidence, *it);
+        classification += class_labels_.at(static_cast<size_t>(it - probs.begin()));
+      }
+      if (confidence >= class_threshold_) result["class"] = classification;
+      else if (!class_fallback_) result["class"] = "";
+      debug["class"] = classification; debug["classConfidence"] = confidence;
+    }
+    if (kana_probs && !kana_probs->empty()) {
+      auto it = std::max_element(kana_probs->begin(), kana_probs->end());
+      float kc = *it;
+      std::string kv = kana_labels_.at(static_cast<size_t>(it - kana_probs->begin()));
+      if (kc >= kana_threshold_) result["kana"] = kv;
+      else if (!kana_fallback_) result["kana"] = "";
+      debug["kana"] = kv; debug["kanaConfidence"] = kc;
+    }
+    if (!debug.empty()) result["fieldHeads"] = debug;
+  }
+  bool applies(const Box& b) const { return b.w >= min_width_ && b.w <= max_width_; }
+  void apply(const uint8_t* frame, int W, int H, const Box& b, json& result, FrameProfile* profile) {
+    auto start = ProfileClock::now();
+    auto top = input(frame, W, H, b, false);
+    auto kana = input(frame, W, H, b, true);
+    dump(top, kana);
+    auto a = run(top_, top, 256, class_labels_.size());
+    auto k = run(kana_, kana, 128, kana_labels_.size());
+    decide(&a, &k[0], result);
+    if (profile) { profile->field_heads += elapsed_ms(start); ++profile->field_head_calls; }
+  }
+ private:
+  struct Model { std::unique_ptr<Ort::Session> session; std::unique_ptr<TFLiteModel> gpu; std::string input; std::vector<std::string> outputs; };
+  static void load_decoder(Ort::Env& env, const std::string& dir, const json& spec, Model& model, size_t count) {
+    auto path = (std::filesystem::path(dir) / spec.at("file").get<std::string>()).string();
+    verify_sha256(path, spec.at("sha256").get<std::string>());
+    Ort::SessionOptions options; options.SetIntraOpNumThreads(1); options.SetInterOpNumThreads(1);
+    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    model.session = std::make_unique<Ort::Session>(env, path.c_str(), options);
+    if (model.session->GetInputCount() != 1 || model.session->GetOutputCount() != count) throw std::runtime_error("fieldHeads decoder output count mismatch");
+    Ort::AllocatorWithDefaultOptions allocator;
+    model.input = model.session->GetInputNameAllocated(0, allocator).get();
+    for (size_t i = 0; i < count; ++i) model.outputs.emplace_back(model.session->GetOutputNameAllocated(i, allocator).get());
+  }
+  static void load(Ort::Env& env, int threads, const std::string& dir, const json& spec, Model& model, size_t count, int width, size_t classes) {
+    auto path = (std::filesystem::path(dir) / spec.at("file").get<std::string>()).string();
+    verify_sha256(path, spec.at("sha256").get<std::string>());
+    if (spec.contains("tfliteFile")) {
+      auto gpu_path = (std::filesystem::path(dir) / spec.at("tfliteFile").get<std::string>()).string();
+      verify_sha256(gpu_path, spec.at("tfliteSha256").get<std::string>());
+#ifdef NP1_PLATE_GPU
+      try {
+        auto gpu = std::make_unique<TFLiteModel>(gpu_path, 2, GPU::text, "", false, spec.value("precisionLossAllowed", false));
+        if (gpu->uses_gpu()) {
+          auto* interpreter = gpu->get();
+          if (interpreter->inputs().size() != 1 || interpreter->outputs().size() != count) throw std::runtime_error("fieldHeads GPU tensor count mismatch");
+          auto* in = interpreter->tensor(interpreter->inputs()[0]);
+          if (in->type != kTfLiteFloat32 || in->dims->size != 4 || in->dims->data[0] != 1 || in->dims->data[1] != 48 || in->dims->data[2] != width || in->dims->data[3] != 3) throw std::runtime_error("fieldHeads GPU input shape mismatch");
+          for (int index : interpreter->outputs()) {
+            auto* out = interpreter->tensor(index);
+            size_t n = 1; for (int i = 0; i < out->dims->size; ++i) n *= out->dims->data[i];
+            if (out->type != kTfLiteFloat32 || n != classes) throw std::runtime_error("fieldHeads GPU output shape mismatch");
+          }
+          model.gpu = std::move(gpu);
+        }
+      } catch (const std::runtime_error& error) {
+        std::fprintf(stderr, "plate-engine: fieldHeads GPU unavailable, using ONNX CPU: %s\n", error.what());
+      }
+#else
+      (void)width; (void)classes;
+#endif
+    }
+    Ort::SessionOptions options; options.SetIntraOpNumThreads(threads); options.SetInterOpNumThreads(1);
+    options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    model.session = std::make_unique<Ort::Session>(env, path.c_str(), options);
+    if (model.session->GetInputCount() != 1 || model.session->GetOutputCount() != count) throw std::runtime_error("fieldHeads model output count mismatch");
+    Ort::AllocatorWithDefaultOptions allocator;
+    model.input = model.session->GetInputNameAllocated(0, allocator).get();
+    for (size_t i = 0; i < count; ++i) model.outputs.emplace_back(model.session->GetOutputNameAllocated(i, allocator).get());
+  }
+  static std::vector<std::vector<float>> run(Model& model, std::vector<float>& values, int width, size_t classes) {
+#ifdef NP1_PLATE_GPU
+    if (model.gpu) {
+      try {
+        model.gpu->invoke([&](tflite::Interpreter* interpreter) {
+          auto* in = interpreter->tensor(interpreter->inputs()[0]);
+          size_t plane = static_cast<size_t>(48) * width;
+          for (size_t i = 0; i < plane; ++i) for (int c = 0; c < 3; ++c) in->data.f[3 * i + c] = values[c * plane + i];
+        });
+        if (model.gpu->uses_gpu()) {
+          auto* interpreter = model.gpu->get(); std::vector<std::vector<float>> result;
+          for (int index : interpreter->outputs()) { auto* out = interpreter->tensor(index); result.emplace_back(out->data.f, out->data.f + classes); }
+          return result;
+        }
+        model.gpu.reset();
+      } catch (const std::runtime_error& error) {
+        std::fprintf(stderr, "plate-engine: fieldHeads GPU inference failed, using ONNX CPU: %s\n", error.what()); model.gpu.reset();
+      }
+    }
+#endif
+    std::array<int64_t, 4> shape{1, 3, 48, width};
+    auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    auto tensor = Ort::Value::CreateTensor<float>(memory, values.data(), values.size(), shape.data(), shape.size());
+    const char* input_name = model.input.c_str(); std::vector<const char*> names;
+    for (const auto& name : model.outputs) names.push_back(name.c_str());
+    auto output = model.session->Run(Ort::RunOptions{nullptr}, &input_name, &tensor, 1, names.data(), names.size());
+    std::vector<std::vector<float>> result;
+    for (auto& value : output) {
+      if (value.GetTensorTypeAndShapeInfo().GetElementCount() != classes) throw std::runtime_error("fieldHeads model output shape mismatch");
+      const float* p = value.GetTensorData<float>(); result.emplace_back(p, p + classes);
+    }
+    return result;
+  }
+ public:
+  static std::vector<float> input(const uint8_t* f, int W, int H, const Box& b, bool kana, int* content_width = nullptr) {
+    const std::array<double, 4> r = kana ? std::array<double, 4>{0, .45, .23, .90} : std::array<double, 4>{.02, -.02, .98, .40};
+    int x0 = static_cast<int>(std::nearbyint(b.x + r[0] * b.w));
+    int y0 = static_cast<int>(std::nearbyint(b.y + r[1] * b.h));
+    int x1 = std::max(x0 + 2, static_cast<int>(std::nearbyint(b.x + r[2] * b.w)));
+    int y1 = std::max(y0 + 2, static_cast<int>(std::nearbyint(b.y + r[3] * b.h)));
+    int cw = x1 - x0, ch = y1 - y0, pad = kana ? ch / 2 : 0, padded = cw + 2 * pad;
+    int width = kana ? 128 : 256;
+    int rw = std::clamp(static_cast<int>(std::nearbyint(padded * 48.0 / ch)), 8, width);
+    if (content_width) *content_width = rw;
+    size_t plane = static_cast<size_t>(48) * width; std::vector<float> out(3 * plane, 0);
+    for (int y = 0; y < 48; ++y) for (int x = 0; x < rw; ++x) {
+      float fx = std::clamp((x + .5f) * padded / rw - .5f, 0.f, padded - 1.f);
+      float fy = std::clamp((y + .5f) * ch / 48.f - .5f, 0.f, ch - 1.f);
+      int lx = static_cast<int>(fx), ly = static_cast<int>(fy); float ax = fx - lx, ay = fy - ly;
+      uint8_t pixels[4][3];
+      nv12_rgb(f, W, H, x0 + std::clamp(lx - pad, 0, cw - 1), y0 + ly, pixels[0]);
+      nv12_rgb(f, W, H, x0 + std::clamp(lx + 1 - pad, 0, cw - 1), y0 + ly, pixels[1]);
+      nv12_rgb(f, W, H, x0 + std::clamp(lx - pad, 0, cw - 1), y0 + std::min(ly + 1, ch - 1), pixels[2]);
+      nv12_rgb(f, W, H, x0 + std::clamp(lx + 1 - pad, 0, cw - 1), y0 + std::min(ly + 1, ch - 1), pixels[3]);
+      for (int c = 0; c < 3; ++c) {
+        int rgb = 2 - c; // OpenCV training input is BGR.
+        float v = (1-ay)*((1-ax)*pixels[0][rgb]+ax*pixels[1][rgb])+ay*((1-ax)*pixels[2][rgb]+ax*pixels[3][rgb]);
+        out[c * plane + static_cast<size_t>(y) * width + x] = std::nearbyint(v) / 127.5f - 1.f;
+      }
+    }
+    return out;
+  }
+  static void dump(const std::vector<float>& top, const std::vector<float>& kana) {
+    const char* dir = std::getenv("NCC_PLATE_DUMP_FIELD_INPUTS"); static int count = 0;
+    if (!dir || !*dir || count >= 20) return;
+    std::filesystem::create_directories(dir);
+    auto write = [&](const char* field, const std::vector<float>& data, int width) {
+      auto path = std::filesystem::path(dir) / (std::to_string(count) + "-" + field + ".npy");
+      std::ofstream out(path, std::ios::binary);
+      std::string header = "{'descr': '<f4', 'fortran_order': False, 'shape': (1, 3, 48, " + std::to_string(width) + "), }";
+      size_t padding = (16 - ((10 + header.size() + 1) % 16)) % 16; header.append(padding, ' '); header += '\n';
+      const char magic[] = "\x93NUMPY\x01\x00"; out.write(magic, 8); uint16_t len = static_cast<uint16_t>(header.size());
+      char length[] = {static_cast<char>(len & 255), static_cast<char>(len >> 8)}; out.write(length, 2); out.write(header.data(), header.size());
+      out.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(float));
+      if (!out) throw std::runtime_error("cannot write fieldHeads input dump");
+    };
+    write("class", top, 256); write("kana", kana, 128); ++count;
+  }
+  // Shared-pass dump: first 20 inputs of each field, same file naming as dump().
+  static void dump_one(const char* field, const std::vector<float>& data, int width) {
+    const char* dir = std::getenv("NCC_PLATE_DUMP_FIELD_INPUTS");
+    static int class_count = 0, kana_count = 0;
+    int& count = std::strcmp(field, "kana") == 0 ? kana_count : class_count;
+    if (!dir || !*dir || count >= 20) return;
+    std::filesystem::create_directories(dir);
+    auto path = std::filesystem::path(dir) / (std::to_string(count) + "-" + field + ".npy");
+    std::ofstream out(path, std::ios::binary);
+    std::string header = "{'descr': '<f4', 'fortran_order': False, 'shape': (1, 3, 48, " + std::to_string(width) + "), }";
+    size_t padding = (16 - ((10 + header.size() + 1) % 16)) % 16; header.append(padding, ' '); header += '\n';
+    const char magic[] = "\x93NUMPY\x01\x00"; out.write(magic, 8); uint16_t len = static_cast<uint16_t>(header.size());
+    char length[] = {static_cast<char>(len & 255), static_cast<char>(len >> 8)}; out.write(length, 2); out.write(header.data(), header.size());
+    out.write(reinterpret_cast<const char*>(data.data()), data.size() * sizeof(float));
+    if (!out) throw std::runtime_error("cannot write fieldHeads input dump");
+    ++count;
+  }
+ private:
+  double class_threshold_, kana_threshold_; bool class_fallback_, kana_fallback_; int min_width_, max_width_; bool shared_;
+  std::vector<std::string> class_labels_, kana_labels_; Model top_, kana_, class_decoder_, kana_decoder_;
+};
+
 class TextOCR {
  public:
   TextOCR(const std::string& model_path, const std::string& fast_path, const std::string& dictionary_path, const std::string& model_dir, const json& config,
@@ -946,6 +1179,7 @@ class TextOCR {
     night_fallback_ = config.value("nightFallback", false);
     env_ = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "np1-plate");
     main_.load(*env_, threads_, model_path, fast_path, config, false);
+    if (config.contains("fieldHeads")) field_heads_ = std::make_unique<FieldHeads>(*env_, threads_, model_dir, config.at("fieldHeads"));
 #ifdef NP1_PLATE_MNN_GPU
     const char* ppocr_env = std::getenv("NCC_PLATE_PPOCR");
     const bool custom_crop = config.contains("sampling") || config.contains("padWidths") || config.contains("gpu");
@@ -1059,12 +1293,32 @@ class TextOCR {
       ~ProfileReset() { target = nullptr; }
     } reset{profile_};
     if (!main_.session) throw std::runtime_error("PP-OCR session unavailable");
+    const bool heads = field_heads_ && field_heads_->applies(box);
     const auto recognize = [&] {
+      shared_active_ = heads && field_heads_->shared();
+      shared_slots_.clear();
+      shared_kana_.clear();
       return refine_once(frame, W, H, box, base_class, base_kana, base_serial, read_kana, read_class);
     };
     for (;;) {
       try {
-        return recognize();
+        auto result = recognize();
+        if (shared_active_) {
+          // Early-return paths (e.g. low serial confidence) skip the top-row / kana reads; run the shared views here.
+          if (shared_slots_.empty() && !top_rects_.empty()) infer(main_, frame, W, H, box, top_rects_.front(), 1);
+          if (shared_kana_.empty() && !kana_rects_.empty()) infer(main_, frame, W, H, box, kana_rects_.front(), 2);
+        }
+        shared_active_ = false;
+        if (heads) {
+          if (field_heads_->shared() && (!shared_slots_.empty() || !shared_kana_.empty())) {
+            auto start = ProfileClock::now();
+            field_heads_->decide(shared_slots_.empty() ? nullptr : &shared_slots_, shared_kana_.empty() ? nullptr : &shared_kana_, result);
+            if (profile) { profile->field_heads += elapsed_ms(start); ++profile->field_head_calls; ++profile->field_head_shared; }
+          } else if (field_heads_->has_models()) {
+            field_heads_->apply(frame, W, H, box, result, profile);
+          }
+        }
+        return result;
       } catch (const Ort::Exception& error) {
         auto* rec = failed_rec_;
         if (!rec || rec->fallback_path.empty()) throw;
@@ -1157,8 +1411,9 @@ class TextOCR {
       }
       if (item->uses_gpu()) {
         auto* interpreter = item->get();
-        if (interpreter->inputs().size() != 1 || interpreter->outputs().size() != 1)
-          throw std::runtime_error("PP-OCR GPU model must have one input and output");
+        // Extra outputs (field heads of the r5 text reader) follow the CTC output and are read only by the shared pass.
+        if (interpreter->inputs().size() != 1 || interpreter->outputs().empty())
+          throw std::runtime_error("PP-OCR GPU model must have one input and at least one output");
         auto* in = interpreter->tensor(interpreter->inputs()[0]);
         auto* out = interpreter->tensor(interpreter->outputs()[0]);
         if (in->type != kTfLiteFloat32 || in->dims->size != 4 || in->dims->data[0] != 1 ||
@@ -1184,8 +1439,10 @@ class TextOCR {
     Ort::Value owner{nullptr};
   };
 
+  // shared: 0 = normal view; 1 / 2 = first top-row / kana view built exactly like field-head training input, whose
+  // extra GPU outputs (class slots / kana) are kept for the field-head decision of this plate.
   Output infer(Recognizer& rec, const uint8_t* frame, int W, int H, const Box& box,
-               const std::array<double, 4>& rect) {
+               const std::array<double, 4>& rect, int shared = 0) {
     std::vector<float> input;
     int width = 0, bucket = 0;
     const int max_width = rec.fallback_path.empty() ? 512 : rec.fast_max_width;
@@ -1197,7 +1454,11 @@ class TextOCR {
       bucket = it == widths.end() ? widths.back() : *it;
       width = std::min(width, bucket);
     };
-    if (rec.bilinear) {
+    if (shared) {
+      bucket = shared == 2 ? 128 : 256;
+      input = FieldHeads::input(frame, W, H, box, shared == 2, &width);
+      if (shared == 2) FieldHeads::dump_one("kana", input, 128); else FieldHeads::dump_one("class", input, 256);
+    } else if (rec.bilinear) {
       // Sub-pixel crop of the rect (may extend past the box; clamped to the frame), bilinear resize to height 48.
       float x0 = box.x + static_cast<float>(rect[0] * box.w), y0 = box.y + static_cast<float>(rect[1] * box.h);
       float crop_width = std::max(1.f, static_cast<float>((rect[2] - rect[0]) * box.w));
@@ -1247,6 +1508,29 @@ class TextOCR {
       });
       auto* interpreter = model.get();
       auto* out = interpreter->tensor(interpreter->outputs()[0]);
+      if (shared && field_heads_) {
+        const auto& outs = interpreter->outputs();
+        const size_t expected = shared == 2 ? 2 : 4, classes = shared == 2 ? field_heads_->kana_size() : field_heads_->class_size();
+        if (outs.size() == 2 && field_heads_->has_decoder(shared == 2)) {
+          // GPU graph exports [CTC, backbone feature]; the small decoder runs on CPU.
+          auto* t = interpreter->tensor(outs[1]);
+          if (t->type == kTfLiteFloat32 && t->dims->size == 3 && t->dims->data[0] == 1) {
+            auto heads = field_heads_->decode(shared == 2, t->data.f, t->dims->data[1], t->dims->data[2]);
+            if (shared == 2 && heads.size() == 1) shared_kana_ = std::move(heads[0]);
+            if (shared == 1 && heads.size() == 3) shared_slots_ = std::move(heads);
+          }
+        } else if (outs.size() == expected) {
+          std::vector<std::vector<float>> heads;
+          for (size_t i = 1; i < outs.size(); ++i) {
+            auto* t = interpreter->tensor(outs[i]);
+            size_t n = 1; for (int d = 0; d < t->dims->size; ++d) n *= t->dims->data[d];
+            if (t->type != kTfLiteFloat32 || n != classes) { heads.clear(); break; }
+            heads.emplace_back(t->data.f, t->data.f + classes);
+          }
+          if (shared == 2 && heads.size() == 1) shared_kana_ = std::move(heads[0]);
+          if (shared == 1 && heads.size() == 3) shared_slots_ = std::move(heads);
+        }
+      }
       return {out->data.f, std::min(out->dims->data[1], (width + 7) / 8), rec.dictionary.size(), Ort::Value{nullptr}};
     }
 #endif
@@ -1471,14 +1755,14 @@ class TextOCR {
         number_done = true;
       }
       if (min_confidence_ <= 0.0f || serial_confidence >= min_confidence_) {
-        kana_match = lex(main_, frame, W, H, box, kana_rects_, kana_lexicon_, kana, kana_threshold_);
+        kana_match = lex(main_, frame, W, H, box, kana_rects_, kana_lexicon_, kana, kana_threshold_, shared_active_ ? 2 : 0);
       }
       region_match = region_future.get();
     } else
 #endif
     {
       region_match = lex(main_, frame, W, H, box, region_rects, region_lexicon_, "", region_threshold_);
-      kana_match = lex(main_, frame, W, H, box, kana_rects_, kana_lexicon_, kana, kana_threshold_);
+      kana_match = lex(main_, frame, W, H, box, kana_rects_, kana_lexicon_, kana, kana_threshold_, shared_active_ ? 2 : 0);
       if (!number_done) {
         resolve_number();
         number_done = true;
@@ -1542,11 +1826,13 @@ class TextOCR {
 
   LexMatch lex(Recognizer& rec, const uint8_t* frame, int W, int H, const Box& box,
                const std::vector<std::array<double, 4>>& rects, const CtcLexicon& lexicon,
-               const std::string& known, double threshold) {
+               const std::string& known, double threshold, int shared_first = 0) {
     LexMatch best;
     std::set<std::string> strong;
+    bool first = true;
     for (const auto& rect : rects) {
-      const auto result = infer(rec, frame, W, H, box, rect);
+      const auto result = infer(rec, frame, W, H, box, rect, first ? shared_first : 0);
+      first = false;
       LexMatch match = lexicon.score(result.values, result.steps, static_cast<int>(result.classes));
       if (match.posterior < .9) continue;
       if (!known.empty() && match.text == known && match.likelihood >= std::max(.6, threshold)) return match;
@@ -1569,7 +1855,7 @@ class TextOCR {
     int with_region = 0, views = 0;
     for (const auto& rect : top_rects_) {
       ++views;
-      auto values = infer(rec, frame, W, H, box, rect);
+      auto values = infer(rec, frame, W, H, box, rect, shared_active_ && views == 1 ? 1 : 0);
       std::vector<std::string> tokens;
       std::vector<float> scores;
       std::vector<std::vector<float>> vectors;
@@ -1706,6 +1992,10 @@ class TextOCR {
 
   std::unique_ptr<Ort::Env> env_;
   Recognizer main_;
+  std::unique_ptr<FieldHeads> field_heads_;
+  bool shared_active_ = false;
+  std::vector<std::vector<float>> shared_slots_;
+  std::vector<float> shared_kana_;
   std::unique_ptr<Recognizer> number_;
   Recognizer* failed_rec_ = nullptr;
   const int threads_;

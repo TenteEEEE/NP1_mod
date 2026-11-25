@@ -79,6 +79,12 @@ cp "$ROOT/models/plate/detector.tflite" \
     "$ROOT/models/plate/ppocrv5_r2-dictionary.json" \
     "$ROOT/models/plate/ppocrv6s_r4_w128.tflite" \
     "$ROOT/models/plate/ppocrv6s_r4_w256.tflite" \
+    "$ROOT/models/plate/ppocrv6s_r5_rec.onnx" \
+    "$ROOT/models/plate/ppocrv6s_r5_w128.tflite" \
+    "$ROOT/models/plate/ppocrv6s_r5_w256.tflite" \
+    "$ROOT/models/plate/ppocrv6s_r5_class_decoder.onnx" \
+    "$ROOT/models/plate/ppocrv6s_r5_kana_decoder.onnx" \
+    "$ROOT/models/plate/ppocrv6s_r5_heads.json" \
     "$ROOT/models/plate/plate-model.json" \
     "$ROOT/models/plate/ppocr-dictionary.json" \
     "$ROOT/models/plate/model-manifest.json" \

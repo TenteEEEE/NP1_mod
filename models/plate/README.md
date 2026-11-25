@@ -1,6 +1,6 @@
-# NumberShare v7 / low-resolution v6s（numbershare-reader-v7-lowres-v6s）
+# NumberShare v8 / low-resolution v6s（numbershare-reader-v8-lowres-v6s）
 
-PP-OCRv6 small を追加学習した `ppocrv6s_r4_rec.onnx` と、同じ重みのGPU用 `ppocrv6s_r4_w128.tflite` / `ppocrv6s_r4_w256.tflite` を使います。273文字のCTC出力と辞書 `ppocrv5_r2-dictionary.json` は従来と共通です。一連番号の読取り器は plate-v2 で、PP-OCRv6 INT8で照合します。
+PP-OCRv6 small を追加学習した `ppocrv6s_r5_rec.onnx` と、同じ重みのGPU用 `ppocrv6s_r5_w128.tflite` / `ppocrv6s_r5_w256.tflite` を使います。273文字のCTC出力と辞書 `ppocrv5_r2-dictionary.json` は従来と共通です。分類番号とひらがなは、同じ特徴抽出部を共有する専用ヘッド（後段 `ppocrv6s_r5_class_decoder.onnx` / `ppocrv6s_r5_kana_decoder.onnx`、ラベル `ppocrv6s_r5_heads.json`）でも推定します。一連番号の読取り器は plate-v2 で、PP-OCRv6 INT8で照合します。
 
 学習には、車両グループ・地名・かなで重みを調整した実写の切り出し、描画した合成画像、架空の文字で生成した写実的な合成画像とその撮影条件違いの編集画像を使いました。生成・編集画像は、VLMで全項目を読み戻せたものだけを使っています。約34px未満では読取りを控える学習を行いました。QCS610実機を含む評価条件と結果は [評価まとめ](../../docs/plate-lowres-evaluation.md) を参照してください。
 

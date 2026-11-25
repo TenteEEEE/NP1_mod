@@ -131,4 +131,38 @@ r4は判読できない幅では出力しない学習と重み付けにより、
 
 ## モデルとエンジン
 
-学習済みモデルは `numbershare-reader-v7-lowres-v6s` で、`ppocrv6s_r4_rec.onnx` と `ppocrv6s_r4_w128.tflite` / `ppocrv6s_r4_w256.tflite` を使用します。モデルは [`models/plate/`](../models/plate/)、推論エンジンのビルド済みバイナリは [`prebuilt/plate-engine/`](../prebuilt/plate-engine/) にあり、通常のビルドと導入でそのまま本体へ入ります。学習・変換の手順とチェックポイントの入手方法は [開発・検証](development.md#ナンバー認識) を参照してください。
+学習済みモデルは `numbershare-reader-v8-lowres-v6s` で、`ppocrv6s_r5_rec.onnx` と `ppocrv6s_r5_w128.tflite` / `ppocrv6s_r5_w256.tflite` を使用します。モデルは [`models/plate/`](../models/plate/)、推論エンジンのビルド済みバイナリは [`prebuilt/plate-engine/`](../prebuilt/plate-engine/) にあり、通常のビルドと導入でそのまま本体へ入ります。学習・変換の手順とチェックポイントの入手方法は [開発・検証](development.md#ナンバー認識) を参照してください。
+
+### 分類番号・ひらがなのフィールドヘッド
+
+r5 は CTC 出力に加えて、分類番号の3文字とひらがな1文字を直接推定する専用ヘッドを持つ。地名と一連番号は従来どおり CTC で読む。ヘッドは CTC と同じ特徴抽出部を共有し、追加の推論はほとんど発生しない。
+
+- 1枚目の上段枠と1枚目のひらがな枠は、学習時と同じ前処理（整数座標の切り出し、ひらがなは左右に高さの半分を複製で拡張、高さ48への双線形縮小、BGR、上段は幅256・ひらがなは幅128へ右詰め）で1回だけ推論する。CTC 出力は従来の読取りに使い、特徴量出力をヘッドに渡す。
+- GPU 用の `ppocrv6s_r5_w128.tflite` / `ppocrv6s_r5_w256.tflite` は CTC 出力と特徴量を出力する。ヘッドの後段（Adreno の GPU delegate で実行できない演算を含む）は `ppocrv6s_r5_class_decoder.onnx` / `ppocrv6s_r5_kana_decoder.onnx` として CPU で実行する（1回あたり 0.1ms 未満）。
+- 一連番号の信頼度が低く読取りを途中で打ち切る場合も、共有の推論を実行してヘッドの結果を出す。
+
+設定は `ocr.textOcr.fieldHeads` で、省略すると従来の動作になる。
+
+| キー | 内容 |
+| --- | --- |
+| `labelsFile` / `labelsSha256` | ヘッドのラベル |
+| `classDecoder` / `kanaDecoder` | 後段の ONNX（`file` / `sha256`） |
+| `sharedInput` | `true` で CTC と特徴抽出部を共有する |
+| `classThreshold` / `kanaThreshold` | 採用する信頼度の下限（省略時 0.7） |
+| `classFallback` / `kanaFallback` | `true` なら、信頼度が下限未満のとき既存の CTC・補助モデルの結果を残す。`false` なら空欄にする（同梱の設定は両方 `true`） |
+| `minWidth` / `maxWidth` | 適用する検出枠の幅（省略時は全幅） |
+
+プロファイルには `fieldHeadsMs` と `fieldHeadsShared` を記録し、結果の `fieldHeads` に推定値と信頼度を出力する。入力確認には `NCC_PLATE_DUMP_FIELD_INPUTS` に出力ディレクトリを指定する。先頭20件の上段・ひらがな入力を NPY 形式で保存するため、確認後は削除する。
+
+QCS610 実機（Web 評価データ dev、各幅362枚、メモリ上限384MB）での正答率 / 誤答率は次のとおり。
+
+| 幅 | 版 | 地名 | 分類番号 | ひらがな | 平均処理時間 |
+| --- | --- | --- | --- | --- | --- |
+| 90px | r4 | .88 / .00 | .83 / .02 | .75 / .06 | 437ms |
+| 90px | r5 | .88 / .00 | .90 / .03 | .79 / .03 | 461ms |
+| 70px | r4 | .86 / .01 | .82 / .03 | .73 / .04 | 438ms |
+| 70px | r5 | .88 / .00 | .88 / .04 | .75 / .02 | 455ms |
+| 55px | r4 | .74 / .00 | .69 / .04 | .59 / .05 | 424ms |
+| 55px | r5 | .77 / .00 | .84 / .05 | .65 / .03 | 441ms |
+
+r5 の測定時は本体の他サービスのメモリ逼迫が続いており、処理時間の差には負荷の違いが含まれる。
